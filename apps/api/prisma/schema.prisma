@@ -14,28 +14,35 @@ enum Role {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  fullName  String
-  email     String?  @unique
-  phone     String?  @unique
-  password  String?
-  role      Role     @default(COMMUTER)
-  status    String   @default("active")
-  mustChangePassword Boolean @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  fullName           String
+  email              String?  @unique
+  phone              String?  @unique
+  password           String?
+  role               Role     @default(COMMUTER)
+  status             String   @default("active")
+  mustChangePassword Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  driverProfile   DriverProfile?
-  commuterProfile CommuterProfile?
+  driverProfile      DriverProfile?
+  commuterProfile    CommuterProfile?
 }
 
 model DriverProfile {
-  id        String  @id @default(cuid())
-  userId    String  @unique
-  user      User    @relation(fields: [userId], references: [id])
-  licenseNo String
-  qrToken   String  @unique
-  status    String  @default("offline")
+  id           String  @id @default(cuid())
+  userId       String  @unique
+  user         User    @relation(fields: [userId], references: [id])
+  licenseNo    String
+  birthDate    DateTime
+  address      String
+  vehicleType  String
+  busNo        String
+  vehiclePlate String
+  driverIdNo   String
+  route        String
+  qrToken      String  @unique
+  status       String  @default("offline")
 }
 
 model CommuterProfile {

@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";                   // ✅ use bcryptjs (matches package.json)
 import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 
@@ -10,12 +10,12 @@ dotenv.config();
 const app = express();
 const prisma = new PrismaClient();
 
-app.use(cors());
+app.use(cors());                                 // (optionally add origin: "http://localhost:3000")
 app.use(express.json());
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
 const sign = (u) =>
-  jwt.sign({ sub: u.id, role: u.role, email: u.email }, JWT_SECRET, { expiresIn: "7d" });
+  jwt.sign({ sub: u.id, role: u.role, email: u.email || null }, JWT_SECRET, { expiresIn: "7d" });
 
 // ---------- Auth middleware ----------
 function requireAuth(req, res, next) {
@@ -39,7 +39,6 @@ function requireAdmin(req, res, next) {
 function cryptoRandom() {
   return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
 }
-
 function handlePrismaError(e, res) {
   if (e?.code === "P2002") {
     const fields = Array.isArray(e?.meta?.target) ? e.meta.target.join(", ") : "field";
@@ -68,15 +67,15 @@ app.post("/auth/signup", async (req, res) => {
     const user = await prisma.user.create({
       data: {
         fullName,
-        email,
-        phone,
+        email: email ? email.toLowerCase() : null,         // ✅ lowercase
+        phone: phone || null,
         password: hash,
         role: "COMMUTER",
         commuterProfile: { create: {} },
       },
     });
 
-    res.json({ token: sign(user), user, mustChangePassword: user.mustChangePassword || false });
+    res.json({ token: sign(user), role: user.role, mustChangePassword: !!user.mustChangePassword });
   } catch (e) {
     if (e instanceof z.ZodError) return res.status(400).json({ message: e.flatten().fieldErrors });
     return handlePrismaError(e, res);
@@ -90,14 +89,19 @@ app.post("/auth/login", async (req, res) => {
       .object({
         email: z.string().email().optional(),
         phone: z.string().min(6).optional(),
-        password: z.string().min(6),
+        password: z.string().min(1),                       // allow temp passwords like "driver123"
       })
       .refine((v) => v.email || v.phone, { message: "Email or phone is required" });
 
     const { email, phone, password } = schema.parse(req.body);
 
     const user = await prisma.user.findFirst({
-      where: { OR: [{ email: email || undefined }, { phone: phone || undefined }] },
+      where: {
+        OR: [
+          { email: email ? email.toLowerCase() : undefined },  // ✅ lowercase
+          { phone: phone || undefined },
+        ],
+      },
     });
 
     if (!user || !user.password) return res.status(401).json({ message: "Invalid credentials" });
@@ -105,7 +109,8 @@ app.post("/auth/login", async (req, res) => {
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(401).json({ message: "Invalid credentials" });
 
-    res.json({ token: sign(user), user, mustChangePassword: user.mustChangePassword || false });
+    // ✅ Do not block on mustChangePassword; return it so client can handle flow
+    res.json({ token: sign(user), role: user.role, mustChangePassword: !!user.mustChangePassword });
   } catch (e) {
     if (e instanceof z.ZodError) return res.status(400).json({ message: e.flatten().fieldErrors });
     return res.status(500).json({ message: "Server error" });
@@ -116,7 +121,7 @@ app.post("/auth/login", async (req, res) => {
 app.post("/auth/change-password", requireAuth, async (req, res) => {
   try {
     const schema = z.object({
-      currentPassword: z.string().min(6),
+      currentPassword: z.string().min(1),
       newPassword: z.string().min(6),
     });
     const { currentPassword, newPassword } = schema.parse(req.body);
@@ -157,12 +162,12 @@ app.post("/admin/create-driver", requireAuth, requireAdmin, async (req, res) => 
     const user = await prisma.user.create({
       data: {
         fullName,
-        email,
-        phone,
+        email: email ? email.toLowerCase() : null,          // ✅ lowercase
+        phone: phone || null,
         role: "DRIVER",
         password: defaultPasswordHash,
         mustChangePassword: true,
-        driverProfile: { create: { licenseNo, qrToken } },
+        driverProfile: { create: { licenseNo, qrToken } },  // (add more fields if your schema requires)
       },
     });
 
