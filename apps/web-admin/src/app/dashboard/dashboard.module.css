@@ -1,0 +1,21 @@
+.panel{ background:#f3f4f6; padding:8px; }
+.h2{ margin:4px 0 2px; font-size:26px; font-weight:800; }
+.h3{ margin:10px 0 8px; font-size:18px; font-weight:700; }
+.subtle{ color:#6b7280; margin:0 0 16px }
+
+.card{
+  background:var(--card); border:1px solid var(--line);
+  border-radius:12px; padding:16px;
+}
+
+.metrics{
+  display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:12px; margin:10px 0 12px;
+}
+.metric{ border:1px solid var(--line); border-radius:10px; padding:12px; background:#fff; }
+.metricValue{ font-size:28px; font-weight:800; }
+.metricLabel{ margin-top:6px; font-weight:600 }
+.metricNote{ color:#6b7280; font-size:12px }
+
+.chartBox{ margin-top:8px; border-top:1px solid var(--line); padding-top:10px; }
+.chartSvg{ width:100%; height:220px; display:block; }

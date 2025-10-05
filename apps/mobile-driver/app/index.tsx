@@ -7,26 +7,31 @@ import {
   ActivityIndicator,
   StyleSheet,
   Alert,
+  Platform,
 } from "react-native";
 import { router } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
-// ---- CONFIG ----
-const API_URL =
-  (process.env.EXPO_PUBLIC_API_URL as string) || "http://192.168.245.171:4000";
+// ---------------- CONFIG ----------------
+const API_URL = (() => {
+  const env = (process.env.EXPO_PUBLIC_API_URL || "").trim();
+  if (env) return env.replace(/\/$/, ""); // remove trailing slash
+  if (Platform.OS === "web") return "http://localhost:4000";
+  return "http://192.168.245.171:4000"; // fallback LAN IP (update if needed)
+})();
 
-// ---- THEME (from screenshot) ----
+// ---------------- THEME ----------------
 const C = {
-  bg: "#0F1B2B",        // page background
-  hero: "#0F1B2B",      // hero area (same bg, with arc)
-  card: "#14243A",      // form card
-  border: "#2A3B52",    // input border
-  text: "#EAF2F8",      // main text
-  sub: "#B8C7D4",       // sub text / placeholders
-  link: "#9CC7E5",      // links
+  bg: "#0F1B2B",
+  hero: "#0F1B2B",
+  card: "#14243A",
+  border: "#2A3B52",
+  text: "#EAF2F8",
+  sub: "#B8C7D4",
+  link: "#9CC7E5",
   link2: "#79B8FF",
-  accent: "#2078A7",    // button teal
-  iconBg: "#DBE9F5",    // circle bg for bus icon
+  accent: "#2078A7",
+  iconBg: "#DBE9F5",
 };
 
 export default function LoginPage() {
@@ -36,6 +41,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // ---------------- LOGIN HANDLER ----------------
   async function handleLogin() {
     setErr(null);
     const e = email.trim();
@@ -52,21 +58,26 @@ export default function LoginPage() {
         body: JSON.stringify({ email: e, password: pw }),
       });
 
-      const txt = await res.text();
+      const text = await res.text();
       let data: any = {};
-      try { data = txt ? JSON.parse(txt) : {}; } catch {}
-      if (!res.ok) {
-        const msg = (data && (data.message || data.error)) || `Login failed (HTTP ${res.status})`;
-        setErr(typeof msg === "string" ? msg : "Login failed");
-        return;
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        throw new Error("Invalid server response");
       }
 
-      // mustChangePassword → go to change password first
-      if (data.mustChangePassword === true) {
+      if (!res.ok) throw new Error(data?.message || `Login failed (${res.status})`);
+
+      // Save token for later authenticated calls
+      localStorage.setItem("token", data.token);
+
+      // mustChangePassword → redirect first
+      if (data.mustChangePassword) {
         router.replace({ pathname: "/change-password", params: { token: data.token } });
         return;
       }
 
+      // Role-based routing
       if (data.role === "DRIVER") {
         router.replace("/driver-dashboard");
       } else if (data.role === "COMMUTER") {
@@ -75,15 +86,22 @@ export default function LoginPage() {
         setErr("This account is not a driver or commuter.");
       }
     } catch (error) {
-      setErr(error instanceof Error ? error.message : String(error));
+      const msg =
+        error instanceof Error
+          ? error.message.includes("Network") || error.message.includes("fetch")
+            ? "Cannot connect to server. Check Wi-Fi and API URL."
+            : error.message
+          : String(error);
+      setErr(msg);
     } finally {
       setLoading(false);
     }
   }
 
+  // ---------------- UI ----------------
   return (
     <View style={styles.screen}>
-      {/* Hero with arc */}
+      {/* Header with arc */}
       <View style={styles.heroWrap}>
         <View style={styles.arc} />
         <View style={styles.heroInner}>
@@ -136,7 +154,7 @@ export default function LoginPage() {
           <Text style={styles.linkRight}>Forgot password?</Text>
         </Pressable>
 
-        {err ? <Text style={styles.error}>{err}</Text> : null}
+        {err && <Text style={styles.error}>{err}</Text>}
 
         <Pressable style={styles.btn} onPress={handleLogin} disabled={loading}>
           {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Sign in</Text>}
@@ -153,11 +171,9 @@ export default function LoginPage() {
   );
 }
 
+// ---------------- STYLES ----------------
 const styles = StyleSheet.create({
-  // page
   screen: { flex: 1, backgroundColor: C.bg },
-
-  // hero
   heroWrap: { position: "relative" },
   arc: {
     backgroundColor: "#0B3954",
@@ -189,8 +205,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     marginTop: 12,
   },
-
-  // card form
   card: {
     backgroundColor: C.card,
     marginHorizontal: 18,
@@ -218,7 +232,6 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_400Regular",
   },
   error: { color: "#FFB4B4", textAlign: "center", marginTop: 10, fontFamily: "Poppins_400Regular" },
-
   btn: {
     marginTop: 12,
     backgroundColor: C.accent,
@@ -228,7 +241,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   btnText: { color: "#fff", fontFamily: "Poppins_600SemiBold", fontSize: 16 },
-
   meta: {
     color: "#CDD9E3",
     textAlign: "center",
