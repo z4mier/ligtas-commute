@@ -1,122 +1,16 @@
-/* Global theme variables (safe inside a CSS Module) */
-:global(:root) {
-  --bg: #0f1b2b;
-  --panel: #0f1b2b;
-  --input: #122033;
-  --input-border: #1e2d42;
-  --text: #eaf2f8;
-  --muted: #9aa6b2;
-  --link: #9cc7e5;
-  --accent: #1e6f9f;
-  --accent-hover: #1a5d86;
-  --error: #ffb4b4;
+/* Tailwind v4 entry */
+@import "tailwindcss";
+
+/* Define your custom theme tokens (this creates bg-primary, text-accent, etc.) */
+@theme {
+  --color-primary: #E9F1FA; /* light blue background */
+  --color-accent:  #00ABE4; /* bright blue accent */
+  --color-surface: #FFFFFF; /* white surface elements */
 }
 
-/* Generic page container (centered) */
-.page {
-  min-height: 100dvh;
-  background: var(--bg);
-  display: grid;
-  place-items: center;
-  padding: 24px;
-}
+/* Optional: light scheme + base body styles */
+:root { color-scheme: light; }
 
-/* Card/wrapper */
-.wrap {
-  width: 100%;
-  max-width: 420px;
-}
-
-/* Large title (e.g., ADMIN) */
-.title {
-  color: var(--text);
-  text-align: center;
-  font-weight: 800;
-  letter-spacing: 2px;
-  font-size: 44px;
-  margin: 8px 0 22px;
-}
-
-/* Simple form grid */
-.form {
-  display: grid;
-  gap: 12px;
-  background: var(--panel);
-}
-
-.field {
-  position: relative;
-}
-
-/* Inputs */
-.input {
-  width: 100%;
-  height: 44px;
-  border-radius: 10px;
-  border: 1px solid var(--input-border);
-  background: var(--input);
-  color: var(--text);
-  padding: 0 44px 0 14px; /* room for eye icon button */
-  outline: none;
-}
-.input::placeholder {
-  color: var(--muted);
-}
-
-/* Password eye button */
-.eye {
-  position: absolute;
-  right: 10px;
-  top: 50%;
-  translate: 0 -50%;
-  height: 28px;
-  width: 28px;
-  border-radius: 8px;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-/* Forgot password link */
-.forgot {
-  text-align: center;
-  margin-top: -2px;
-}
-.forgotBtn {
-  background: none;
-  border: 0;
-  color: var(--link);
-  cursor: pointer;
-  font-size: 13px;
-}
-
-/* Error text */
-.error {
-  color: var(--error);
-  text-align: center;
-  margin: 2px 0 4px;
-  min-height: 18px;
-}
-
-/* CTA button */
-.cta {
-  margin-top: 6px;
-  width: 100%;
-  height: 44px;
-  border-radius: 10px;
-  border: 0;
-  background: var(--accent);
-  color: white;
-  font-weight: 600;
-  cursor: pointer;
-}
-.cta:hover {
-  background: var(--accent-hover);
-}
-
-/* Responsive */
-@media (max-width: 600px) {
-  .page { padding: 32px; }
-  .title { font-size: 36px; }
+body {
+  @apply bg-primary text-[#0B1526] min-h-screen; /* dark text for contrast */
 }
