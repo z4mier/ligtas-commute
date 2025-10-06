@@ -20,11 +20,21 @@ model User {
   phone              String?  @unique
   password           String?
   role               Role     @default(COMMUTER)
-  status             String   @default("active")
+  status             String   @default("PENDING") // "PENDING", "ACTIVE", "BANNED"
   mustChangePassword Boolean  @default(false)
+
+  // === Verification ===
+  isVerified          Boolean   @default(false)
+  verificationMethod  String?   // "email" | "phone"
+  verificationTarget  String?   // the actual address or phone used
+  verificationCode    String?   // last code sent (plain in dev, hash in prod)
+  codeExpiresAt       DateTime?
+  lastOtpSentAt       DateTime?
+
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
+  // === Relations ===
   driverProfile      DriverProfile?
   commuterProfile    CommuterProfile?
 }
@@ -51,11 +61,13 @@ model CommuterProfile {
   user   User   @relation(fields: [userId], references: [id])
 }
 
+// optional: separate OTP tracking for audit or multiple channels
 model Otp {
-  id        String   @id @default(cuid())
-  phone     String
-  code      String
-  expiresAt DateTime
-  consumed  Boolean  @default(false)
-  createdAt DateTime @default(now())
+  id         String   @id @default(cuid())
+  target     String   // email or phone
+  method     String   // "email" or "phone"
+  code       String
+  expiresAt  DateTime
+  consumed   Boolean  @default(false)
+  createdAt  DateTime @default(now())
 }
