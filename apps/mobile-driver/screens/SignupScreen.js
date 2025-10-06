@@ -23,61 +23,23 @@ export default function SignupScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
 
   async function createAccount() {
-    if (loading) return; // prevent double submit
-
-    const _fullName = fullName.trim();
-    const _email = email.trim().toLowerCase();
-    const _phone = phone.trim();
-    const _password = password;
-    const _confirm = confirm;
-
-    if (!_fullName || !_email || !_phone || !_password || !_confirm)
+    if (!fullName || !email || !phone || !password || !confirm)
       return Alert.alert("Missing fields", "Please complete all fields.");
-    if (_password.length < 6)
-      return Alert.alert("Weak password", "Use at least 6 characters.");
-    if (_password !== _confirm)
-      return Alert.alert("Password mismatch", "Passwords do not match.");
+    if (password.length < 6) return Alert.alert("Weak password", "Use at least 6 characters.");
+    if (password !== confirm) return Alert.alert("Password mismatch", "Passwords do not match.");
 
     try {
       setLoading(true);
-
-      // 1) Register
       const res = await fetch(`${API_URL}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fullName: _fullName,
-          email: _email,
-          phone: _phone,
-          password: _password,
-          role: "COMMUTER",
-        }),
+        body: JSON.stringify({ fullName, email, phone, password, role: "COMMUTER" }),
       });
-
-      // be safe with parsing
-      let data = null;
-      try { data = await res.json(); } catch { data = {}; }
-
-      if (res.status === 409) {
-        throw new Error(data?.message || "Email or phone is already registered.");
-      }
-      if (!res.ok) {
-        throw new Error(data?.message || "Registration failed.");
-      }
-
-      // 2) Ensure OTP is sent (harmless even if backend already sent during /register)
-      try {
-        await fetch(`${API_URL}/auth/request-otp`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: _email }),
-        });
-      } catch {
-        // ignore; user can tap "Resend" on OTP screen
-      }
-
-      // 3) Go straight to OTP screen
-      navigation.replace("OtpVerify", { email: _email });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.message || "Registration failed");
+      Alert.alert("Success", "Account created. Please sign in.", [
+        { text: "OK", onPress: () => navigation.replace("Login") },
+      ]);
     } catch (err) {
       Alert.alert("Registration Failed", err.message);
     } finally {
@@ -133,7 +95,7 @@ export default function SignupScreen({ navigation }) {
           }
         />
 
-        <TouchableOpacity onPress={createAccount} disabled={loading} style={[s.primaryBtn, loading && { opacity: 0.7 }]}>
+        <TouchableOpacity onPress={createAccount} disabled={loading} style={s.primaryBtn}>
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (
