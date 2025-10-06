@@ -237,6 +237,108 @@ app.delete("/admin/drivers/:id", requireAuth, requireAdmin, async (req, res) => 
   }
 });
 
+// ---------- ADMIN: Update Driver Status (PATCH) ----------
+app.patch("/admin/drivers/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { status } = req.body || {};
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+    if (!["active", "inactive"].includes(String(status)))
+      return res.status(400).json({ message: "Invalid status" });
+
+    const updated = await prisma.driverProfile.update({
+      where: { userId: id },
+      data: { status },
+      include: { user: true },
+    });
+
+    return res.json({ message: "Status updated", status: updated.status });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ message: "Failed to update status" });
+  }
+});
+
+// ---------- ADMIN: Activate / Deactivate (POST shortcuts) ----------
+app.post("/admin/drivers/:id/activate", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+
+    const updated = await prisma.driverProfile.update({
+      where: { userId: id },
+      data: { status: "active" },
+    });
+
+    return res.json({ message: "Driver activated", status: updated.status });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ message: "Failed to activate" });
+  }
+});
+
+app.post("/admin/drivers/:id/deactivate", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+
+    const updated = await prisma.driverProfile.update({
+      where: { userId: id },
+      data: { status: "inactive" },
+    });
+
+    return res.json({ message: "Driver deactivated", status: updated.status });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ message: "Failed to deactivate" });
+  }
+});
+
+// ---------- ADMIN: Get QR token for a driver ----------
+app.get("/admin/drivers/:id/qr-token", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+
+    const profile = await prisma.driverProfile.findUnique({
+      where: { userId: id },
+      select: { qrToken: true },
+    });
+    if (!profile) return res.status(404).json({ message: "Driver not found" });
+
+    res.json({ qrToken: profile.qrToken });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "Failed to fetch QR token" });
+  }
+});
+
+// ---------- PUBLIC: Verify driver by QR token ----------
+app.get("/verify/driver/:token", async (req, res) => {
+  try {
+    const token = req.params.token;
+    const profile = await prisma.driverProfile.findFirst({
+      where: { qrToken: token },
+      include: { user: { select: { id: true, fullName: true, email: true, phone: true } } },
+    });
+    if (!profile) return res.status(404).json({ ok: false, message: "Invalid token" });
+
+    res.json({
+      ok: true,
+      driverId: profile.userId,
+      driverIdNo: profile.driverIdNo,
+      fullName: profile.user.fullName,
+      busNo: profile.busNo,
+      plate: profile.vehiclePlate,
+      vehicleType: profile.vehicleType,
+      route: profile.route,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
 // Convenience: who am I
 app.get("/me", requireAuth, async (req, res) => {
   const me = await prisma.user.findUnique({
