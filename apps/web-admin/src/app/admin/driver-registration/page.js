@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import DriverQRModal from "../../../components/DriverQRModal"; // keep this path
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -30,9 +31,11 @@ export default function DriverRegistrationPage() {
     route: "",
   });
 
-  const [msg, setMsg] = useState("");
-  const [created, setCreated] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  // QR modal state
+  const [qrOpen, setQrOpen] = useState(false);
+  const [qrData, setQrData] = useState(null);
 
   function setField(k, v) {
     setForm((f) => ({ ...f, [k]: v }));
@@ -56,8 +59,6 @@ export default function DriverRegistrationPage() {
 
   async function createDriver(e) {
     e.preventDefault();
-    setMsg("");
-    setCreated(null);
 
     const token = getToken();
     if (!token) {
@@ -88,11 +89,23 @@ export default function DriverRegistrationPage() {
         throw new Error(data?.message || `Request failed (HTTP ${res.status})`);
       }
 
-      setCreated(data);
-      setMsg("✅ Driver created (default password: driver123)");
+      // Prepare QR data and open modal immediately
+      const u = data?.user || {};
+      const dp = u?.driverProfile || {};
+      setQrData({
+        token: dp.qrToken,
+        fullName: u.fullName,
+        driverIdNo: dp.driverIdNo,
+        busNo: dp.busNo,
+        plate: dp.vehiclePlate,
+        vehicleType: dp.vehicleType === "AIRCON" ? "Ceres Bus (AC)" : "Ceres Bus Non AC",
+      });
+      setQrOpen(true);
+
       resetForm();
     } catch (err) {
-      setMsg("❌ " + (err instanceof Error ? err.message : String(err)));
+      // Optional: show a simple alert on errors since toast was removed
+      alert(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
     }
@@ -110,7 +123,7 @@ export default function DriverRegistrationPage() {
         </p>
       </header>
 
-      {/* Tabs (clickable + route-aware) */}
+      {/* Tabs */}
       <div className="flex gap-2">
         <Link
           href="/admin/driver-registration/informations"
@@ -208,22 +221,10 @@ export default function DriverRegistrationPage() {
             </button>
           </div>
         </form>
-
-        {/* Status / Result */}
-        {msg && (
-          <p className="mt-4 rounded-md border border-[#C7D8E6] bg-[#E9F1FA] px-3 py-2 text-sm text-[#0B1526]">
-            {msg}
-          </p>
-        )}
-        {created && (
-          <div className="mt-4 rounded-xl border border-[#C7D8E6] bg-[#F7FBFF] p-4 overflow-auto">
-            <h4 className="mb-2 font-semibold text-[#0B1526]">Driver Created</h4>
-            <pre className="whitespace-pre-wrap text-xs text-[#405266]">
-              {JSON.stringify(created, null, 2)}
-            </pre>
-          </div>
-        )}
       </div>
+
+      {/* QR Modal */}
+      <DriverQRModal open={qrOpen} onClose={() => setQrOpen(false)} data={qrData} />
     </section>
   );
 }
