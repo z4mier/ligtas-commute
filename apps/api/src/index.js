@@ -1,3 +1,4 @@
+// index.js
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -75,13 +76,18 @@ app.post("/auth/login", async (req, res) => {
     });
     const { email, password } = schema.parse(req.body);
 
-    // Prefer findUnique if email is unique in schema
-    const user = await prisma.user.findUnique({ where: { email } });
+    const key = email.toLowerCase().trim(); // ✅ normalize email
+    const user = await prisma.user.findUnique({ where: { email: key } });
     if (!user || !user.password)
       return res.status(401).json({ message: "Invalid credentials" });
 
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(401).json({ message: "Invalid credentials" });
+
+    // If you require commuter verification, uncomment:
+    // if (user.role === "COMMUTER" && !user.isVerified) {
+    //   return res.status(403).json({ message: "Account not verified" });
+    // }
 
     res.json({
       token: sign(user),
@@ -91,7 +97,7 @@ app.post("/auth/login", async (req, res) => {
   } catch (e) {
     if (e instanceof z.ZodError)
       return res.status(400).json({ message: "Invalid input" });
-    console.error(e);
+    console.error("LOGIN ERROR:", e);
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -104,23 +110,42 @@ app.post("/auth/register", async (req, res) => {
       email: z.string().email(),
       phone: z.string().min(6),
       password: z.string().min(6),
-      role: z.enum(["COMMUTER", "DRIVER"]).optional(), // allow DRIVER only if you want
+      role: z.enum(["COMMUTER", "DRIVER"]).optional(),
     });
     const { fullName, email, phone, password, role } = schema.parse(req.body);
 
-    const exists = await prisma.user.findUnique({ where: { email } });
-    if (exists)
-      return res.status(409).json({ message: "Email already registered" });
+    const key = email.toLowerCase().trim(); // ✅ normalize
+
+    // Check duplicates by email OR phone (safer across messy data)
+    const dupe = await prisma.user.findFirst({
+      where: { OR: [{ email: key }, { phone }] },
+      select: { id: true },
+    });
+    if (dupe)
+      return res
+        .status(409)
+        .json({ message: "Email or phone already registered" });
 
     const hash = await bcrypt.hash(password, 12);
+
+    // Safe defaults (tune to your schema)
+    const baseData = {
+      fullName,
+      email: key,
+      phone,
+      password: hash,
+      role: role ?? "COMMUTER",
+      mustChangePassword: false,
+      // If your schema has these fields, keep them; otherwise remove them:
+      status: "ACTIVE", // or "PENDING" if you enforce verification
+      isVerified: true, // set to false if you implement OTP
+    };
+
     const user = await prisma.user.create({
       data: {
-        fullName,
-        email,
-        phone,
-        password: hash,
-        role: role ?? "COMMUTER",
-        mustChangePassword: false,
+        ...baseData,
+        // If you have a commuterProfile(points NOT NULL), uncomment below:
+        // commuterProfile: { create: { points: 0 } },
       },
       select: { id: true, fullName: true, email: true, role: true },
     });
@@ -129,9 +154,9 @@ app.post("/auth/register", async (req, res) => {
   } catch (e) {
     if (e instanceof z.ZodError)
       return res.status(400).json({ message: "Invalid input" });
-    if (e && e.code === "P2002")
+    if (e?.code === "P2002")
       return res.status(409).json({ message: "Email already registered" });
-    console.error("register error:", e);
+    console.error("REGISTER ERROR:", e);
     return res.status(500).json({ message: "Server error" });
   }
 });
@@ -160,15 +185,19 @@ app.post("/admin/create-driver", requireAuth, requireAdmin, async (req, res) => 
 
     const passwordHash = await bcrypt.hash("driver123", 12);
     const qrToken = cryptoRandom();
+    const key = input.email.toLowerCase().trim(); // ✅ normalize
 
     const user = await prisma.user.create({
       data: {
         fullName: input.fullName,
-        email: input.email,
+        email: key,
         phone: input.phone,
         role: "DRIVER",
         password: passwordHash,
         mustChangePassword: true,
+        // if these exist in schema:
+        status: "ACTIVE",
+        isVerified: true,
         driverProfile: {
           create: {
             licenseNo: input.licenseNo,
@@ -195,7 +224,7 @@ app.post("/admin/create-driver", requireAuth, requireAdmin, async (req, res) => 
       return res
         .status(400)
         .json({ message: e.errors.map((x) => x.message).join(", ") });
-    if (e && e.code === "P2002") {
+    if (e?.code === "P2002") {
       const fields = Array.isArray(e?.meta?.target)
         ? e.meta.target.join(", ")
         : "field";
@@ -207,7 +236,7 @@ app.post("/admin/create-driver", requireAuth, requireAdmin, async (req, res) => 
 });
 
 // ---------- ADMIN: Get All Drivers ----------
-app.get("/admin/drivers", requireAuth, requireAdmin, async (req, res) => {
+app.get("/admin/drivers", requireAuth, requireAdmin, async (_req, res) => {
   try {
     const drivers = await prisma.user.findMany({
       where: { role: "DRIVER" },

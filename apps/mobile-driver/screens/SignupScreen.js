@@ -5,8 +5,7 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import { useFonts, Poppins_400Regular, Poppins_600SemiBold, Poppins_700Bold } from "@expo-google-fonts/poppins";
-
-const API_URL = "http://192.168.125.171:4000";
+import { API_URL } from "../constants/config";
 
 export default function SignupScreen({ navigation }) {
   const [fontsLoaded] = useFonts({
@@ -33,10 +32,17 @@ export default function SignupScreen({ navigation }) {
       const res = await fetch(`${API_URL}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fullName, email, phone, password, role: "COMMUTER" }),
+        body: JSON.stringify({
+          fullName,
+          email: email.trim().toLowerCase(),
+          phone,
+          password,
+          role: "COMMUTER",
+        }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.message || "Registration failed");
+
       Alert.alert("Success", "Account created. Please sign in.", [
         { text: "OK", onPress: () => navigation.replace("Login") },
       ]);

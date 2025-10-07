@@ -12,6 +12,7 @@ import {
   useWindowDimensions,
   StyleSheet,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import {
   useFonts,
@@ -19,8 +20,7 @@ import {
   Poppins_600SemiBold,
   Poppins_700Bold,
 } from "@expo-google-fonts/poppins";
-
-const API_URL = "http://192.168.125.171:4000";
+import { API_URL } from "../constants/config";
 
 export default function LoginScreen({ navigation }) {
   const { width } = useWindowDimensions();
@@ -44,22 +44,30 @@ export default function LoginScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
 
   async function handleLogin() {
-    if (!email || !password) {
+    const e = email.trim().toLowerCase();
+    const p = password;
+
+    if (!e || !p) {
       return Alert.alert("Missing fields", "Please enter your email and password.");
     }
+
     try {
       setLoading(true);
       const res = await fetch(`${API_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: e, password: p }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.message || "Login failed");
 
+      // ✅ persist token for later requests (Settings, /users/me, etc.)
+      await AsyncStorage.setItem("token", data.token);
+
+      // Route by role
       if (data.role === "DRIVER") navigation.replace("DriverDashboard");
       else if (data.role === "COMMUTER") navigation.replace("CommuterDashboard");
-      else Alert.alert("Login", "Logged in, but dashboard not configured for this role.");
+      else Alert.alert("Login", "Logged in, but dashboard is not configured for this role.");
     } catch (err) {
       Alert.alert("Login Failed", err.message);
     } finally {
