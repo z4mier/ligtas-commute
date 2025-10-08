@@ -13,8 +13,8 @@ import {
   Platform,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { API_URL } from "../constants/config";
 
-const API_URL = "http://192.168.125.171:4000";
 const RESEND_SECONDS = 60;
 
 export default function OtpVerifyScreen({ route, navigation }) {
@@ -23,9 +23,14 @@ export default function OtpVerifyScreen({ route, navigation }) {
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [remaining, setRemaining] = useState(RESEND_SECONDS);
-  const [success, setSuccess] = useState(false);
+
+  // screens
   const [showTerms, setShowTerms] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+
+  // terms checkbox
   const [checked, setChecked] = useState(false);
+
   const timerRef = useRef(null);
 
   useEffect(() => {
@@ -53,6 +58,7 @@ export default function OtpVerifyScreen({ route, navigation }) {
     return `${m}:${s}`;
   }
 
+  // Verify OTP -> open Terms modal (not success yet)
   async function verify() {
     if (!code.trim() || code.trim().length !== 6) {
       return Alert.alert("Invalid code", "Enter the 6-digit code.");
@@ -66,8 +72,9 @@ export default function OtpVerifyScreen({ route, navigation }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.message || "Verification failed");
-      setSuccess(true);
-      setTimeout(() => setShowTerms(true), 1800);
+
+      // ✅ Show terms first
+      setShowTerms(true);
     } catch (e) {
       Alert.alert("Error", e.message);
     } finally {
@@ -75,6 +82,7 @@ export default function OtpVerifyScreen({ route, navigation }) {
     }
   }
 
+  // Resend OTP
   async function resend() {
     if (remaining > 0) return;
     try {
@@ -85,20 +93,24 @@ export default function OtpVerifyScreen({ route, navigation }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.message || "Failed to resend");
+
+      Alert.alert("OTP Sent", "A new code has been sent. Check your terminal (for testing).");
       startCountdown();
     } catch (e) {
       Alert.alert("Error", e.message);
     }
   }
 
-  // 🟦 Terms & Privacy (dark theme)
+  // ====== Terms & Privacy (dark modal-like screen) ======
   if (showTerms) {
     const handleOk = () => {
       if (!checked) {
         Alert.alert("Please accept", "You must accept the Terms and Privacy Policy first.");
         return;
       }
-      navigation.replace("Login");
+      // Close terms -> show success screen
+      setShowTerms(false);
+      setShowSuccess(true);
     };
 
     return (
@@ -114,49 +126,39 @@ export default function OtpVerifyScreen({ route, navigation }) {
             </Text>
 
             <Text style={s.section}>
-              1. Acceptance of Terms{"\n"}
-              By using this app, you acknowledge that you have read and agreed to these Terms
-              and Conditions.
+              1. Acceptance of Terms{"\n"}By using this app, you acknowledge that you have read
+              and agreed to these Terms and Conditions.
             </Text>
-
             <Text style={s.section}>
-              2. User Registration{"\n"}
-              Some features require an account. Keep your information secure and up to date.
+              2. User Registration{"\n"}Some features require an account. Keep your information
+              secure and up to date.
             </Text>
-
             <Text style={s.section}>
-              3. Location & GPS Use{"\n"}
-              This app uses GPS and mobile data to track trips and send alerts.
+              3. Location & GPS Use{"\n"}This app uses GPS and mobile data to track trips and
+              send alerts.
             </Text>
-
             <Text style={s.section}>
-              4. QR Code Verification{"\n"}
-              Always confirm the driver and vehicle identity before boarding.
+              4. QR Code Verification{"\n"}Always confirm the driver and vehicle identity before
+              boarding.
             </Text>
-
             <Text style={s.section}>
-              5. Safety & Emergency Features{"\n"}
-              You may use the emergency alert feature when you feel unsafe. Misuse may lead
-              to suspension.
+              5. Safety & Emergency Features{"\n"}You may use the emergency alert feature when
+              you feel unsafe. Misuse may lead to suspension.
             </Text>
-
             <Text style={s.section}>
-              6. Feedback & Reports{"\n"}
-              You can submit feedback about your experience. Please be respectful and honest.
+              6. Feedback & Reports{"\n"}You can submit feedback about your experience. Please
+              be respectful and honest.
             </Text>
-
             <Text style={s.section}>
-              7. Privacy Policy{"\n"}
-              We collect your name, contact, GPS data, and feedback to improve the service.
-              Your data is secure and never shared with advertisers.
+              7. Privacy Policy{"\n"}We collect your name, contact, GPS data, and feedback to
+              improve the service. Your data is secure and never shared with advertisers.
             </Text>
-
             <Text style={s.section}>
-              8. Changes to Terms{"\n"}
-              These terms may change at any time. Continued use means you accept the updates.
+              8. Changes to Terms{"\n"}These terms may change at any time. Continued use means
+              you accept the updates.
             </Text>
 
-            {/* Checkbox Section */}
+            {/* Checkbox */}
             <TouchableOpacity
               style={s.checkboxRow}
               onPress={() => setChecked(!checked)}
@@ -172,7 +174,7 @@ export default function OtpVerifyScreen({ route, navigation }) {
               </Text>
             </TouchableOpacity>
 
-            {/* Centered OK Button */}
+            {/* OK */}
             <View style={s.okButtonWrap}>
               <TouchableOpacity
                 style={[s.primaryBtn, !checked && { opacity: 0.5 }]}
@@ -188,22 +190,63 @@ export default function OtpVerifyScreen({ route, navigation }) {
     );
   }
 
-  // ✅ Success screen
-  if (success) {
+  // ====== Success screen (with Next -> CommuterDashboard) ======
+  if (showSuccess) {
     return (
       <SafeAreaView style={s.screen}>
-        <View style={s.successContainer}>
-          <View style={s.iconCircle}>
-            <MaterialCommunityIcons name="check-circle" size={100} color="#4CC3FF" />
-          </View>
-          <Text style={s.successTitle}>Verified Successfully!</Text>
-          <Text style={s.successSub}>Redirecting to Terms and Privacy...</Text>
+        {/* simple hero top arc */}
+        <View style={{ width: "100%", height: 140, overflow: "hidden", marginBottom: 24 }}>
+          <View
+            style={{
+              position: "absolute",
+              left: -80,
+              right: -80,
+              top: -120,
+              height: 260,
+              borderBottomLeftRadius: 240,
+              borderBottomRightRadius: 240,
+              backgroundColor: "#2078A8",
+            }}
+          />
+        </View>
+
+        <View style={{ alignItems: "center", paddingHorizontal: 24 }}>
+          <MaterialCommunityIcons name="bus" size={56} color="#FFFFFF" style={{ marginTop: -120 }} />
+          <Text style={{ color: "#fff", fontSize: 28, fontWeight: "800", marginTop: 6 }}>
+            LigtasCommute
+          </Text>
+          <Text style={{ color: "rgba(255,255,255,0.9)", marginTop: 4 }}>
+            Safety that rides with you
+          </Text>
+
+          <Text style={{ color: "#4CC3FF", fontSize: 18, fontWeight: "800", marginTop: 38 }}>
+            Successful!
+          </Text>
+          <Text
+            style={{
+              color: "rgba(255,255,255,0.85)",
+              textAlign: "center",
+              marginTop: 8,
+              lineHeight: 20,
+            }}
+          >
+            you have successfully created a LigtasCommute{"\n"}
+            account! Welcome to LigtasCommute!
+          </Text>
+
+          <TouchableOpacity
+            onPress={() => navigation.replace("CommuterDashboard")}
+            style={[s.primaryBtn, { marginTop: 28, width: 220 }]}
+            activeOpacity={0.9}
+          >
+            <Text style={s.primaryBtnText}>Next</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
 
-  // ✅ Verify screen
+  // ====== Verify screen ======
   return (
     <SafeAreaView style={s.screen}>
       <KeyboardAvoidingView
@@ -256,7 +299,7 @@ export default function OtpVerifyScreen({ route, navigation }) {
 // ---- Styles ----
 const COLORS = {
   bg: "#0F172A",
-  brand: "#4CC3FF",
+  brand: "#2078A8",
   white: "#FFFFFF",
   border: "#2A3B52",
 };
@@ -327,23 +370,6 @@ const s = StyleSheet.create({
     marginTop: 10,
     fontSize: 14,
     textAlign: "center",
-  },
-  successContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    flex: 1,
-    paddingHorizontal: 30,
-  },
-  successTitle: {
-    color: "#4CC3FF",
-    fontWeight: "800",
-    fontSize: 24,
-    marginTop: 10,
-  },
-  successSub: {
-    color: "rgba(255,255,255,0.7)",
-    textAlign: "center",
-    marginTop: 8,
   },
   termsScroll: {
     padding: 24,

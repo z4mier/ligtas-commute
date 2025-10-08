@@ -1,4 +1,3 @@
-// index.js
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -24,10 +23,7 @@ const sign = (u) =>
   });
 
 function cryptoRandom() {
-  return (
-    Math.random().toString(36).slice(2) +
-    Math.random().toString(36).slice(2)
-  );
+  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
 }
 
 function requireAuth(req, res, next) {
@@ -48,26 +44,35 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// ---------- simple in-memory OTP store ----------
+/** otpStore[email] = { code, expiresAt, lastSentAt } */
+const otpStore = new Map();
+const OTP_TTL_MS = 5 * 60 * 1000;          // 5 minutes
+const OTP_RESEND_COOLDOWN_MS = 30 * 1000;  // 30 seconds
+
+function generateOtp() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+function setOtp(email) {
+  const code = generateOtp();
+  const now = Date.now();
+  otpStore.set(email, { code, expiresAt: now + OTP_TTL_MS, lastSentAt: now });
+  return code;
+}
+
 // ---------- routes ----------
 app.get("/", (_, res) => res.redirect("/health"));
 
-// health check
 app.get("/health", async (_, res) => {
   try {
-    await prisma.$queryRaw`SELECT 1`;
-    res.json({
-      ok: true,
-      env: { port: process.env.PORT || 4000, database: true },
-    });
+    await prisma.user.count();
+    res.json({ ok: true, env: { port: process.env.PORT || 4000, database: true } });
   } catch {
-    res.json({
-      ok: false,
-      env: { port: process.env.PORT || 4000, database: false },
-    });
+    res.json({ ok: false, env: { port: process.env.PORT || 4000, database: false } });
   }
 });
 
-// ---------- AUTH ----------
+// ---------- AUTH: Login ----------
 app.post("/auth/login", async (req, res) => {
   try {
     const schema = z.object({
@@ -76,116 +81,153 @@ app.post("/auth/login", async (req, res) => {
     });
     const { email, password } = schema.parse(req.body);
 
-    const key = email.toLowerCase().trim(); // ✅ normalize email
+    const key = email.toLowerCase().trim();
     const user = await prisma.user.findUnique({ where: { email: key } });
-    if (!user || !user.password)
-      return res.status(401).json({ message: "Invalid credentials" });
+    if (!user || !user.password) return res.status(401).json({ message: "Invalid credentials" });
 
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(401).json({ message: "Invalid credentials" });
 
-    // If you require commuter verification, uncomment:
-    // if (user.role === "COMMUTER" && !user.isVerified) {
-    //   return res.status(403).json({ message: "Account not verified" });
-    // }
-
-    res.json({
-      token: sign(user),
-      role: user.role,
-      mustChangePassword: user.mustChangePassword || false,
-    });
+    res.json({ token: sign(user), role: user.role, mustChangePassword: user.mustChangePassword || false });
   } catch (e) {
-    if (e instanceof z.ZodError)
-      return res.status(400).json({ message: "Invalid input" });
+    if (e instanceof z.ZodError) return res.status(400).json({ message: "Invalid input" });
     console.error("LOGIN ERROR:", e);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// Public: Register (defaults to COMMUTER)
+// ---------- AUTH: Register (public commuter signup) ----------
 app.post("/auth/register", async (req, res) => {
   try {
     const schema = z.object({
-      fullName: z.string().min(1),
-      email: z.string().email(),
-      phone: z.string().min(6),
-      password: z.string().min(6),
+      fullName: z.string().min(1, "Full name required"),
+      email: z.string().email("Valid email required"),
+      phone: z.string().min(6, "Phone required"),
+      password: z.string().min(6, "Password must be at least 6 chars"),
       role: z.enum(["COMMUTER", "DRIVER"]).optional(),
     });
+
     const { fullName, email, phone, password, role } = schema.parse(req.body);
+    const key = email.toLowerCase().trim();
 
-    const key = email.toLowerCase().trim(); // ✅ normalize
-
-    // Check duplicates by email OR phone (safer across messy data)
+    // prevent duplicates
     const dupe = await prisma.user.findFirst({
       where: { OR: [{ email: key }, { phone }] },
       select: { id: true },
     });
-    if (dupe)
-      return res
-        .status(409)
-        .json({ message: "Email or phone already registered" });
+    if (dupe) return res.status(409).json({ message: "Email or phone already registered" });
 
     const hash = await bcrypt.hash(password, 12);
 
-    // Safe defaults (tune to your schema)
-    const baseData = {
-      fullName,
-      email: key,
-      phone,
-      password: hash,
-      role: role ?? "COMMUTER",
-      mustChangePassword: false,
-      // If your schema has these fields, keep them; otherwise remove them:
-      status: "ACTIVE", // or "PENDING" if you enforce verification
-      isVerified: true, // set to false if you implement OTP
-    };
-
     const user = await prisma.user.create({
       data: {
-        ...baseData,
-        // If you have a commuterProfile(points NOT NULL), uncomment below:
-        // commuterProfile: { create: { points: 0 } },
+        fullName,
+        email: key,
+        phone,
+        password: hash,
+        role: role ?? "COMMUTER",
+        mustChangePassword: false,
+        status: "active",
       },
       select: { id: true, fullName: true, email: true, role: true },
     });
 
+    // ✅ Only show OTP (no registered log)
+    const code = setOtp(key);
+    console.log(`🔢 OTP for ${key}: ${code}`);
+
     return res.status(201).json({ message: "Account created", user });
   } catch (e) {
-    if (e instanceof z.ZodError)
-      return res.status(400).json({ message: "Invalid input" });
-    if (e?.code === "P2002")
+    if (e instanceof z.ZodError) {
+      return res.status(400).json({ message: e.errors[0]?.message || "Invalid input" });
+    }
+    if (e?.code === "P2002") {
       return res.status(409).json({ message: "Email already registered" });
+    }
     console.error("REGISTER ERROR:", e);
     return res.status(500).json({ message: "Server error" });
   }
 });
 
-// ---------- ADMIN: Create Driver (default password: driver123) ----------
+// ---------- OTP: request (resend) ----------
+app.post("/auth/request-otp", async (req, res) => {
+  try {
+    const schema = z.object({ email: z.string().email() });
+    const { email } = schema.parse(req.body);
+    const key = email.toLowerCase().trim();
+
+    // cooldown
+    const existing = otpStore.get(key);
+    const now = Date.now();
+    if (existing && now - existing.lastSentAt < OTP_RESEND_COOLDOWN_MS) {
+      const secs = Math.ceil((OTP_RESEND_COOLDOWN_MS - (now - existing.lastSentAt)) / 1000);
+      return res.status(429).json({ message: `Please wait ${secs}s before requesting again` });
+    }
+
+    const code = setOtp(key);
+    console.log(`🔁 Resent OTP for ${key}: ${code}`);
+    return res.json({ message: "OTP sent" });
+  } catch (e) {
+    if (e instanceof z.ZodError) return res.status(400).json({ message: "Invalid email" });
+    console.error("REQUEST OTP ERROR:", e);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+// ---------- OTP: verify ----------
+app.post("/auth/verify-otp", (req, res) => {
+  try {
+    const schema = z.object({
+      email: z.string().email(),
+      code: z.string().min(4).max(6),
+    });
+    const { email, code } = schema.parse(req.body);
+    const key = email.toLowerCase().trim();
+
+    const record = otpStore.get(key);
+    if (!record) return res.status(400).json({ message: "No OTP found. Please request again." });
+    if (Date.now() > record.expiresAt) {
+      otpStore.delete(key);
+      return res.status(400).json({ message: "OTP expired. Request a new one." });
+    }
+    if (record.code !== code.trim()) {
+      return res.status(400).json({ message: "Invalid code" });
+    }
+
+    otpStore.delete(key);
+    console.log(`✅ Verified OTP for ${key}`);
+    return res.json({ message: "Verified successfully" });
+  } catch (e) {
+    if (e instanceof z.ZodError) return res.status(400).json({ message: "Invalid input" });
+    console.error("VERIFY OTP ERROR:", e);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+// ---------- ADMIN: Create Driver ----------
 app.post("/admin/create-driver", requireAuth, requireAdmin, async (req, res) => {
   const schema = z.object({
-    fullName: z.string().min(1, "Full name is required"),
-    email: z.string().email("Invalid email"),
-    phone: z.string().min(6, "Phone is too short"),
-    licenseNo: z.string().min(1, "License No is required"),
-    birthDate: z.string().min(1, "Birth date is required"),
-    address: z.string().min(1, "Address is required"),
+    fullName: z.string().min(1),
+    email: z.string().email(),
+    phone: z.string().min(6),
+    licenseNo: z.string().min(1),
+    birthDate: z.string().min(1),
+    address: z.string().min(1),
     vehicleType: z.enum(["AIRCON", "NON_AIRCON"]),
-    busNo: z.string().min(1, "Bus number is required"),
-    vehiclePlate: z.string().min(1, "Plate number is required"),
-    driverIdNo: z.string().min(1, "Driver ID No is required"),
-    route: z.string().min(1, "Route is required"),
+    busNo: z.string().min(1),
+    vehiclePlate: z.string().min(1),
+    driverIdNo: z.string().min(1),
+    route: z.string().min(1),
   });
 
   try {
     const input = schema.parse(req.body);
     const birthDate = new Date(input.birthDate);
-    if (isNaN(birthDate.getTime()))
-      return res.status(400).json({ message: "Invalid birth date" });
+    if (isNaN(birthDate.getTime())) return res.status(400).json({ message: "Invalid birth date" });
 
     const passwordHash = await bcrypt.hash("driver123", 12);
     const qrToken = cryptoRandom();
-    const key = input.email.toLowerCase().trim(); // ✅ normalize
+    const key = input.email.toLowerCase().trim();
 
     const user = await prisma.user.create({
       data: {
@@ -195,9 +237,7 @@ app.post("/admin/create-driver", requireAuth, requireAdmin, async (req, res) => 
         role: "DRIVER",
         password: passwordHash,
         mustChangePassword: true,
-        // if these exist in schema:
-        status: "ACTIVE",
-        isVerified: true,
+        status: "active",
         driverProfile: {
           create: {
             licenseNo: input.licenseNo,
@@ -215,19 +255,12 @@ app.post("/admin/create-driver", requireAuth, requireAdmin, async (req, res) => 
       include: { driverProfile: true },
     });
 
-    return res.json({
-      message: "Driver account created (default password: driver123)",
-      user,
-    });
+    return res.json({ message: "Driver account created (default password: driver123)", user });
   } catch (e) {
     if (e instanceof z.ZodError)
-      return res
-        .status(400)
-        .json({ message: e.errors.map((x) => x.message).join(", ") });
+      return res.status(400).json({ message: e.errors.map((x) => x.message).join(", ") });
     if (e?.code === "P2002") {
-      const fields = Array.isArray(e?.meta?.target)
-        ? e.meta.target.join(", ")
-        : "field";
+      const fields = Array.isArray(e?.meta?.target) ? e.meta.target.join(", ") : "field";
       return res.status(409).json({ message: `Duplicate ${fields}` });
     }
     console.error("create-driver error:", e);
@@ -253,12 +286,11 @@ app.get("/admin/drivers", requireAuth, requireAdmin, async (_req, res) => {
 // ---------- ADMIN: Delete Driver ----------
 app.delete("/admin/drivers/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const id = Number(req.params.id);
-    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
-
-    await prisma.driverProfile.deleteMany({ where: { userId: id } });
+    const id = String(req.params.id);
+    try {
+      await prisma.driverProfile.deleteMany({ where: { userId: id } });
+    } catch {}
     await prisma.user.delete({ where: { id } });
-
     res.json({ message: "Driver deleted successfully" });
   } catch (e) {
     console.error(e);
@@ -266,126 +298,89 @@ app.delete("/admin/drivers/:id", requireAuth, requireAdmin, async (req, res) => 
   }
 });
 
-// ---------- ADMIN: Update Driver Status (PATCH) ----------
-app.patch("/admin/drivers/:id", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const { status } = req.body || {};
-    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
-    if (!["active", "inactive"].includes(String(status)))
-      return res.status(400).json({ message: "Invalid status" });
-
-    const updated = await prisma.driverProfile.update({
-      where: { userId: id },
-      data: { status },
-      include: { user: true },
-    });
-
-    return res.json({ message: "Status updated", status: updated.status });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ message: "Failed to update status" });
-  }
-});
-
-// ---------- ADMIN: Activate / Deactivate (POST shortcuts) ----------
-app.post("/admin/drivers/:id/activate", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
-
-    const updated = await prisma.driverProfile.update({
-      where: { userId: id },
-      data: { status: "active" },
-    });
-
-    return res.json({ message: "Driver activated", status: updated.status });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ message: "Failed to activate" });
-  }
-});
-
-app.post("/admin/drivers/:id/deactivate", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
-
-    const updated = await prisma.driverProfile.update({
-      where: { userId: id },
-      data: { status: "inactive" },
-    });
-
-    return res.json({ message: "Driver deactivated", status: updated.status });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ message: "Failed to deactivate" });
-  }
-});
-
-// ---------- ADMIN: Get QR token for a driver ----------
-app.get("/admin/drivers/:id/qr-token", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
-
-    const profile = await prisma.driverProfile.findUnique({
-      where: { userId: id },
-      select: { qrToken: true },
-    });
-    if (!profile) return res.status(404).json({ message: "Driver not found" });
-
-    res.json({ qrToken: profile.qrToken });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: "Failed to fetch QR token" });
-  }
-});
-
-// ---------- PUBLIC: Verify driver by QR token ----------
-app.get("/verify/driver/:token", async (req, res) => {
-  try {
-    const token = req.params.token;
-    const profile = await prisma.driverProfile.findFirst({
-      where: { qrToken: token },
-      include: { user: { select: { id: true, fullName: true, email: true, phone: true } } },
-    });
-    if (!profile) return res.status(404).json({ ok: false, message: "Invalid token" });
-
-    res.json({
-      ok: true,
-      driverId: profile.userId,
-      driverIdNo: profile.driverIdNo,
-      fullName: profile.user.fullName,
-      busNo: profile.busNo,
-      plate: profile.vehiclePlate,
-      vehicleType: profile.vehicleType,
-      route: profile.route,
-    });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ ok: false, message: "Server error" });
-  }
-});
-
-// Convenience: who am I
+// ---------- Convenience: Who am I ----------
 app.get("/me", requireAuth, async (req, res) => {
   const me = await prisma.user.findUnique({
     where: { id: req.user.sub },
-    select: {
-      id: true,
-      fullName: true,
-      email: true,
-      role: true,
-      mustChangePassword: true,
-    },
+    include: { commuterProfile: true },
   });
-  res.json(me);
+  if (!me) return res.status(404).json({ message: "Not found" });
+
+  res.json({
+    id: me.id,
+    fullName: me.fullName,
+    email: me.email,
+    phone: me.phone ?? null,
+    role: me.role,
+    mustChangePassword: me.mustChangePassword || false,
+    createdAt: me.createdAt,
+    points: me.commuterProfile?.points ?? 0,
+    language: me.language ?? "en",
+  });
 });
+
+// ---------- User self-update ----------
+app.patch("/users/me", requireAuth, async (req, res) => {
+  try {
+    const schema = z.object({
+      fullName: z.string().min(1).optional(),
+      email: z.string().email().optional(),
+      phone: z.string().min(6).optional(),
+      points: z.number().int().min(0).optional(),
+    });
+    const input = schema.parse(req.body);
+
+    if (input.email) input.email = input.email.toLowerCase().trim();
+
+    const user = await prisma.user.update({
+      where: { id: req.user.sub },
+      data: {
+        fullName: input.fullName,
+        email: input.email,
+        phone: input.phone,
+        ...(typeof input.points === "number" ? { points: input.points } : {}),
+      },
+      select: { id: true, fullName: true, email: true, phone: true },
+    });
+
+    res.json(user);
+  } catch (e) {
+    if (e instanceof z.ZodError) return res.status(400).json({ message: "Invalid input" });
+    if (e?.code === "P2002") return res.status(409).json({ message: "Email already in use" });
+    console.error("UPDATE ME ERROR:", e);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// ---------- USERS: Self Profile ----------
+app.get("/users/me", requireAuth, async (req, res) => {
+  try {
+    const me = await prisma.user.findUnique({
+      where: { id: req.user.sub },
+      include: { commuterProfile: true },
+    });
+    if (!me) return res.status(404).json({ message: "User not found" });
+
+    res.json({
+      id: me.id,
+      fullName: me.fullName,
+      email: me.email,
+      phone: me.phone ?? "",
+      address: me.address ?? "",
+      createdAt: me.createdAt,
+      points: me.commuterProfile?.points ?? 0,
+      language: me.language ?? "en",
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "Failed to fetch profile" });
+  }
+});
+
 
 // ---------- start ----------
 const PORT = process.env.PORT || 4000;
-const HOST = process.env.HOST || "0.0.0.0"; // bind to LAN for mobile testing
+const HOST = process.env.HOST || "0.0.0.0";
 const server = app.listen(PORT, HOST, () =>
   console.log(`✅ API running on http://${HOST}:${PORT}`)
 );

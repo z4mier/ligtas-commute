@@ -59,11 +59,25 @@ const authHeaders = async (extra = {}) => {
 
 async function api(path, opts = {}) {
   const headers = await authHeaders(opts.headers || {});
-  const res = await fetch(`${API_URL}${path}`, { ...opts, headers }).catch((e) => {
-    // network-level failure (timeout, no route to host, etc.)
+  const res = await fetch(`${API_URL}${path}`, { ...opts, headers }).catch(() => {
     throw new Error("Network error. Please check your connection.");
   });
   return res;
+}
+
+// --- Password validation helpers ---
+const PW_RULES = [
+  { key: "len",   label: "At least 8 characters", test: (s) => s.length >= 8 },
+  { key: "upper", label: "One uppercase letter",  test: (s) => /[A-Z]/.test(s) },
+  { key: "lower", label: "One lowercase letter",  test: (s) => /[a-z]/.test(s) },
+  { key: "num",   label: "One number",            test: (s) => /\d/.test(s) },
+  // simpler & safe: any non-alphanumeric, non-space counts as a symbol
+  { key: "sym",   label: "One symbol",            test: (s) => /[^A-Za-z0-9\s]/.test(s) },
+  { key: "space", label: "No spaces",             test: (s) => !/\s/.test(s) },
+];
+
+function checkPasswordAgainstRules(pw = "") {
+  return PW_RULES.map((r) => ({ key: r.key, label: r.label, ok: r.test(pw) }));
 }
 
 export default function SettingsScreen({ navigation }) {
@@ -79,39 +93,40 @@ export default function SettingsScreen({ navigation }) {
   const [dark, setDark] = useState(false);
 
   const [loading, setLoading] = useState(true);
+  the
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [redeeming, setRedeeming] = useState(false);
 
   const [showProfile, setShowProfile] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [showPw, setShowPw] = useState(false);
 
   const [form, setForm] = useState({
     fullName: "",
     email: "",
     phone: "",
     address: "",
-    memberSince: "", // string "April 2025"
+    memberSince: "",
   });
 
-  // refetch when screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      fetchUser();
-    }, [])
-  );
+  // change password form
+  const [pwForm, setPwForm] = useState({
+    current: "",
+    next: "",
+    confirm: "",
+  });
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwShow, setPwShow] = useState({ current: false, next: false, confirm: false });
+  const [pwChecklist, setPwChecklist] = useState(checkPasswordAgainstRules(""));
+  const pwAllGood = useMemo(() => pwChecklist.every((r) => r.ok), [pwChecklist]);
 
-  useEffect(() => {
-    fetchUser();
-  }, []);
-
-  // ===== fetch the logged-in user's profile =====
-  async function fetchUser() {
+  // ----- fetch user -----
+  const fetchUser = useCallback(async () => {
     try {
       setLoading(true);
       const token = await AsyncStorage.getItem("token");
       if (!token) {
-        // no token -> go back to login
         navigation?.replace?.("Login");
         return;
       }
@@ -125,22 +140,18 @@ export default function SettingsScreen({ navigation }) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.message || "Failed to load profile");
 
-      // Backend returns: { id, fullName, email, phone, createdAt, points }
       const profile = {
         id: data.id,
         fullName: data.fullName ?? "",
         email: data.email ?? "",
         phone: data.phone ?? "",
-        address: data.address ?? "", // not in backend, harmless
+        address: data.address ?? "",
         createdAt: data.createdAt ?? null,
         points: Number.isFinite(data.points) ? data.points : 0,
         language: data.language ?? "en",
       };
 
-      setUser({
-        ...profile,
-        memberSince: formatMemberSince(profile.createdAt),
-      });
+      setUser({ ...profile, memberSince: formatMemberSince(profile.createdAt) });
       setForm({
         fullName: profile.fullName,
         email: profile.email,
@@ -152,33 +163,31 @@ export default function SettingsScreen({ navigation }) {
       setLang(profile.language);
     } catch (e) {
       Alert.alert("Could not load profile", e.message);
-      setUser({
-        fullName: "",
-        email: "",
-        phone: "",
-        address: "",
-        memberSince: "—",
-      });
-      setForm({
-        fullName: "",
-        email: "",
-        phone: "",
-        address: "",
-        memberSince: "—",
-      });
+      setUser({ fullName: "", email: "", phone: "", address: "", memberSince: "—" });
+      setForm({ fullName: "", email: "", phone: "", address: "", memberSince: "—" });
       setPoints(0);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }
+  }, [navigation]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchUser();
+    }, [fetchUser])
+  );
+
+  useEffect(() => {
+    fetchUser();
+  }, [fetchUser]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchUser();
-  }, []);
+  }, [fetchUser]);
 
-  // ===== modals =====
+  // ===== open/close =====
   function openProfile() {
     if (!user) return;
     setShowProfile(true);
@@ -194,6 +203,11 @@ export default function SettingsScreen({ navigation }) {
     setShowProfile(false);
     setShowEdit(true);
   }
+  function openPw() {
+    setPwForm({ current: "", next: "", confirm: "" });
+    setPwChecklist(checkPasswordAgainstRules(""));
+    setShowPw(true);
+  }
 
   // ===== save profile edits =====
   async function saveProfile() {
@@ -208,7 +222,7 @@ export default function SettingsScreen({ navigation }) {
           fullName: form.fullName.trim(),
           email: form.email.trim().toLowerCase(),
           phone: form.phone?.trim() || "",
-          // address isn't persisted by current backend; safe to send/ignore
+          address: form.address?.trim() || "",
         }),
       });
       if (res.status === 401 || res.status === 403) {
@@ -219,7 +233,6 @@ export default function SettingsScreen({ navigation }) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.message || "Failed to update profile");
 
-      // Merge server response (preferred) or local form
       const next = {
         ...user,
         fullName: data.fullName ?? form.fullName,
@@ -238,7 +251,60 @@ export default function SettingsScreen({ navigation }) {
     }
   }
 
-  // ===== redeem points → set to 0 in DB =====
+  // ===== change password =====
+  async function savePassword() {
+    if (!pwForm.current || !pwForm.next || !pwForm.confirm) {
+      return Alert.alert("Missing fields", "Please fill out all password fields.");
+    }
+
+    const results = checkPasswordAgainstRules(pwForm.next);
+    const missing = results.filter((r) => !r.ok).map((r) => r.label);
+    if (missing.length) {
+      return Alert.alert("New password is too weak", `Please fix the following:\n• ${missing.join("\n• ")}`);
+    }
+
+    if (pwForm.next !== pwForm.confirm) {
+      return Alert.alert("Mismatch", "New password and confirmation do not match.");
+    }
+
+    try {
+      setPwSaving(true);
+      // try primary endpoint
+      let res = await api("/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword: pwForm.current, newPassword: pwForm.next }),
+      });
+      if (res.status === 404) {
+        // fallback to another common path
+        res = await api("/users/me/password", {
+          method: "PATCH",
+          body: JSON.stringify({ currentPassword: pwForm.current, newPassword: pwForm.next }),
+        });
+      }
+      if (res.status === 401 || res.status === 403) {
+        await AsyncStorage.removeItem("token");
+        navigation?.replace?.("Login");
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = (data && (data.message || data.error)) || "Failed to change password";
+        if (/current.*incorrect/i.test(msg)) throw new Error("Current password is incorrect.");
+        throw new Error(msg);
+      }
+
+      setShowPw(false);
+      setPwForm({ current: "", next: "", confirm: "" });
+      setPwChecklist(checkPasswordAgainstRules(""));
+      Alert.alert("Password updated", "Your password has been changed successfully.");
+    } catch (e) {
+      Alert.alert("Change failed", String(e.message || e));
+    } finally {
+      setPwSaving(false);
+    }
+  }
+
+  // ===== rewards =====
   async function redeemPoints() {
     if (points <= 0) return;
     try {
@@ -299,9 +365,6 @@ export default function SettingsScreen({ navigation }) {
     setDark(v);
   }
 
-  function manageCredentials() {
-    Alert.alert("Coming soon", "Manage Username & Password");
-  }
   function openTerms() {
     Alert.alert("Terms & Privacy", "Open Terms & Privacy screen");
   }
@@ -503,14 +566,14 @@ export default function SettingsScreen({ navigation }) {
               </View>
             </View>
 
-            <TouchableOpacity style={s.credBtn} onPress={manageCredentials}>
-              <Text style={s.credBtnTxt}>Manage Username & Password</Text>
+            <TouchableOpacity style={s.credBtn} onPress={openPw}>
+              <Text style={s.credBtnTxt}>Manage Password</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Edit Profile Modal */}
+      {/* Edit Profile Modal — styled per your screenshot */}
       <Modal visible={showEdit} animationType="fade" transparent onRequestClose={() => setShowEdit(false)}>
         <View style={s.modalWrap}>
           <View style={s.modalCard}>
@@ -521,41 +584,42 @@ export default function SettingsScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
-            <View style={{ alignItems: "center", marginTop: 6 }}>
+            <View style={{ alignItems: "center", marginTop: 8 }}>
               <View style={s.avatarLg}>
                 <Text style={s.avatarLgTxt}>{initialsFromName(form.fullName) || "?"}</Text>
               </View>
             </View>
 
-            <View style={s.formGroup}>
-              <Text style={s.label}>Full Name</Text>
-              <TextInput
-                style={s.input}
-                value={form.fullName}
-                onChangeText={(t) => setForm((v) => ({ ...v, fullName: t }))}
-                placeholder="Your name"
-                placeholderTextColor="#9CA3AF"
-              />
-            </View>
+            {/* Name pill */}
+            <TextInput
+              style={s.namePill}
+              value={form.fullName}
+              onChangeText={(t) => setForm((v) => ({ ...v, fullName: t }))}
+              placeholder="Your full name"
+              placeholderTextColor="#9CA3AF"
+            />
 
-            <View style={s.formGroup}>
-              <Text style={s.label}>Email</Text>
-              <TextInput
-                style={s.input}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                value={form.email}
-                onChangeText={(t) => setForm((v) => ({ ...v, email: t }))}
-                placeholder="name@example.com"
-                placeholderTextColor="#9CA3AF"
-              />
-            </View>
+            {/* Personal Information box with icons (like screenshot) */}
+            <View style={s.piBox}>
+              <Text style={s.piTitle}>Personal Information</Text>
 
-            <View style={s.formRow}>
-              <View style={[s.formGroup, { flex: 1, marginRight: 8 }]}>
-                <Text style={s.label}>Phone</Text>
+              <View style={s.iconInputRow}>
+                <MaterialCommunityIcons name="email-outline" size={16} color="#6B7280" />
                 <TextInput
-                  style={s.input}
+                  style={s.iconInput}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  value={form.email}
+                  onChangeText={(t) => setForm((v) => ({ ...v, email: t }))}
+                  placeholder="name@example.com"
+                  placeholderTextColor="#9CA3AF"
+                />
+              </View>
+
+              <View style={s.iconInputRow}>
+                <MaterialCommunityIcons name="phone-outline" size={16} color="#6B7280" />
+                <TextInput
+                  style={s.iconInput}
                   keyboardType="phone-pad"
                   value={form.phone}
                   onChangeText={(t) => setForm((v) => ({ ...v, phone: t }))}
@@ -563,28 +627,144 @@ export default function SettingsScreen({ navigation }) {
                   placeholderTextColor="#9CA3AF"
                 />
               </View>
-              <View style={[s.formGroup, { flex: 1, marginLeft: 8 }]}>
-                <Text style={s.label}>Member Since</Text>
-                <TextInput style={[s.input, { backgroundColor: "#F3F4F6" }]} value={form.memberSince} editable={false} />
+
+              <View style={s.iconInputRow}>
+                <MaterialCommunityIcons name="map-marker-outline" size={16} color="#6B7280" />
+                <TextInput
+                  style={s.iconInput}
+                  value={form.address}
+                  onChangeText={(t) => setForm((v) => ({ ...v, address: t }))}
+                  placeholder="Cebu City, Philippines"
+                  placeholderTextColor="#9CA3AF"
+                />
+              </View>
+
+              <View style={[s.iconInputRow, { backgroundColor: "#F3F4F6" }]}>
+                <MaterialCommunityIcons name="calendar-month-outline" size={16} color="#6B7280" />
+                <TextInput
+                  style={[s.iconInput, { color: "#6B7280" }]}
+                  value={`Member since ${form.memberSince || "—"}`}
+                  editable={false}
+                />
               </View>
             </View>
 
-            <View style={s.formGroup}>
-              <Text style={s.label}>Address</Text>
-              <TextInput
-                style={s.input}
-                value={form.address}
-                onChangeText={(t) => setForm((v) => ({ ...v, address: t }))}
-                placeholder="City, Country"
-                placeholderTextColor="#9CA3AF"
-              />
-            </View>
-
+            {/* Actions */}
             <View style={s.editActions}>
               <TouchableOpacity style={s.saveBtn} onPress={saveProfile} disabled={saving}>
                 {saving ? <ActivityIndicator color="#fff" /> : <Text style={s.saveTxt}>Save</Text>}
               </TouchableOpacity>
               <TouchableOpacity style={s.cancelBtn} onPress={() => setShowEdit(false)}>
+                <Text style={s.cancelTxt}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Manage Password Modal */}
+      <Modal visible={showPw} animationType="fade" transparent onRequestClose={() => setShowPw(false)}>
+        <View style={s.modalWrap}>
+          <View style={s.modalCard}>
+            <View style={s.modalHeader}>
+              <Text style={s.modalTitle}>Change Password</Text>
+              <TouchableOpacity onPress={() => setShowPw(false)}>
+                <MaterialCommunityIcons name="close" size={20} color="#111827" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={s.formGroup}>
+              <Text style={s.label}>Current Password</Text>
+              <View style={s.pwRow}>
+                <TextInput
+                  style={s.pwInput}
+                  secureTextEntry={!pwShow.current}
+                  value={pwForm.current}
+                  onChangeText={(t) => setPwForm((v) => ({ ...v, current: t }))}
+                  placeholder="••••••••"
+                  placeholderTextColor="#9CA3AF"
+                />
+                <TouchableOpacity onPress={() => setPwShow((v) => ({ ...v, current: !v.current }))}>
+                  <MaterialCommunityIcons
+                    name={pwShow.current ? "eye-off-outline" : "eye-outline"}
+                    size={20}
+                    color="#6B7280"
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={s.formGroup}>
+              <Text style={s.label}>New Password</Text>
+              <View style={s.pwRow}>
+                <TextInput
+                  style={s.pwInput}
+                  secureTextEntry={!pwShow.next}
+                  value={pwForm.next}
+                  onChangeText={(t) => {
+                    setPwForm((v) => ({ ...v, next: t }));
+                    setPwChecklist(checkPasswordAgainstRules(t));
+                  }}
+                  placeholder="At least 8 characters"
+                  placeholderTextColor="#9CA3AF"
+                />
+                <TouchableOpacity onPress={() => setPwShow((v) => ({ ...v, next: !v.next }))}>
+                  <MaterialCommunityIcons
+                    name={pwShow.next ? "eye-off-outline" : "eye-outline"}
+                    size={20}
+                    color="#6B7280"
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {/* Password checklist */}
+              <View style={{ marginTop: 8 }}>
+                {pwChecklist.map((r) => (
+                  <View key={r.key} style={s.ruleRow}>
+                    <MaterialCommunityIcons
+                      name={r.ok ? "check-circle" : "close-circle"}
+                      size={16}
+                      color={r.ok ? "#22C55E" : "#9CA3AF"}
+                    />
+                    <Text style={[s.ruleTxt, r.ok && s.ruleOk]}>{r.label}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            <View style={s.formGroup}>
+              <Text style={s.label}>Confirm New Password</Text>
+              <View style={s.pwRow}>
+                <TextInput
+                  style={s.pwInput}
+                  secureTextEntry={!pwShow.confirm}
+                  value={pwForm.confirm}
+                  onChangeText={(t) => setPwForm((v) => ({ ...v, confirm: t }))}
+                  placeholder="Repeat new password"
+                  placeholderTextColor="#9CA3AF"
+                />
+                <TouchableOpacity onPress={() => setPwShow((v) => ({ ...v, confirm: !v.confirm }))}>
+                  <MaterialCommunityIcons
+                    name={pwShow.confirm ? "eye-off-outline" : "eye-outline"}
+                    size={20}
+                    color="#6B7280"
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={s.editActions}>
+              <TouchableOpacity
+                style={[
+                  s.saveBtn,
+                  (pwSaving || !pwAllGood || !pwForm.current || pwForm.next !== pwForm.confirm) && { opacity: 0.6 },
+                ]}
+                onPress={savePassword}
+                disabled={pwSaving || !pwAllGood || !pwForm.current || pwForm.next !== pwForm.confirm}
+              >
+                {pwSaving ? <ActivityIndicator color="#fff" /> : <Text style={s.saveTxt}>Save</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity style={s.cancelBtn} onPress={() => setShowPw(false)}>
                 <Text style={s.cancelTxt}>Cancel</Text>
               </TouchableOpacity>
             </View>
@@ -708,6 +888,7 @@ const s = StyleSheet.create({
   },
   linkTxt: { fontFamily: "Poppins_600SemiBold", color: "#111827", fontSize: 13 },
 
+  /* Modals */
   modalWrap: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", alignItems: "center", justifyContent: "center", padding: 16 },
   modalCard: { width: "100%", maxWidth: 420, backgroundColor: "#fff", borderRadius: 12, padding: 14 },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
@@ -742,6 +923,50 @@ const s = StyleSheet.create({
   },
   credBtnTxt: { fontFamily: "Poppins_600SemiBold", color: "#111827", fontSize: 13 },
 
+  /* Edit Profile look-alike */
+  namePill: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    paddingVertical: Platform.OS === "ios" ? 10 : 8,
+    paddingHorizontal: 12,
+    fontFamily: "Poppins_600SemiBold",
+    color: "#111827",
+    fontSize: 13,
+    textAlign: "center",
+  },
+  piBox: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    marginTop: 10,
+  },
+  piTitle: { fontFamily: "Poppins_600SemiBold", color: "#6B7280", fontSize: 12, marginBottom: 6 },
+
+  iconInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: Platform.OS === "ios" ? 10 : 8,
+    marginTop: 8,
+  },
+  iconInput: {
+    flex: 1,
+    fontFamily: "Poppins_400Regular",
+    color: "#111827",
+    fontSize: 13,
+    padding: 0,
+  },
+
   formGroup: { marginTop: 10 },
   label: { fontFamily: "Poppins_600SemiBold", color: "#6B7280", fontSize: 12, marginBottom: 6 },
   input: {
@@ -756,6 +981,7 @@ const s = StyleSheet.create({
     fontSize: 13,
   },
   formRow: { flexDirection: "row", marginTop: 6 },
+
   editActions: { flexDirection: "row", justifyContent: "space-between", marginTop: 14 },
   saveBtn: {
     flex: 1,
@@ -779,4 +1005,29 @@ const s = StyleSheet.create({
     marginLeft: 8,
   },
   cancelTxt: { color: "#111827", fontFamily: "Poppins_600SemiBold", fontSize: 14 },
+
+  // password inputs
+  pwRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: Platform.OS === "ios" ? 10 : 8,
+  },
+  pwInput: {
+    flex: 1,
+    fontFamily: "Poppins_400Regular",
+    color: "#111827",
+    fontSize: 13,
+    padding: 0,
+    marginRight: 8,
+  },
+
+  // password checklist
+  ruleRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
+  ruleTxt: { fontFamily: "Poppins_400Regular", color: "#6B7280", fontSize: 12.5 },
+  ruleOk: { color: "#111827", fontFamily: "Poppins_600SemiBold" },
 });

@@ -4,14 +4,11 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = env("DATABASE_URL")
 }
 
-enum Role {
-  ADMIN
-  COMMUTER
-  DRIVER
-}
+// No Prisma enums for SQLite.
+// Keep role/vehicleType as strings; validate in code.
 
 model User {
   id                 String   @id @default(cuid())
@@ -19,9 +16,14 @@ model User {
   email              String?  @unique
   phone              String?  @unique
   password           String?
-  role               Role     @default(COMMUTER)
+  role               String   @default("COMMUTER") // "ADMIN" | "COMMUTER" | "DRIVER"
   status             String   @default("active")
   mustChangePassword Boolean  @default(false)
+
+  // Added for Settings/Profile
+  address            String?
+  language           String   @default("en") // "en" | "tl" | "ceb"
+
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -30,25 +32,27 @@ model User {
 }
 
 model DriverProfile {
-  id           String  @id @default(cuid())
-  userId       String  @unique
-  user         User    @relation(fields: [userId], references: [id])
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id])
+
   licenseNo    String
   birthDate    DateTime
   address      String
-  vehicleType  String
+  vehicleType  String   // "AIRCON" | "NON_AIRCON"
   busNo        String
   vehiclePlate String
   driverIdNo   String
   route        String
-  qrToken      String  @unique
-  status       String  @default("offline")
+  qrToken      String   @unique
+  status       String   @default("offline")
 }
 
 model CommuterProfile {
-  id     String @id @default(cuid())
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id])
+  id      String @id @default(cuid())
+  userId  String @unique
+  user    User   @relation(fields: [userId], references: [id])
+  points  Int    @default(0)
 }
 
 model Otp {

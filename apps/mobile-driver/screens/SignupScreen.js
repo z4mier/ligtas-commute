@@ -43,9 +43,10 @@ export default function SignupScreen({ navigation }) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.message || "Registration failed");
 
-      Alert.alert("Success", "Account created. Please sign in.", [
-        { text: "OK", onPress: () => navigation.replace("Login") },
-      ]);
+      // ✅ Navigate to OTP screen instead of Login
+      navigation.replace("OtpVerify", {
+        email: email.trim().toLowerCase(),
+      });
     } catch (err) {
       Alert.alert("Registration Failed", err.message);
     } finally {
@@ -146,7 +147,6 @@ const COLORS = {
 };
 
 const s = StyleSheet.create({
-  // fonts
   f400: { fontFamily: "Poppins_400Regular" },
   f600: { fontFamily: "Poppins_600SemiBold" },
   f700: { fontFamily: "Poppins_700Bold" },
@@ -154,14 +154,11 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.bgdark },
   loadingBox: { flex: 1, backgroundColor: COLORS.bgdark, alignItems: "center", justifyContent: "center" },
   bodyPad: { paddingHorizontal: 20 },
-
   backRow: { flexDirection: "row", alignItems: "center", marginTop: 6 },
   backText: { color: "rgba(255,255,255,0.85)", marginLeft: 6 },
-
   header: { alignItems: "center", marginTop: 10 },
   h2: { color: "#FFFFFF", fontSize: 22, marginTop: 16 },
   subtle: { color: "rgba(255,255,255,0.85)", textAlign: "center", marginTop: 4 },
-
   label: { color: "#FFFFFF", fontSize: 12.5, marginBottom: 6 },
   inputWrap: {
     height: 48,
@@ -182,7 +179,6 @@ const s = StyleSheet.create({
     fontSize: 14.5,
     color: "#0F1B2B",
   },
-
   primaryBtn: {
     height: 48,
     borderRadius: 10,
@@ -192,7 +188,6 @@ const s = StyleSheet.create({
     marginTop: 16,
   },
   primaryBtnText: { color: "#FFFFFF", fontSize: 16 },
-
   footerRow: { flexDirection: "row", justifyContent: "center", marginTop: 16, marginBottom: 18 },
   linkText: { color: COLORS.link, textDecorationLine: "underline", fontSize: 13.5 },
 });
