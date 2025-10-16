@@ -33,18 +33,19 @@
     "react-native-screens": "~4.16.0",
     "react-native-web": "^0.21.0",
     "react-native-worklets": "~0.5.1",
+    "react-qr-scanner": "^1.0.0-alpha.11",
     "tailwindcss": "^3.4.18"
   },
   "devDependencies": {
-    "@types/react": "~19.1.10",
-    "typescript": "~5.9.2",
+    "@babel/core": "^7.28.4",
+    "@babel/plugin-transform-runtime": "^7.28.3",
     "@expo/metro-config": "^54.0.6",
+    "@types/react": "~19.1.10",
     "babel-preset-expo": "^54.0.3",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
-    "@babel/core": "^7.28.4",
-    "@babel/plugin-transform-runtime": "^7.28.3",
     "metro-config": "^0.83.1",
-    "parse-json": "^4.0.0"
+    "parse-json": "^4.0.0",
+    "typescript": "~5.9.2"
   }
 }

@@ -1,84 +1,22 @@
-// components/ScanDriverQRModal.js
+// apps/mobile-driver/components/ScanDriverQRModal.js
 import React from "react";
-import {
-  Modal,
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Linking,
-  Platform,
-} from "react-native";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import HybridQRScanner from "./HybridQRScanner"; // ✅ hybrid scanner for web + mobile
+import { Modal, View, Text, TouchableOpacity, StyleSheet } from "react-native";
 
-const C = {
-  dim: "rgba(0,0,0,0.45)",
-  card: "#FFFFFF",
-  text: "#111827",
-  hint: "#6B7280",
-  border: "#E5E7EB",
-};
-
-export default function ScanDriverQRModal({
-  open,
-  hasPerm,
-  onClose,
-  onScan,
-  disabled,
-}) {
-  async function requestAgain() {
-    try {
-      // Only relevant on mobile
-      if (Platform.OS !== "web") {
-        const { BarCodeScanner } = require("expo-barcode-scanner");
-        await BarCodeScanner.requestPermissionsAsync();
-      }
-    } catch (e) {
-      console.warn("Permission request failed", e);
-    }
-  }
-
+export default function ScanDriverQRModal({ visible, value = "", onClose, onUse }) {
   return (
-    <Modal visible={open} animationType="fade" transparent statusBarTranslucent>
-      <View style={s.overlay}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={s.backdrop}>
         <View style={s.card}>
-          {/* ===== Header ===== */}
-          <View style={s.header}>
-            <Text style={s.headerTitle}>Scan Driver QR Code</Text>
-            <TouchableOpacity onPress={onClose}>
-              <MaterialCommunityIcons name="close" size={20} color={C.text} />
+          <Text style={s.title}>Scanned QR</Text>
+          <Text style={s.value} numberOfLines={4}>{value || "—"}</Text>
+          <View style={s.row}>
+            <TouchableOpacity style={[s.btn, s.ghost]} onPress={onClose}>
+              <Text style={s.ghostTxt}>Close</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.btn} onPress={() => onUse?.(value)}>
+              <Text style={s.btnTxt}>Use</Text>
             </TouchableOpacity>
           </View>
-
-          {/* ===== Scanner Area ===== */}
-          <View style={s.scanWrap}>
-            {/* If permission denied (mobile only) */}
-            {Platform.OS !== "web" && hasPerm === false ? (
-              <View style={[s.frame, s.center]}>
-                <Text style={s.permTxt}>Camera permission is required.</Text>
-
-                <TouchableOpacity
-                  onPress={requestAgain}
-                  style={s.permBtn}
-                  activeOpacity={0.9}
-                >
-                  <Text style={s.permBtnTxt}>Allow Camera</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity onPress={() => Linking.openSettings()}>
-                  <Text style={s.settingsTxt}>Open device Settings</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              // ✅ Use hybrid scanner (mobile or web)
-              <HybridQRScanner onScan={onScan} disabled={disabled} />
-            )}
-          </View>
-
-          <Text style={s.hint}>
-            Position the QR code within the frame to scan
-          </Text>
         </View>
       </View>
     </Modal>
@@ -86,54 +24,13 @@ export default function ScanDriverQRModal({
 }
 
 const s = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: C.dim,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 14,
-  },
-  card: {
-    width: "100%",
-    borderRadius: 12,
-    backgroundColor: C.card,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  headerTitle: { fontSize: 14.5, fontWeight: "700", color: C.text },
-  scanWrap: {
-    paddingVertical: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  frame: {
-    width: "100%",
-    aspectRatio: 1,
-    borderRadius: 12,
-    overflow: "hidden",
-    backgroundColor: "#E5E7EB",
-  },
-  center: { alignItems: "center", justifyContent: "center", paddingHorizontal: 14 },
-  hint: { textAlign: "center", color: C.hint, fontSize: 12, marginTop: 6 },
-  permTxt: { color: C.hint, fontSize: 12, marginBottom: 8 },
-  permBtn: {
-    marginTop: 2,
-    backgroundColor: "#111827",
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  permBtnTxt: { color: "#fff", fontWeight: "700", fontSize: 12.5 },
-  settingsTxt: {
-    marginTop: 8,
-    color: C.hint,
-    fontSize: 12,
-    textDecorationLine: "underline",
-  },
+  backdrop:{flex:1,backgroundColor:"rgba(0,0,0,0.5)",alignItems:"center",justifyContent:"center"},
+  card:{width:"88%",borderRadius:12,backgroundColor:"#fff",padding:14},
+  title:{fontSize:16,fontWeight:"700",marginBottom:8,color:"#111827"},
+  value:{fontSize:13,color:"#374151",marginBottom:12},
+  row:{flexDirection:"row",gap:10},
+  btn:{flex:1,height:42,borderRadius:10,backgroundColor:"#0F172A",alignItems:"center",justifyContent:"center"},
+  btnTxt:{color:"#fff",fontWeight:"700"},
+  ghost:{backgroundColor:"#E5E7EB"},
+  ghostTxt:{color:"#111827",fontWeight:"700"},
 });

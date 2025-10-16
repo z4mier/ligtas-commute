@@ -1,75 +1,62 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  Pressable,
-  Alert,
-  SafeAreaView,
-  ScrollView,
-  ActivityIndicator,
-  useWindowDimensions,
-  StyleSheet,
+  View, Text, TextInput, TouchableOpacity, Pressable,
+  SafeAreaView, ScrollView, ActivityIndicator, StyleSheet, useWindowDimensions, Image,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
-import {
-  useFonts,
-  Poppins_400Regular,
-  Poppins_600SemiBold,
-  Poppins_700Bold,
-} from "@expo-google-fonts/poppins";
+import { useFonts, Poppins_400Regular, Poppins_600SemiBold, Poppins_700Bold } from "@expo-google-fonts/poppins";
 import { API_URL } from "../constants/config";
 
 export default function LoginScreen({ navigation }) {
-  const { width } = useWindowDimensions();
-  const [fontsLoaded] = useFonts({
-    Poppins_400Regular,
-    Poppins_600SemiBold,
-    Poppins_700Bold,
-  });
+  const [fontsLoaded] = useFonts({ Poppins_400Regular, Poppins_600SemiBold, Poppins_700Bold });
 
-  // centered ellipse
-  const ellipse = useMemo(() => {
-    const w = Math.max(width * 1.4, 640);
-    const h = Math.max(220, Math.min(340, w * 0.42));
-    const r = w;
-    return { width: w, height: h, radius: r };
-  }, [width]);
+  const { width } = useWindowDimensions();
+  const HERO_H = 200;                         
+  const CIRCLE = Math.max(width * 3.4, 1700); 
+  const CURVE_DEPTH = Math.round(HERO_H * 0.9);
+  const ICON = Math.min(120, Math.max(88, HERO_H * 0.6));
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({ email: undefined, password: undefined, general: undefined });
+
+  const isValidEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+  const validate = () => {
+    const e = {};
+    if (!isValidEmail(email)) e.email = "Enter a valid email.";
+    if (!password) e.password = "Enter your password.";
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
 
   async function handleLogin() {
-    const e = email.trim().toLowerCase();
-    const p = password;
-
-    if (!e || !p) {
-      return Alert.alert("Missing fields", "Please enter your email and password.");
-    }
-
+    if (!validate()) return;
     try {
       setLoading(true);
       const res = await fetch(`${API_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: e, password: p }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || "Login failed");
-
-      // ✅ persist token for later requests (Settings, /users/me, etc.)
+      if (!res.ok) {
+        const msg = data?.message || "Login failed";
+        const lower = String(msg).toLowerCase();
+        const fieldErr = {};
+        if (lower.includes("credential") || res.status === 401) fieldErr.password = "Invalid email or password.";
+        else if (lower.includes("email")) fieldErr.email = msg;
+        setErrors((prev) => ({ ...prev, ...fieldErr, general: Object.keys(fieldErr).length ? undefined : msg }));
+        return;
+      }
       await AsyncStorage.setItem("token", data.token);
-
-      // Route by role
       if (data.role === "DRIVER") navigation.replace("DriverDashboard");
       else if (data.role === "COMMUTER") navigation.replace("CommuterDashboard");
-      else Alert.alert("Login", "Logged in, but dashboard is not configured for this role.");
-    } catch (err) {
-      Alert.alert("Login Failed", err.message);
+      else setErrors({ general: "Logged in, but dashboard is not configured for this role." });
+    } catch {
+      setErrors({ general: "Network error. Please try again." });
     } finally {
       setLoading(false);
     }
@@ -85,22 +72,26 @@ export default function LoginScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.screen}>
-      {/* hero ellipse */}
-      <View style={[styles.ellipseWrap, { height: ellipse.height + 40 }]}>
+      {/* Curved hero */}
+      <View style={[styles.curveHero, { height: HERO_H }]}>
         <View
-          style={{
-            position: "absolute",
-            top: 0,
-            width: ellipse.width,
-            height: ellipse.height,
-            backgroundColor: COLORS.brand,
-            borderBottomLeftRadius: ellipse.radius,
-            borderBottomRightRadius: ellipse.radius,
-            zIndex: -1,
-          }}
+          style={[
+            styles.curveFill,
+            {
+              width: CIRCLE,
+              height: CIRCLE,
+              top: -CIRCLE + CURVE_DEPTH, // bottom of circle sits at CURVE_DEPTH
+              borderBottomLeftRadius: CIRCLE,
+              borderBottomRightRadius: CIRCLE,
+            },
+          ]}
         />
         <View style={styles.hero}>
-          <MaterialCommunityIcons name="bus" size={56} color="#FFFFFF" />
+          <Image
+            // make sure this path is correct relative to THIS file:
+            source={require("../assets/images/logo.png")}
+            style={{ width: ICON, height: ICON, resizeMode: "contain", tintColor: "#FFFFFF" }}
+          />
           <Text style={[styles.brandTitle, styles.f700]}>
             <Text style={styles.f700}>Ligtas</Text>Commute
           </Text>
@@ -111,11 +102,10 @@ export default function LoginScreen({ navigation }) {
       <ScrollView contentContainerStyle={{ paddingBottom: 28 }} style={styles.bodyPad}>
         <Text style={[styles.h2, styles.center, styles.f600]}>Login</Text>
 
-        {/* Email */}
         <View style={styles.fieldBlock}>
           <Text style={[styles.label, styles.f600]}>Email Address</Text>
-          <View style={styles.inputWrap}>
-            <MaterialCommunityIcons name="email-outline" size={20} color="#6B7280" style={styles.leftIcon} />
+          <View style={[styles.inputWrap, errors.email && styles.inputError]}>
+            <MaterialCommunityIcons name="email-outline" size={20} color={errors.email ? "#EF4444" : "#6B7280"} style={styles.leftIcon} />
             <TextInput
               style={[styles.input, styles.f400]}
               placeholder="Enter your email"
@@ -123,40 +113,37 @@ export default function LoginScreen({ navigation }) {
               keyboardType="email-address"
               autoCapitalize="none"
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(t) => { setEmail(t); setErrors((e) => ({ ...e, email: undefined, general: undefined })); }}
             />
           </View>
+          {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
         </View>
 
-        {/* Password */}
         <View style={{ marginBottom: 8 }}>
           <Text style={[styles.label, styles.f600]}>Password</Text>
-          <View style={styles.inputWrap}>
-            <MaterialCommunityIcons name="lock-outline" size={20} color="#6B7280" style={styles.leftIcon} />
+          <View style={[styles.inputWrap, errors.password && styles.inputError]}>
+            <MaterialCommunityIcons name="lock-outline" size={20} color={errors.password ? "#EF4444" : "#6B7280"} style={styles.leftIcon} />
             <TextInput
               style={[styles.input, styles.f400]}
               placeholder="Enter your password"
               placeholderTextColor="#9CA3AF"
               secureTextEntry={!showPassword}
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(t) => { setPassword(t); setErrors((e) => ({ ...e, password: undefined, general: undefined })); }}
             />
             <TouchableOpacity onPress={() => setShowPassword(v => !v)} style={styles.rightIconBtn}>
               <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#6B7280" />
             </TouchableOpacity>
           </View>
+          {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
         </View>
 
-        <TouchableOpacity onPress={() => Alert.alert("Forgot password", "Coming soon.")} style={{ alignSelf: "flex-end", marginTop: 4, marginBottom: 12 }}>
-          <Text style={[styles.smallText, styles.subtle, styles.f400]}>Forgot password?</Text>
-        </TouchableOpacity>
+        {errors.general ? <Text style={[styles.errorText, { marginBottom: 8 }]}>{errors.general}</Text> : null}
 
-        {/* Sign in */}
         <TouchableOpacity onPress={handleLogin} disabled={loading} style={styles.primaryBtn}>
           {loading ? <ActivityIndicator color="#fff" /> : <Text style={[styles.primaryBtnText, styles.f600]}>Sign in</Text>}
         </TouchableOpacity>
 
-        {/* Footer */}
         <View style={styles.footerRow}>
           <Text style={[styles.smallText, styles.subtle, styles.f400]}>Don’t have an account?</Text>
           <Pressable onPress={() => navigation.navigate("Signup")} hitSlop={8}>
@@ -177,7 +164,6 @@ const COLORS = {
 };
 
 const styles = StyleSheet.create({
-  // fonts
   f400: { fontFamily: "Poppins_400Regular" },
   f600: { fontFamily: "Poppins_600SemiBold" },
   f700: { fontFamily: "Poppins_700Bold" },
@@ -187,8 +173,10 @@ const styles = StyleSheet.create({
   bodyPad: { paddingHorizontal: 20 },
   center: { textAlign: "center" },
 
-  ellipseWrap: { width: "100%", alignItems: "center", justifyContent: "flex-end" },
-  hero: { alignItems: "center", paddingTop: 12, paddingBottom: 6 },
+  curveHero: { width: "100%", overflow: "hidden", alignItems: "center", justifyContent: "flex-end" },
+  curveFill: { position: "absolute", alignSelf: "center", backgroundColor: COLORS.brand },
+  hero: { alignItems: "center", paddingBottom: 10 },
+
   brandTitle: { color: "#FFFFFF", fontSize: 30, marginTop: 6, letterSpacing: 0.2 },
   subtle: { color: "rgba(255,255,255,0.85)", fontSize: 14, marginTop: 2 },
 
@@ -198,33 +186,20 @@ const styles = StyleSheet.create({
   label: { color: "#FFFFFF", fontSize: 12.5, marginBottom: 6 },
 
   inputWrap: {
-    height: 48,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.inputBg,
-    flexDirection: "row",
-    alignItems: "center",
+    height: 48, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: COLORS.inputBg, flexDirection: "row", alignItems: "center",
   },
+  inputError: { borderColor: "#EF4444" },
+  errorText: { color: "#EF4444", fontSize: 12, marginTop: 6 },
+
   leftIcon: { position: "absolute", left: 12, zIndex: 1 },
   rightIconBtn: { position: "absolute", right: 8, padding: 6 },
 
-  input: {
-    flex: 1,
-    height: "100%",
-    paddingLeft: 44,
-    paddingRight: 40,
-    fontSize: 14.5,
-    color: "#0F1B2B",
-  },
+  input: { flex: 1, height: "100%", paddingLeft: 44, paddingRight: 40, fontSize: 14.5, color: "#0F1B2B" },
 
   primaryBtn: {
-    height: 48,
-    borderRadius: 10,
-    backgroundColor: COLORS.brand,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 8,
+    height: 48, borderRadius: 10, backgroundColor: COLORS.brand,
+    alignItems: "center", justifyContent: "center", marginTop: 8,
   },
   primaryBtnText: { color: "#FFFFFF", fontSize: 16 },
 

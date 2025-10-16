@@ -1,10 +1,15 @@
 import React, { useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, Pressable,
-  SafeAreaView, ScrollView, ActivityIndicator, Alert, StyleSheet
+  SafeAreaView, ScrollView, ActivityIndicator, StyleSheet, Image,
 } from "react-native";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
-import { useFonts, Poppins_400Regular, Poppins_600SemiBold, Poppins_700Bold } from "@expo-google-fonts/poppins";
+import {
+  useFonts,
+  Poppins_400Regular,
+  Poppins_600SemiBold,
+  Poppins_700Bold,
+} from "@expo-google-fonts/poppins";
 import { API_URL } from "../constants/config";
 
 export default function SignupScreen({ navigation }) {
@@ -21,11 +26,33 @@ export default function SignupScreen({ navigation }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const [errors, setErrors] = useState({
+    fullName: undefined,
+    email: undefined,
+    phone: undefined,
+    password: undefined,
+    confirm: undefined,
+    general: undefined,
+  });
+
+  const clearErr = (k) => setErrors((e) => ({ ...e, [k]: undefined, general: undefined }));
+  const isValidEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+  const normalizePhone = (v) => v.replace(/\D/g, "");
+
+  const validate = () => {
+    const e = {};
+    if (!fullName.trim()) e.fullName = "Full name is required.";
+    if (!isValidEmail(email)) e.email = "Enter a valid email.";
+    const digits = normalizePhone(phone);
+    if (digits.length < 10 || digits.length > 13) e.phone = "Enter a valid phone number.";
+    if (password.length < 6) e.password = "Password must be at least 6 characters.";
+    if (password !== confirm) e.confirm = "Passwords do not match.";
+    setErrors((prev) => ({ ...prev, ...e, general: undefined }));
+    return Object.keys(e).length === 0;
+  };
+
   async function createAccount() {
-    if (!fullName || !email || !phone || !password || !confirm)
-      return Alert.alert("Missing fields", "Please complete all fields.");
-    if (password.length < 6) return Alert.alert("Weak password", "Use at least 6 characters.");
-    if (password !== confirm) return Alert.alert("Password mismatch", "Passwords do not match.");
+    if (!validate()) return;
 
     try {
       setLoading(true);
@@ -33,22 +60,31 @@ export default function SignupScreen({ navigation }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          fullName,
+          fullName: fullName.trim(),
           email: email.trim().toLowerCase(),
-          phone,
+          phone: phone.trim(),
           password,
           role: "COMMUTER",
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || "Registration failed");
 
-      // ✅ Navigate to OTP screen instead of Login
-      navigation.replace("OtpVerify", {
-        email: email.trim().toLowerCase(),
-      });
-    } catch (err) {
-      Alert.alert("Registration Failed", err.message);
+      if (!res.ok) {
+        const msg = data?.message || (res.status === 409 ? "Email or phone already registered" : "Registration failed");
+        const lower = String(msg).toLowerCase();
+        const fieldErr = {};
+        if (lower.includes("full name")) fieldErr.fullName = msg;
+        else if (lower.includes("email")) fieldErr.email = msg;
+        else if (lower.includes("phone")) fieldErr.phone = msg;
+        else if (lower.includes("password")) fieldErr.password = msg;
+
+        setErrors((prev) => ({ ...prev, ...fieldErr, general: Object.keys(fieldErr).length ? undefined : msg }));
+        return;
+      }
+
+      navigation.replace("OtpVerify", { email: email.trim().toLowerCase() });
+    } catch {
+      setErrors((prev) => ({ ...prev, general: "Network error. Please try again." }));
     } finally {
       setLoading(false);
     }
@@ -71,7 +107,11 @@ export default function SignupScreen({ navigation }) {
         </TouchableOpacity>
 
         <View style={s.header}>
-          <MaterialCommunityIcons name="bus" size={48} color="#FFFFFF" />
+          {/* Use the same shield-bus logo as Login */}
+          <Image
+            source={require("../assets/images/logo.png")}
+            style={{ width: 68, height: 68, resizeMode: "contain", tintColor: "#FFFFFF" }}
+          />
           <Text style={[s.h2, s.f700]}>
             Join <Text style={s.f700}>LigtasCommute</Text>
           </Text>
@@ -80,12 +120,41 @@ export default function SignupScreen({ navigation }) {
           </Text>
         </View>
 
-        <Field label="Full Name" icon="account-outline" value={fullName} onChangeText={setFullName} placeholder="Enter your full name" />
-        <Field label="Email" icon="email-outline" value={email} onChangeText={setEmail} placeholder="Enter your email" keyboardType="email-address" autoCapitalize="none" />
-        <Field label="Phone Number" icon="phone-outline" value={phone} onChangeText={setPhone} placeholder="Enter your phone number" keyboardType="phone-pad" />
         <Field
-          label="Password" icon="lock-outline" value={password} onChangeText={setPassword}
-          placeholder="Create password" secureTextEntry={!showPw}
+          label="Full Name"
+          icon="account-outline"
+          value={fullName}
+          onChangeText={(t) => { setFullName(t); clearErr("fullName"); }}
+          placeholder="Enter your full name"
+          error={errors.fullName}
+        />
+        <Field
+          label="Email"
+          icon="email-outline"
+          value={email}
+          onChangeText={(t) => { setEmail(t); clearErr("email"); }}
+          placeholder="Enter your email"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          error={errors.email}
+        />
+        <Field
+          label="Phone Number"
+          icon="phone-outline"
+          value={phone}
+          onChangeText={(t) => { setPhone(t); clearErr("phone"); }}
+          placeholder="Enter your phone number"
+          keyboardType="phone-pad"
+          error={errors.phone}
+        />
+        <Field
+          label="Password"
+          icon="lock-outline"
+          value={password}
+          onChangeText={(t) => { setPassword(t); clearErr("password"); }}
+          placeholder="Create password"
+          secureTextEntry={!showPw}
+          error={errors.password}
           rightIcon={
             <TouchableOpacity onPress={() => setShowPw(v => !v)} style={s.rightIconBtn}>
               <Ionicons name={showPw ? "eye-off-outline" : "eye-outline"} size={20} color="#6B7280" />
@@ -93,8 +162,13 @@ export default function SignupScreen({ navigation }) {
           }
         />
         <Field
-          label="Confirm Password" icon="lock-check-outline" value={confirm} onChangeText={setConfirm}
-          placeholder="Confirm your password" secureTextEntry={!showConfirm}
+          label="Confirm Password"
+          icon="lock-check-outline"
+          value={confirm}
+          onChangeText={(t) => { setConfirm(t); clearErr("confirm"); }}
+          placeholder="Confirm your password"
+          secureTextEntry={!showConfirm}
+          error={errors.confirm}
           rightIcon={
             <TouchableOpacity onPress={() => setShowConfirm(v => !v)} style={s.rightIconBtn}>
               <Ionicons name={showConfirm ? "eye-off-outline" : "eye-outline"} size={20} color="#6B7280" />
@@ -102,12 +176,10 @@ export default function SignupScreen({ navigation }) {
           }
         />
 
+        {errors.general ? <Text style={[s.errorText, { marginTop: 6 }]}>{errors.general}</Text> : null}
+
         <TouchableOpacity onPress={createAccount} disabled={loading} style={s.primaryBtn}>
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={[s.primaryBtnText, s.f600]}>Create Account</Text>
-          )}
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={[s.primaryBtnText, s.f600]}>Create Account</Text>}
         </TouchableOpacity>
 
         <View style={s.footerRow}>
@@ -121,19 +193,17 @@ export default function SignupScreen({ navigation }) {
   );
 }
 
-function Field({ label, icon, rightIcon, ...inputProps }) {
+function Field({ label, icon, rightIcon, error, ...inputProps }) {
+  const hasErr = !!error;
   return (
     <View style={{ marginTop: 12 }}>
       <Text style={[s.label, s.f600]}>{label}</Text>
-      <View style={s.inputWrap}>
-        <MaterialCommunityIcons name={icon} size={20} color="#6B7280" style={s.leftIcon} />
-        <TextInput
-          style={[s.input, s.f400]}
-          placeholderTextColor="#9CA3AF"
-          {...inputProps}
-        />
+      <View style={[s.inputWrap, hasErr && s.inputError]}>
+        <MaterialCommunityIcons name={icon} size={20} color={hasErr ? "#EF4444" : "#6B7280"} style={s.leftIcon} />
+        <TextInput style={[s.input, s.f400]} placeholderTextColor="#9CA3AF" {...inputProps} />
         {rightIcon}
       </View>
+      {hasErr && <Text style={s.errorText}>{error}</Text>}
     </View>
   );
 }
@@ -156,9 +226,11 @@ const s = StyleSheet.create({
   bodyPad: { paddingHorizontal: 20 },
   backRow: { flexDirection: "row", alignItems: "center", marginTop: 6 },
   backText: { color: "rgba(255,255,255,0.85)", marginLeft: 6 },
+
   header: { alignItems: "center", marginTop: 10 },
   h2: { color: "#FFFFFF", fontSize: 22, marginTop: 16 },
   subtle: { color: "rgba(255,255,255,0.85)", textAlign: "center", marginTop: 4 },
+
   label: { color: "#FFFFFF", fontSize: 12.5, marginBottom: 6 },
   inputWrap: {
     height: 48,
@@ -169,6 +241,9 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+  inputError: { borderColor: "#EF4444" },
+  errorText: { color: "#EF4444", fontSize: 12, marginTop: 6 },
+
   leftIcon: { position: "absolute", left: 12, zIndex: 1 },
   rightIconBtn: { position: "absolute", right: 8, padding: 6 },
   input: {
