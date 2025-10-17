@@ -80,7 +80,7 @@ export default function LoginScreen({ navigation }) {
             {
               width: CIRCLE,
               height: CIRCLE,
-              top: -CIRCLE + CURVE_DEPTH, // bottom of circle sits at CURVE_DEPTH
+              top: -CIRCLE + CURVE_DEPTH, 
               borderBottomLeftRadius: CIRCLE,
               borderBottomRightRadius: CIRCLE,
             },
@@ -88,7 +88,6 @@ export default function LoginScreen({ navigation }) {
         />
         <View style={styles.hero}>
           <Image
-            // make sure this path is correct relative to THIS file:
             source={require("../assets/images/logo.png")}
             style={{ width: ICON, height: ICON, resizeMode: "contain", tintColor: "#FFFFFF" }}
           />

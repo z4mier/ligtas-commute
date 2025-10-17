@@ -1,5 +1,5 @@
 // screens/CommuterDashboard.js
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -9,7 +9,9 @@ import {
   StatusBar,
   StyleSheet,
   Platform,
+  ActivityIndicator,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   useFonts,
@@ -17,6 +19,7 @@ import {
   Poppins_600SemiBold,
   Poppins_700Bold,
 } from "@expo-google-fonts/poppins";
+import { API_URL } from "../constants/config";
 
 const C = {
   bg: "#F3F4F6",
@@ -48,17 +51,49 @@ export default function CommuterDashboard({ navigation }) {
     Poppins_600SemiBold,
     Poppins_700Bold,
   });
-  if (!fontsLoaded) return null;
+
+  // ✅ Auth guard
+  const [checking, setChecking] = useState(true);
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = await AsyncStorage.getItem("token");
+        if (!token) {
+          return navigation.replace("Login");
+        }
+        // Optional: verify token is still valid
+        const res = await fetch(`${API_URL}/users/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.status === 401) {
+          await AsyncStorage.removeItem("token");
+          return navigation.replace("Login");
+        }
+      } catch {
+        // On error, keep user safe by sending to Login
+        return navigation.replace("Login");
+      } finally {
+        setChecking(false);
+      }
+    })();
+  }, [navigation]);
 
   function goSettings() {
     navigation?.navigate?.("Settings");
   }
   function goQR() {
-    // Always push to the QR Scanner screen
     navigation.navigate("QRScanner");
   }
   function goHome() {
     navigation?.navigate?.("CommuterDashboard");
+  }
+
+  if (!fontsLoaded || checking) {
+    return (
+      <SafeAreaView style={[s.screen, { alignItems: "center", justifyContent: "center" }]}>
+        <ActivityIndicator />
+      </SafeAreaView>
+    );
   }
 
   return (
@@ -155,7 +190,7 @@ export default function CommuterDashboard({ navigation }) {
           <View style={s.iconWrap}>
             <MaterialCommunityIcons name="cog-outline" size={22} color={C.text} />
           </View>
-            <Text style={s.tabLabel}>Settings</Text>
+          <Text style={s.tabLabel}>Settings</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
