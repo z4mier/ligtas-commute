@@ -16,7 +16,7 @@ app.use(express.json());
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
 
-// ---------- helpers ----------
+// helpers
 const sign = (u) =>
   jwt.sign({ sub: u.id, role: u.role, email: u.email || null }, JWT_SECRET, {
     expiresIn: "7d",
@@ -44,7 +44,6 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// ---------- simple in-memory OTP store ----------
 const otpStore = new Map();
 const OTP_TTL_MS = 5 * 60 * 1000;
 const OTP_RESEND_COOLDOWN_MS = 30 * 1000;
@@ -59,7 +58,7 @@ function setOtp(email) {
   return code;
 }
 
-// ---------- routes ----------
+// routes
 app.get("/health", async (_, res) => {
   try {
     await prisma.user.count();
@@ -70,7 +69,7 @@ app.get("/health", async (_, res) => {
 });
 
 
-// ---------- AUTH: Login ----------
+// login
 app.post("/auth/login", async (req, res) => {
   try {
     const schema = z.object({
@@ -100,7 +99,7 @@ app.post("/auth/login", async (req, res) => {
   }
 });
 
-// ---------- AUTH: Register (public commuter signup) ----------
+// register
 app.post("/auth/register", async (req, res) => {
   try {
     const schema = z.object({
@@ -138,7 +137,6 @@ app.post("/auth/register", async (req, res) => {
       select: { id: true, fullName: true, email: true, role: true },
     });
 
-    // ✅ Automatically create commuterProfile
     if (user.role === "COMMUTER") {
       await prisma.commuterProfile.create({
         data: { userId: user.id },
@@ -161,14 +159,14 @@ app.post("/auth/register", async (req, res) => {
   }
 });
 
-// ---------- OTP: REQUEST (dev reveals otp) ----------
+// otp request
 app.post("/auth/request-otp", async (req, res) => {
   try {
     const schema = z.object({ email: z.string().email() });
     const { email } = schema.parse(req.body);
     const key = email.toLowerCase().trim();
 
-    // ensure user exists (optional)
+
     const user = await prisma.user.findUnique({ where: { email: key }, select: { id: true } });
     if (!user) return res.status(404).json({ message: "User not found" });
 
@@ -194,7 +192,7 @@ app.post("/auth/request-otp", async (req, res) => {
 });
 
 
-// ---------- OTP: VERIFY (returns JWT + user) ----------
+// otp verify
 app.post("/auth/verify-otp", async (req, res) => {
   try {
     const schema = z.object({
@@ -216,11 +214,9 @@ app.post("/auth/verify-otp", async (req, res) => {
       return res.status(400).json({ message: "Invalid code" });
     }
 
-    // OTP OK — clear it
     otpStore.delete(key);
     console.log(`✅ [verify-otp:v2] Verified OTP for ${key}`);
 
-    // Find user and issue token
     const user = await prisma.user.findUnique({
       where: { email: key },
       select: { id: true, email: true, fullName: true, role: true },
@@ -241,8 +237,71 @@ app.post("/auth/verify-otp", async (req, res) => {
   }
 });
 
+// change username
+app.patch("/users/change-username", requireAuth, async (req, res) => {
+  try {
+    const schema = z.object({
+      newUsername: z.string().email(),
+    });
+    const { newUsername } = schema.parse(req.body);
+    const key = newUsername.toLowerCase().trim();
 
-// ---------- ADMIN: Driver Management ----------
+    const existing = await prisma.user.findUnique({
+      where: { email: key },
+      select: { id: true },
+    });
+    if (existing) return res.status(409).json({ message: "Username already taken" });
+
+    const updated = await prisma.user.update({
+      where: { id: req.user.sub },
+      data: { email: key },
+      select: { id: true, email: true },
+    });
+
+    res.json({ message: "Username updated", user: updated });
+  } catch (e) {
+    if (e instanceof z.ZodError)
+      return res.status(400).json({ message: "Invalid input" });
+    console.error("CHANGE USERNAME ERROR:", e);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// change password
+app.patch("/users/change-password", requireAuth, async (req, res) => {
+  try {
+    const schema = z.object({
+      currentPassword: z.string().min(6),
+      newPassword: z.string().min(6),
+    });
+    const { currentPassword, newPassword } = schema.parse(req.body);
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.sub },
+      select: { password: true },
+    });
+    if (!user || !user.password)
+      return res.status(404).json({ message: "User not found" });
+
+    const ok = await bcrypt.compare(currentPassword, user.password);
+    if (!ok) return res.status(401).json({ message: "Invalid current password" });
+
+    const newHash = await bcrypt.hash(newPassword, 12);
+    await prisma.user.update({
+      where: { id: req.user.sub },
+      data: { password: newHash },
+    });
+
+    res.json({ message: "Password updated successfully" });
+  } catch (e) {
+    if (e instanceof z.ZodError)
+      return res.status(400).json({ message: "Invalid input" });
+    console.error("CHANGE PASSWORD ERROR:", e);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// driver management
 app.post("/admin/create-driver", requireAuth, requireAdmin, async (req, res) => {
   const schema = z.object({
     fullName: z.string().min(1),
@@ -329,7 +388,7 @@ app.get("/admin/drivers", requireAuth, requireAdmin, async (_req, res) => {
   }
 });
 
-// ---------- USERS ----------
+// users
 app.get("/users/me", requireAuth, async (req, res) => {
   try {
     const me = await prisma.user.findUnique({
@@ -391,7 +450,7 @@ app.patch("/users/me", requireAuth, async (req, res) => {
   }
 });
 
-// ---------- start ----------
+// start
 const PORT = process.env.PORT || 4000;
 const HOST = process.env.HOST || "0.0.0.0";
 const server = app.listen(PORT, HOST, () =>
