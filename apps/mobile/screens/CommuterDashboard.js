@@ -285,7 +285,7 @@ export default function CommuterDashboard({ navigation }) {
           )}
         </View>
 
-        {/* Community */}
+        {/* Community (updated) */}
         <View style={s.card}>
           <View style={s.cardHeader}>
             <Text style={s.cardTitleOnly}>Community</Text>
@@ -300,22 +300,26 @@ export default function CommuterDashboard({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          <View style={s.actionRow}>
-            <TouchableOpacity
-              activeOpacity={0.9}
-              style={[s.btn, { backgroundColor: C.brand }]}
-              onPress={() => navigation?.navigate?.("RateRide")}
-            >
-              <Text style={s.btnTxt}>Rate Trip</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              activeOpacity={0.9}
-              style={[s.btn, { backgroundColor: C.redDark }]}
-              onPress={() => navigation?.navigate?.("ReportIncident")}
-            >
-              <Text style={s.btnTxt}>Report Issue</Text>
-            </TouchableOpacity>
-          </View>
+          {loadingLists ? (
+            <View style={s.emptyWrap}>
+              <ActivityIndicator />
+            </View>
+          ) : communityItems.length === 0 ? (
+            <View style={s.emptyWrap}>
+              <MaterialCommunityIcons name="account-group-outline" size={28} color={C.hint} />
+              <Text style={s.emptyTitle}>No recent community activity</Text>
+              <Text style={s.emptySub}>
+                Ratings and reports will appear here when available.
+              </Text>
+            </View>
+          ) : (
+            communityItems.map((it) => (
+              <View key={String(it.id)} style={s.itemRow}>
+                <Text style={s.itemTitle}>{it.title}</Text>
+                <Text style={s.itemTime}>{it.time}</Text>
+              </View>
+            ))
+          )}
         </View>
 
         {/* Tracking */}
@@ -469,7 +473,7 @@ const s = StyleSheet.create({
   itemTitle: { fontFamily: "Poppins_600SemiBold", color: C.text, fontSize: 12.5 },
   itemTime: { fontFamily: "Poppins_400Regular", color: C.hint, fontSize: 11, marginTop: 2 },
 
-  // community
+  // community (buttons removed; style kept for reuse if needed)
   actionRow: { flexDirection: "row", gap: 12, marginTop: 8, marginBottom: 6 },
   btn: {
     flex: 1,

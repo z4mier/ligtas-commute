@@ -2,7 +2,9 @@
   "name": "ligtascommute",
   "private": true,
   "version": "1.0.0",
-  "workspaces": ["apps/*"],
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
     "dev:api": "npm --workspace apps/api run dev",
     "dev:web": "npm --workspace apps/web-admin run dev",
@@ -19,5 +21,8 @@
     "react-dom": "19.1.0",
     "react-native": "0.81.4",
     "react-native-web": "^0.21.0"
+  },
+  "dependencies": {
+    "lucide-react": "^0.547.0"
   }
 }

@@ -1,16 +1,100 @@
-/* Tailwind v4 entry */
-@import "tailwindcss";
-
-/* Define your custom theme tokens (this creates bg-primary, text-accent, etc.) */
-@theme {
-  --color-primary: #E9F1FA; /* light blue background */
-  --color-accent:  #00ABE4; /* bright blue accent */
-  --color-surface: #FFFFFF; /* white surface elements */
+/* ---------- Root Theme ---------- */
+:root {
+  --bg: #0B1220;            /* page background */
+  --card: #0B132B;          /* panels/cards/topbar/sidebar */
+  --muted: rgba(255,255,255,0.65);
+  --line: rgba(14,107,143,0.20);
+  --line-strong: rgba(14,107,143,0.35);
+  --accent: #0E6B8F;        /* brand button/active */
+  --text: #fff;
+  --danger: #ff726e;
+  --radius: 12px;
 }
 
-/* Optional: light scheme + base body styles */
-:root { color-scheme: light; }
+/* ---------- Base Reset ---------- */
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: dark;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+}
 
-body {
-  @apply bg-primary text-[#0B1526] min-h-screen; /* dark text for contrast */
+* {
+  box-sizing: border-box;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+a:hover {
+  color: #19a4d1;
+}
+
+/* ---------- Scrollbar Styling ---------- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+}
+
+/* ---------- Utility (Reusable) ---------- */
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1rem;
+  color: var(--text);
+}
+
+.text-muted {
+  color: var(--muted);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  font-weight: 600;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  padding: 0.6rem 1.2rem;
+  transition: all 0.2s ease;
+}
+
+.btn:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 0 12px rgba(14,107,143,0.45);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
 }

@@ -71,14 +71,19 @@ export default function QRScanner({ navigation }) {
       } catch {}
 
       if (parsed && (parsed.driverId || parsed.name || parsed.code)) {
-        setDriver({
+        const busType =
+          parsed.busType ?? parsed.vehicleType ?? parsed.vehicle ?? "—";
+        const obj = {
           name: parsed.name ?? "Unknown Driver",
           code: parsed.code ?? parsed.driverId ?? "N/A",
-          vehicleType: parsed.vehicleType ?? parsed.vehicle ?? "—",
+          busType,
+          // backward-compat so any old screen using 'vehicleType' still works
+          vehicleType: busType,
           busNumber: parsed.busNumber ?? parsed.bus ?? "—",
-          route: parsed.route ?? "—",
+          plateNumber: parsed.plateNumber ?? parsed.plate ?? "—",
           scannedAt: new Date(),
-        });
+        };
+        setDriver(obj);
         setInfoOpen(true);
         return;
       }
@@ -95,14 +100,18 @@ export default function QRScanner({ navigation }) {
 
       if (!res.ok) throw new Error(out?.message || "Driver not found for this QR.");
 
-      setDriver({
+      const busType = out.busType ?? out.vehicleType ?? "—";
+      const obj = {
         name: out.name ?? "Unknown Driver",
         code: out.code ?? "N/A",
-        vehicleType: out.vehicleType ?? "—",
+        busType,
+        // backward-compat alias
+        vehicleType: busType,
         busNumber: out.busNumber ?? "—",
-        route: out.route ?? "—",
+        plateNumber: out.plateNumber ?? out.plate ?? "—",
         scannedAt: new Date(),
-      });
+      };
+      setDriver(obj);
       setInfoOpen(true);
     } catch (e) {
       setError(e.message || "Scan failed. Try again.");
@@ -195,7 +204,6 @@ export default function QRScanner({ navigation }) {
         <TouchableOpacity style={s.iconBtn} onPress={closeAndBack}>
           <MaterialCommunityIcons name="arrow-left" size={22} color={C.text} />
         </TouchableOpacity>
-        {/* System font (default), bold */}
         <Text style={s.topTitle}>Scan Driver QR Code</Text>
         <View style={{ width: 36 }} />
       </View>
@@ -272,10 +280,11 @@ export default function QRScanner({ navigation }) {
                 </View>
               </View>
 
+              {/* Row: Bus Type + Bus Number */}
               <View style={s.pair}>
                 <View style={{ flex: 1 }}>
-                  <Text style={s.label}>Vehicle Type</Text>
-                  <Text style={s.value}>{driver?.vehicleType ?? "—"}</Text>
+                  <Text style={s.label}>Bus Type</Text>
+                  <Text style={s.value}>{driver?.busType ?? "—"}</Text>
                 </View>
                 <View style={{ width: 18 }} />
                 <View style={{ flex: 1 }}>
@@ -284,9 +293,10 @@ export default function QRScanner({ navigation }) {
                 </View>
               </View>
 
+              {/* Row: Plate Number */}
               <View style={{ marginTop: 10 }}>
-                <Text style={s.label}>Route</Text>
-                <Text style={s.value}>{driver?.route ?? "—"}</Text>
+                <Text style={s.label}>Plate Number</Text>
+                <Text style={s.value}>{driver?.plateNumber ?? "—"}</Text>
               </View>
             </View>
 
@@ -294,8 +304,14 @@ export default function QRScanner({ navigation }) {
               style={[s.primaryBtn, { marginTop: 14 }]}
               onPress={() => {
                 setInfoOpen(false);
-                navigation.navigate("MapTracking", { driver });
-                }}
+                // include busType and the old vehicleType alias for compatibility
+                navigation.navigate("MapTracking", {
+                  driver: {
+                    ...driver,
+                    vehicleType: driver?.busType ?? driver?.vehicleType ?? "—",
+                  },
+                });
+              }}
             >
               <Text style={s.primaryBtnTxt}>Proceed</Text>
             </TouchableOpacity>
@@ -328,7 +344,6 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  // System default font (no custom fontFamily) + bold
   topTitle: { fontWeight: "700", fontSize: 14, color: C.text },
 
   cameraWrap: {

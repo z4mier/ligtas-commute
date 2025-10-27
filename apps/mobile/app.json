@@ -3,33 +3,36 @@
     "name": "mobile",
     "slug": "mobile",
     "scheme": "mobile",
-    "platforms": ["ios", "android", "web"],
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
     "version": "1.0.0",
     "orientation": "portrait",
-
     "extra": {
-      "EXPO_PUBLIC_API_URL": "http://192.168.1.7:4000"  
+      "EXPO_PUBLIC_API_URL": "http://192.168.1.7:4000"
     },
-
     "splash": {
       "resizeMode": "contain",
       "backgroundColor": "#0F1B2B"
     },
-
-    "assetBundlePatterns": ["**/*"],
-
-    "plugins": ["expo-barcode-scanner"],
-
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "plugins": [
+      "expo-barcode-scanner",
+      "expo-localization"
+    ],
     "ios": {
       "infoPlist": {
         "NSCameraUsageDescription": "We use the camera to scan driver QR codes.",
         "NSLocationWhenInUseUsageDescription": "We use your location to display nearby routes, destinations, and ETA."
       },
       "config": {
-        "googleMapsApiKey": "AIzaSyDegIXVdcHXgls2avydsdWgSKFziyePLNY"   
+        "googleMapsApiKey": "AIzaSyDegIXVdcHXgls2avydsdWgSKFziyePLNY"
       }
     },
-
     "android": {
       "permissions": [
         "CAMERA",
@@ -38,7 +41,7 @@
       ],
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyDegIXVdcHXgls2avydsdWgSKFziyePLNY"      
+          "apiKey": "AIzaSyDegIXVdcHXgls2avydsdWgSKFziyePLNY"
         }
       }
     }

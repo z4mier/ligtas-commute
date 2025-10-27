@@ -1,4 +1,6 @@
-// apps/mobile/App.js (or apps/mobile-driver/App.js)
+// apps/mobile/App.js
+import "./i18n/i18n";
+
 import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -26,12 +28,7 @@ export default function App() {
       <SafeAreaProvider>
         <NavigationContainer>
           <StatusBar style="dark" />
-          <Stack.Navigator
-            screenOptions={{
-              headerShown: false,           // 🚫 hide native header globally
-              // contentStyle: { backgroundColor: "#F3F4F6" }, // optional
-            }}
-          >
+          <Stack.Navigator screenOptions={{ headerShown: false }}>
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Signup" component={SignupScreen} />
             <Stack.Screen name="OtpVerify" component={OtpVerifyScreen} />
@@ -43,7 +40,6 @@ export default function App() {
             <Stack.Screen name="SafetyInsightsList" component={SafetyInsightsList} />
             <Stack.Screen name="CommunityList" component={CommunityList} />
             <Stack.Screen name="MapTracking" component={MapTracking}/>
-            
           </Stack.Navigator>
         </NavigationContainer>
       </SafeAreaProvider>
