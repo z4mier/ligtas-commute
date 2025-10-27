@@ -1,0 +1,15 @@
+{
+  "tailwindCSS.experimental.configFile": "apps/web-admin/tailwind.config.mjs",
+  "css.lint.unknownAtRules": "ignore",
+  "files.associations": {
+    "apps/web-admin/src/app/globals.css": "postcss"
+  },
+  "tailwindCSS.emmetCompletions": true,
+  "tailwindCSS.includeLanguages": {
+    "javascript": "javascript",
+    "typescript": "typescript",
+    "javascriptreact": "javascriptreact",
+    "typescriptreact": "typescriptreact",
+    "css": "css"
+  }
+}

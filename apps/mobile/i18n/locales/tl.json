@@ -1,0 +1,78 @@
+{
+  "settings": { "title": "Mga Setting" },
+  "card": {
+    "profile": "Profile",
+    "language": "Wika",
+    "appearance": "Hitsura",
+    "loyalty": "Mga Gantimpala"
+  },
+  "language": { "en": "Ingles", "tl": "Tagalog", "ceb": "Cebuano" },
+  "tapToViewProfile": "I-tap para tingnan ang profile",
+  "memberSince": "Miyembro mula",
+  "darkMode": "Dark Mode",
+  "usingDark": "Dark theme ang gamit",
+  "switchToDark": "Lumipat sa dark theme",
+  "currentPoints": "Kasalukuyang Puntos",
+  "pointsHint": "Kumita ng puntos batay sa iyong biyahe",
+  "pointsCongrats": "Congrats! Naabot mo na ang 100 point limit.",
+  "pointsKeepRiding": "Magpatuloy sa pagbiyahe upang maabot ang 100 puntos.",
+  "pointsUpTo": "Kumita hanggang 100",
+  "redeemRewards": "Kunin ang Gantimpala",
+  "termsPrivacy": "Mga Tuntunin at Privacy",
+  "helpSupport": "Tulong at Suporta",
+  "logout": "Mag-logout",
+  "confirmLogout": "Sigurado ka bang magla-logout?",
+  "ok": "OK",
+
+  "tip": {
+    "restartApp": "Isara at i-restart ang app",
+    "checkInternet": "Suriin ang internet connection",
+    "updateApp": "I-update sa pinakabagong bersyon",
+    "permissions": "Tiyakin na naka-enable ang GPS at camera"
+  },
+  "commonIssues": "Karaniwang Isyu",
+  "issue": {
+    "qr": "Hindi makapag-scan ng QR? Tiyakin ang camera permissions.",
+    "location": "Hindi nag-a-update ang lokasyon? Buksan ang GPS.",
+    "contact": "Kailangan pa ng tulong? support@ligtascommute.com"
+  },
+
+  "personalInfo": "Personal na Impormasyon",
+  "editProfile": "I-edit ang Profile",
+  "managePw": "Palitan ang Password",
+  "changePassword": "Palitan ang Password",
+  "updatePassword": "I-update ang Password",
+
+  "placeholder": {
+    "fullName": "Buong Pangalan",
+    "email": "Email",
+    "phone": "Telepono",
+    "address": "Address",
+    "currentPassword": "Kasalukuyang Password",
+    "newPassword": "Bagong Password",
+    "confirmPassword": "Kumpirmahin ang Bagong Password"
+  },
+
+  "save": "I-save",
+  "cancel": "Kanselahin",
+
+  "toast": {
+    "profileSaved": "Matagumpay na na-update ang profile",
+    "pwChanged": "Matagumpay na napalitan ang password",
+    "languageSaved": "Nai-save ang wika"
+  },
+
+  "err": {
+    "loadProfile": "Nabigong i-load ang profile",
+    "update": "Nabigo ang pag-update",
+    "network": "Error sa network",
+    "fullName": "Pakilagay ang iyong buong pangalan.",
+    "email": "Pakilagay ang wastong email address.",
+    "fillAllPw": "Punan ang lahat ng field ng password.",
+    "pwMin": "Ang bagong password ay dapat 6 na karakter pataas.",
+    "pwMatch": "Hindi tugma ang mga password.",
+    "tryAgain": "Nabigo ang pag-update. Subukan muli.",
+    "networkTryAgain": "Error sa network. Subukan muli.",
+    "saveLanguage": "Nabigong i-save ang wika"
+  }
+}

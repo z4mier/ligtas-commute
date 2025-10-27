@@ -1,0 +1,78 @@
+{
+  "settings": { "title": "Mga Setting" },
+  "card": {
+    "profile": "Profile",
+    "language": "Pinulongan",
+    "appearance": "Panagway",
+    "loyalty": "Mga Ganti"
+  },
+  "language": { "en": "English", "tl": "Tagalog", "ceb": "Cebuano" },
+  "tapToViewProfile": "I-tap aron tan-awon ang profile",
+  "memberSince": "Miyembro sukad",
+  "darkMode": "Dark Mode",
+  "usingDark": "Naggamit og dark theme",
+  "switchToDark": "Ibalhin sa dark theme",
+  "currentPoints": "Karon nga Puntos",
+  "pointsHint": "Makadawat puntos base sa imong biyahe",
+  "pointsCongrats": "Congrats! Naabot na nimo ang 100 point limit.",
+  "pointsKeepRiding": "Padayon pagsakay aron maabot ang 100 puntos.",
+  "pointsUpTo": "Makadawat hangtod 100",
+  "redeemRewards": "Kuhaa ang Ganti",
+  "termsPrivacy": "Mga Termino ug Privacy",
+  "helpSupport": "Tabang ug Suporta",
+  "logout": "Logout",
+  "confirmLogout": "Sigurado ka nga mag-logout?",
+  "ok": "OK",
+
+  "tip": {
+    "restartApp": "Sirado ug i-restart ang app",
+    "checkInternet": "Susiha ang internet connection",
+    "updateApp": "I-update sa pinakabag-ong bersyon",
+    "permissions": "Siguroha nga naka-enable ang GPS ug camera"
+  },
+  "commonIssues": "Kasagarang Isyu",
+  "issue": {
+    "qr": "Dili makascan og QR? Tan-awa ang camera permissions.",
+    "location": "Walay update ang lokasyon? Sigurohang nakabukas ang GPS.",
+    "contact": "Gikinahanglan pa og tabang? support@ligtascommute.com"
+  },
+
+  "personalInfo": "Personal nga Impormasyon",
+  "editProfile": "Usba ang Profile",
+  "managePw": "Usba ang Password",
+  "changePassword": "Usba ang Password",
+  "updatePassword": "I-update ang Password",
+
+  "placeholder": {
+    "fullName": "Tibuok Ngalan",
+    "email": "Email",
+    "phone": "Telepono",
+    "address": "Address",
+    "currentPassword": "Karon nga Password",
+    "newPassword": "Bag-ong Password",
+    "confirmPassword": "Kumpirmaha ang Bag-ong Password"
+  },
+
+  "save": "I-save",
+  "cancel": "Kanselahon",
+
+  "toast": {
+    "profileSaved": "Naluwas ang update sa profile",
+    "pwChanged": "Naluwas ang bag-ong password",
+    "languageSaved": "Naluwas ang pinulongan"
+  },
+
+  "err": {
+    "loadProfile": "Napakyas pag-load sa profile",
+    "update": "Napakyas ang pag-update",
+    "network": "Sayop sa network",
+    "fullName": "Palihug isulod ang imong tibuok ngalan.",
+    "email": "Palihug isulod ang hustong email address.",
+    "fillAllPw": "Punah ang tanang password nga kahon.",
+    "pwMin": "Ang bag-ong password kinahanglan 6 ka karakter pataas.",
+    "pwMatch": "Dili pares ang mga password.",
+    "tryAgain": "Napakyas ang update. Sulayi pag-usab.",
+    "networkTryAgain": "Sayop sa network. Sulayi pag-usab.",
+    "saveLanguage": "Napakyas sa pag-save sa pinulongan"
+  }
+}
