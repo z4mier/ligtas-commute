@@ -1,12 +1,15 @@
 {
   "settings": { "title": "Settings" },
+
   "card": {
     "profile": "Profile",
     "language": "Language",
     "appearance": "Appearance",
     "loyalty": "Loyalty Rewards"
   },
+
   "language": { "en": "English", "tl": "Tagalog", "ceb": "Cebuano" },
+
   "tapToViewProfile": "Tap to view profile",
   "memberSince": "Member since",
   "darkMode": "Dark Mode",
@@ -30,6 +33,7 @@
     "updateApp": "Update to the latest version",
     "permissions": "Ensure GPS and camera permissions are enabled"
   },
+
   "commonIssues": "Common Issues",
   "issue": {
     "qr": "Can’t scan QR code? Check camera permissions.",
@@ -74,5 +78,33 @@
     "tryAgain": "Update failed. Please try again.",
     "networkTryAgain": "Network error. Please try again.",
     "saveLanguage": "Failed to save language"
-  }
+  },
+
+  "notifications": "Notifications",
+  "markAllRead": "Mark all as read",
+  "noNotifications": "No notifications",
+  "noNotificationsSub": "You’re all caught up. We’ll notify you here.",
+  "viewAllNotifications": "View all notifications",
+
+  "safetyInsights": "Safety Insights",
+  "community": "Community",
+  "tracking": "Tracking",
+  "viewAll": "View All",
+
+  "listEmptySafetyTitle": "No safety insights yet",
+  "listEmptySafetySub": "You’ll see updates here when new alerts are available.",
+  "listEmptyCommunityTitle": "No recent community activity",
+  "listEmptyCommunitySub": "Ratings and reports will appear here when available.",
+  "trackingEmptyTitle": "No active trips being tracked",
+  "trackingEmptySub": "You’ll see updates here when new alerts are available.",
+
+  "trackingNow": "Tracking in progress…",
+  "destination": "Destination",
+  "eta": "ETA",
+  "driver": "Driver",
+  "openMap": "Open Map",
+
+  "tabHome": "Home",
+  "tabQR": "QR",
+  "tabSettings": "Settings"
 }

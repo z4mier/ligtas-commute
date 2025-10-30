@@ -1,12 +1,15 @@
 {
   "settings": { "title": "Mga Setting" },
+
   "card": {
     "profile": "Profile",
     "language": "Wika",
     "appearance": "Hitsura",
     "loyalty": "Mga Gantimpala"
   },
+
   "language": { "en": "Ingles", "tl": "Tagalog", "ceb": "Cebuano" },
+
   "tapToViewProfile": "I-tap para tingnan ang profile",
   "memberSince": "Miyembro mula",
   "darkMode": "Dark Mode",
@@ -30,6 +33,7 @@
     "updateApp": "I-update sa pinakabagong bersyon",
     "permissions": "Tiyakin na naka-enable ang GPS at camera"
   },
+
   "commonIssues": "Karaniwang Isyu",
   "issue": {
     "qr": "Hindi makapag-scan ng QR? Tiyakin ang camera permissions.",
@@ -74,5 +78,33 @@
     "tryAgain": "Nabigo ang pag-update. Subukan muli.",
     "networkTryAgain": "Error sa network. Subukan muli.",
     "saveLanguage": "Nabigong i-save ang wika"
-  }
+  },
+
+  "notifications": "Mga Notipikasyon",
+  "markAllRead": "Markahan lahat na nabasa",
+  "noNotifications": "Walang notipikasyon",
+  "noNotificationsSub": "Ayos ka na. Dito ka namin aabisuhan.",
+  "viewAllNotifications": "Tingnan lahat ng notipikasyon",
+
+  "safetyInsights": "Mga Babala sa Kaligtasan",
+  "community": "Komunidad",
+  "tracking": "Pagsubaybay",
+  "viewAll": "Tingnan Lahat",
+
+  "listEmptySafetyTitle": "Wala pang safety insights",
+  "listEmptySafetySub": "Makakakita ka ng updates dito kapag may bagong alerto.",
+  "listEmptyCommunityTitle": "Walang bagong aktibidad ng komunidad",
+  "listEmptyCommunitySub": "Lalabas dito ang ratings at reports kapag available.",
+  "trackingEmptyTitle": "Walang aktibong biyahe na sinusubaybayan",
+  "trackingEmptySub": "Makakakita ka ng updates dito kapag may bagong alerto.",
+
+  "trackingNow": "Kasalukuyang sinusubaybayan…",
+  "destination": "Destinasyon",
+  "eta": "ETA",
+  "driver": "Driver",
+  "openMap": "Buksan ang Mapa",
+
+  "tabHome": "Home",
+  "tabQR": "QR",
+  "tabSettings": "Mga Setting"
 }

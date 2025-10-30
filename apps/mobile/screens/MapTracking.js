@@ -1,5 +1,5 @@
 // apps/mobile/screens/MapTracking.js
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   FlatList, ActivityIndicator, Keyboard, Modal,
@@ -13,6 +13,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { API_URL } from "../constants/config";
 import { WebView } from "react-native-webview";
 import { useNavigation } from "@react-navigation/native";
+import { addRatingSubmitted, addIncidentSubmitted } from "../lib/notify";
 
 /* ---------- theme ---------- */
 const C = {
@@ -42,27 +43,19 @@ const BG_TASK = "LC_TRACK_TASK";
 let BG_TASK_DEFINED = false;
 try {
   if (!BG_TASK_DEFINED) {
-    TaskManager.defineTask(BG_TASK, ({ data, error }) => {
+    TaskManager.defineTask(BG_TASK, ({ error }) => {
       if (error) return;
-      const { locations } = data || {};
-      // You can send these to API if needed:
-      // console.log("[BG] locations:", locations);
     });
     BG_TASK_DEFINED = true;
   }
-} catch (e) {
-  // On web/unsupported, just ignore
-}
+} catch {}
 
 async function startBackgroundTracking() {
   try {
     const bgPerm = await Location.getBackgroundPermissionsAsync();
     if (bgPerm.status !== "granted") {
       const req = await Location.requestBackgroundPermissionsAsync();
-      if (req.status !== "granted") {
-        // Background not allowed; skip silently
-        return;
-      }
+      if (req.status !== "granted") return;
     }
     const started = await Location.hasStartedLocationUpdatesAsync(BG_TASK);
     if (!started) {
@@ -72,7 +65,6 @@ async function startBackgroundTracking() {
         distanceInterval: 3,
         showsBackgroundLocationIndicator: true,
         pausesUpdatesAutomatically: false,
-        // Android foreground service notification (if needed)
         foregroundService: {
           notificationTitle: "LigtasCommute",
           notificationBody: "Navigation tracking in progress",
@@ -81,7 +73,6 @@ async function startBackgroundTracking() {
     }
   } catch {}
 }
-
 async function stopBackgroundTracking() {
   try {
     const started = await Location.hasStartedLocationUpdatesAsync(BG_TASK);
@@ -103,7 +94,6 @@ function decodePolyline(str) {
   }
   return coordinates;
 }
-
 const haversine = (a, b) => {
   const R = 6371e3;
   const φ1 = (a.latitude * Math.PI) / 180;
@@ -113,9 +103,7 @@ const haversine = (a, b) => {
   const x = Math.sin(dφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(dλ / 2) ** 2;
   return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 };
-
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
-
 const cleanPlaceName = (s) => {
   if (!s) return "";
   let t = s
@@ -128,7 +116,6 @@ const cleanPlaceName = (s) => {
     .trim();
   return t;
 };
-
 function bearingTo(a, b) {
   const φ1 = (a.latitude * Math.PI) / 180;
   const φ2 = (b.latitude * Math.PI) / 180;
@@ -236,10 +223,18 @@ export default function MapTracking({ route }) {
   const [rateNotes, setRateNotes] = useState("");
   const [thanksOpen, setThanksOpen] = useState(false);
 
-  // Report
-  const [reportOpen, setReportOpen] = useState(false);
-  const [reportCategory, setReportCategory] = useState("");
+  // After success modal route
+  const [afterThanks, setAfterThanks] = useState("stay");
+
+  // Report (MULTI-SELECT)
+  const CATEGORY_OPTIONS = ["Reckless Driving","Overloading","Overcharging","Harassment","Other"];
+  const [reportCats, setReportCats] = useState([]);
   const [reportNotes, setReportNotes] = useState("");
+  const [reportOpen, setReportOpen] = useState(false);
+
+  // NOTIF wiring
+  const [lastAction, setLastAction] = useState(null);        // "rating" | "incident" | null
+  const [lastReportCats, setLastReportCats] = useState([]);  // snapshot of categories
 
   // Sim
   const [simulating, setSimulating] = useState(false);
@@ -249,7 +244,7 @@ export default function MapTracking({ route }) {
   // Street View
   const [showStreet, setShowStreet] = useState(false);
   const webRef = useRef(null);
-  const streetHTML = useMemo(() => streetViewHTML(GMAPS_JS_KEY), []);
+  const streetHTML = streetViewHTML(GMAPS_JS_KEY);
   const sendToStreet = (payload) => { try { webRef.current?.postMessage(JSON.stringify(payload)); } catch {} };
 
   /* ---------- ANIM: pulsing dot (nav on) ---------- */
@@ -273,12 +268,12 @@ export default function MapTracking({ route }) {
     opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.6, 0] }),
   };
 
-  /* ---------- camera helpers (stabilized) ---------- */
+  /* ---------- camera helpers ---------- */
   const lastCameraAt = useRef(0);
   const lastCamCenter = useRef(null);
   function animateCameraFollow(center, hdg = 0, zoom = 18.2) {
     const now = Date.now();
-    if (now - lastCameraAt.current < 600) return; // throttle camera
+    if (now - lastCameraAt.current < 600) return;
     const movedEnough =
       !lastCamCenter.current || haversine(lastCamCenter.current, center) > 6;
     const headingDiff =
@@ -364,7 +359,7 @@ export default function MapTracking({ route }) {
     });
   };
 
-  /* Throttled directions (at most every 5s) */
+  /* Throttled directions */
   const lastDirectionsAt = useRef(0);
   const fetchDirections = async (o, d, force = false) => {
     const now = Date.now();
@@ -422,14 +417,13 @@ export default function MapTracking({ route }) {
     animateCameraFollow(startFrom, heading, 18.2);
 
     await fetchDirections(startFrom, dest, true);
-    setNavMode(true); // <-- km/h + Report + Banner show
+    setNavMode(true);
     setTripStartAt(Date.now());
     setTripDistance(0);
     setLastPoint(startFrom);
     setLastUpdateAt(Date.now());
     setSpeedKmh(null);
 
-    // Start background updates so tracking can continue if user leaves the screen
     startBackgroundTracking().catch(() => {});
 
     if (GMAPS_JS_KEY) {
@@ -440,7 +434,6 @@ export default function MapTracking({ route }) {
       }, 300);
     }
 
-    // Foreground follow while on this screen
     if (watchRef.current) watchRef.current.remove?.();
     watchRef.current = await Location.watchPositionAsync(
       { accuracy: Location.Accuracy.High, timeInterval: 1400, distanceInterval: 3 },
@@ -448,7 +441,6 @@ export default function MapTracking({ route }) {
         const cur = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
         const hdg = typeof pos.coords.heading === "number" ? pos.coords.heading : heading ?? 0;
 
-        // speed (prefer device m/s; fallback compute)
         let s = pos.coords.speed;
         const now = Date.now();
         if ((!Number.isFinite(s) || s === null) && lastPoint && lastUpdateAt) {
@@ -492,6 +484,26 @@ export default function MapTracking({ route }) {
       setArrivedSheet(true);
     }
     setShowStreet(false);
+  };
+
+  /* reset everything and go dashboard */
+  const resetTrackingState = () => {
+    try { watchRef.current?.remove?.(); } catch {}
+    watchRef.current = null;
+    stopBackgroundTracking().catch(() => {});
+    setNavMode(false);
+    setShowStreet(false);
+    setReportOpen(false);
+    setSimulating(false);
+    setDest(null);
+    setRouteCoords([]);
+    setEta(null);
+    setSteps([]);
+    setStepIdx(0);
+  };
+  const goDashboard = () => {
+    resetTrackingState();
+    navigation.reset({ index: 0, routes: [{ name: "CommuterDashboard" }] });
   };
 
   const recenterToUser = async () => {
@@ -633,15 +645,18 @@ export default function MapTracking({ route }) {
     } finally {
       setRateOpen(false);
       setRateDriver(0); setRateVehicle(0); setRateNotes("");
+      setLastAction("rating");
+      setAfterThanks("dashboard");
       setThanksOpen(true);
     }
   };
 
   const submitIncident = async () => {
-    if (!reportCategory) { setError("Choose a category."); return; }
+    if (!reportCats.length) { setError("Choose at least one category."); return; }
     try {
       const payload = {
-        category: reportCategory,
+        category: reportCats.join(", "),
+        categories: reportCats,
         notes: reportNotes,
         time: new Date().toISOString(),
         coords: devicePos,
@@ -657,38 +672,18 @@ export default function MapTracking({ route }) {
       }).catch(() => {});
     } finally {
       setReportOpen(false);
-      setReportCategory(""); setReportNotes("");
+      setLastAction("incident");
+      setLastReportCats(reportCats);
+      setReportCats([]); setReportNotes("");
+      setAfterThanks("stay");
       setThanksOpen(true);
     }
-  };
-
-  /* ---------- Home while tracking ---------- */
-  const goHomeWhileTracking = () => {
-    if (navMode) {
-      // Remove this screen's foreground watcher; keep background task and nav state
-      watchRef.current?.remove?.();
-      watchRef.current = null;
-    }
-    navigation.navigate("CommuterDashboard");
   };
 
   /* ---------- render ---------- */
   return (
     <SafeAreaView style={[s.safe, { paddingTop: insets.top }]}>
-
-      {/* Home pill (visible only while tracking) */}
-      {navMode && (
-        <TouchableOpacity
-          onPress={goHomeWhileTracking}
-          activeOpacity={0.9}
-          style={[s.homePill, { top: 10 + insets.top }]}
-        >
-          <MaterialCommunityIcons name="home-variant" size={18} color="#fff" />
-          <Text style={s.homePillTxt}>Home</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Direction banner (NO back button inside) */}
+      {/* Direction banner */}
       {navMode && bannerText && (
         <View style={[s.banner, { top: 10 + insets.top }]}>
           <MaterialCommunityIcons
@@ -730,7 +725,7 @@ export default function MapTracking({ route }) {
         {/* Destination */}
         {dest && <Marker coordinate={dest} title={dest.name || "Destination"} />}
 
-        {/* Your location (with pulsing shadow when navigating) */}
+        {/* Your location */}
         {devicePos && (
           <Marker coordinate={devicePos} title="You" description={originText}>
             <View style={{ alignItems: "center", justifyContent: "center" }}>
@@ -947,7 +942,7 @@ export default function MapTracking({ route }) {
 
               <TouchableOpacity
                 style={s.secondaryBtn}
-                onPress={() => setArrivedSheet(false)}
+                onPress={() => { setArrivedSheet(false); goDashboard(); }}
                 activeOpacity={0.9}
               >
                 <Text style={s.secondaryBtnTxt}>Close</Text>
@@ -958,7 +953,7 @@ export default function MapTracking({ route }) {
       )}
 
       {/* Rate modal */}
-      <Modal transparent visible={rateOpen} animationType="fade" onRequestClose={() => setRateOpen(false)}>
+      <Modal transparent visible={rateOpen} animationType="fade" onRequestClose={() => { setRateOpen(false); goDashboard(); }}>
         <View style={s.modalOverlay}>
           <View style={s.rateCard}>
             <View style={s.rateHeader}>
@@ -966,7 +961,7 @@ export default function MapTracking({ route }) {
                 <MaterialCommunityIcons name="star" size={22} color="#F59E0B" />
                 <Text style={s.rateTitle}>Rate Your Ride</Text>
               </View>
-              <TouchableOpacity onPress={() => setRateOpen(false)}>
+              <TouchableOpacity onPress={() => { setRateOpen(false); goDashboard(); }}>
                 <MaterialCommunityIcons name="close" size={20} color={C.text} />
               </TouchableOpacity>
             </View>
@@ -1005,7 +1000,7 @@ export default function MapTracking({ route }) {
         </View>
       </Modal>
 
-      {/* Report sheet */}
+      {/* Report sheet (MULTI-SELECT) */}
       <Modal visible={reportOpen} transparent animationType="slide" onRequestClose={() => setReportOpen(false)}>
         <View style={s.sheetOverlay}>
           <View style={s.reportSheet}>
@@ -1018,10 +1013,18 @@ export default function MapTracking({ route }) {
 
             <Text style={s.sheetLabel}>Quick categories</Text>
             <View style={s.catWrap}>
-              {["Reckless Driving","Overloading","Overcharging","Harassment","Other"].map((cat) => {
-                const active = reportCategory === cat;
+              {CATEGORY_OPTIONS.map((cat) => {
+                const active = reportCats.includes(cat);
                 return (
-                  <TouchableOpacity key={cat} style={[s.catChip, active && s.catChipActive]} onPress={() => setReportCategory(cat)}>
+                  <TouchableOpacity
+                    key={cat}
+                    style={[s.catChip, active && s.catChipActive]}
+                    onPress={() =>
+                      setReportCats((prev) =>
+                        prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
+                      )
+                    }
+                  >
                     <Text style={[s.catTxt, active && s.catTxtActive]}>{cat}</Text>
                   </TouchableOpacity>
                 );
@@ -1039,7 +1042,11 @@ export default function MapTracking({ route }) {
 
             <View style={{ height: 6 }} />
 
-            <TouchableOpacity style={s.submitBtn} onPress={submitIncident}>
+            <TouchableOpacity
+              style={[s.submitBtn, { opacity: reportCats.length ? 1 : 0.6 }]}
+              disabled={!reportCats.length}
+              onPress={submitIncident}
+            >
               <Text style={s.submitTxt}>Submit Report</Text>
             </TouchableOpacity>
 
@@ -1087,13 +1094,41 @@ export default function MapTracking({ route }) {
       </Modal>
 
       {/* Success toast (rating/report) */}
-      <Modal visible={thanksOpen} transparent animationType="fade" onRequestClose={() => setThanksOpen(false)}>
+      <Modal
+        visible={thanksOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setThanksOpen(false);
+          if (afterThanks === "dashboard") goDashboard();
+        }}
+      >
         <View style={s.thanksOverlay}>
           <View style={s.thanksCard}>
             <View style={s.checkCircle}><MaterialCommunityIcons name="check" size={26} color="#fff" /></View>
-            <Text style={s.thanksTitle}>Thank you!</Text>
-            <Text style={s.thanksMsg}>Your submission has been successfully sent</Text>
-            <TouchableOpacity style={s.okBtn} onPress={() => setThanksOpen(false)}><Text style={s.okTxt}>Done</Text></TouchableOpacity>
+            <Text style={s.thanksTitle}>{afterThanks === "dashboard" ? "Thanks for your rating!" : "Report sent"}</Text>
+            <Text style={s.thanksMsg}>
+              {afterThanks === "dashboard"
+                ? "Your rating has been submitted."
+                : "Your report has been submitted. Stay safe."}
+            </Text>
+            <TouchableOpacity
+              style={s.okBtn}
+              onPress={async () => {
+                try {
+                  if (lastAction === "rating") {
+                    await addRatingSubmitted({ driverName: driver?.name });
+                  } else if (lastAction === "incident") {
+                    await addIncidentSubmitted({ categories: lastReportCats });
+                  }
+                } finally {
+                  setThanksOpen(false);
+                  if (afterThanks === "dashboard") goDashboard();
+                }
+              }}
+            >
+              <Text style={s.okTxt}>{afterThanks === "dashboard" ? "Done" : "Continue"}</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1225,26 +1260,6 @@ const s = StyleSheet.create({
   },
   bannerTitle: { color: C.white, fontWeight: "800", fontSize: 14 },
   bannerSub: { color: "#D1D5DB", fontSize: 12 },
-
-  /* Home pill (top-left while tracking) */
-  homePill: {
-    position: "absolute",
-    left: 12,
-    zIndex: 30,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "rgba(11,19,43,0.9)", // dark glass to match banner
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
-  },
-  homePillTxt: { color: "#fff", fontWeight: "800", letterSpacing: 0.2 },
 
   /* Sim button */
   simBtn: {

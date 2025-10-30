@@ -2,13 +2,13 @@ import React, { useState } from "react";
 import {
   View,
   Text,
-  SafeAreaView,
   FlatList,
   TouchableOpacity,
   StyleSheet,
   Platform,
   ActivityIndicator,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   useFonts,
@@ -16,6 +16,7 @@ import {
   Poppins_600SemiBold,
   Poppins_700Bold,
 } from "@expo-google-fonts/poppins";
+import { useI18n } from "../i18n/i18n";
 
 const C = {
   bg: "#F3F4F6",
@@ -34,6 +35,7 @@ export default function CommunityList({ navigation, route }) {
     Poppins_600SemiBold,
     Poppins_700Bold,
   });
+  const { t } = useI18n();
 
   const incoming = Array.isArray(route?.params?.items) ? route.params.items : [];
   const [items] = useState(incoming);
@@ -46,7 +48,10 @@ export default function CommunityList({ navigation, route }) {
 
   if (!fontsLoaded) {
     return (
-      <SafeAreaView style={[s.screen, { alignItems: "center", justifyContent: "center" }]}>
+      <SafeAreaView
+        style={[s.screen, { alignItems: "center", justifyContent: "center" }]}
+        edges={["top", "left", "right", "bottom"]}
+      >
         <ActivityIndicator />
       </SafeAreaView>
     );
@@ -55,7 +60,7 @@ export default function CommunityList({ navigation, route }) {
   const renderItem = ({ item }) => (
     <TouchableOpacity activeOpacity={0.9} style={s.row}>
       <View style={{ flex: 1 }}>
-        <Text style={s.rowTitle}>{item?.name || "Commuter"}</Text>
+        <Text style={s.rowTitle}>{item?.name || t("community", "Community")}</Text>
         <Text style={s.rowSub}>{item?.bus || "—"}</Text>
       </View>
       {item?.stars > 0 ? (
@@ -74,18 +79,18 @@ export default function CommunityList({ navigation, route }) {
   const Empty = () => (
     <View style={s.empty}>
       <MaterialCommunityIcons name="account-multiple-outline" size={36} color={C.hint} />
-      <Text style={s.emptyTitle}>No recent community activity</Text>
-      <Text style={s.emptySub}>Ratings and reports will appear here when available.</Text>
+      <Text style={s.emptyTitle}>{t("listEmptyCommunityTitle", "No recent community activity")}</Text>
+      <Text style={s.emptySub}>{t("listEmptyCommunitySub", "Ratings and reports will appear here when available.")}</Text>
     </View>
   );
 
   return (
-    <SafeAreaView style={s.screen}>
+    <SafeAreaView style={s.safeArea} edges={["top", "left", "right", "bottom"]}>
       <View style={s.header}>
         <TouchableOpacity onPress={() => navigation?.goBack?.()} style={s.headerBtn}>
           <MaterialCommunityIcons name="chevron-left" size={24} color={C.text} />
         </TouchableOpacity>
-        <Text style={s.headerTitle}>Community</Text>
+        <Text style={s.headerTitle}>{t("community", "Community")}</Text>
         <View style={s.headerBtn} />
       </View>
 
@@ -104,6 +109,7 @@ export default function CommunityList({ navigation, route }) {
 }
 
 const s = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: C.bg },
   screen: { flex: 1, backgroundColor: C.bg },
   header: {
     flexDirection: "row",

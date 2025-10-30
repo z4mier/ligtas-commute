@@ -71,14 +71,12 @@ export default function QRScanner({ navigation }) {
       } catch {}
 
       if (parsed && (parsed.driverId || parsed.name || parsed.code)) {
-        const busType =
-          parsed.busType ?? parsed.vehicleType ?? parsed.vehicle ?? "—";
+        const busType = parsed.busType ?? parsed.vehicleType ?? parsed.vehicle ?? "—";
         const obj = {
           name: parsed.name ?? "Unknown Driver",
           code: parsed.code ?? parsed.driverId ?? "N/A",
           busType,
-          // backward-compat so any old screen using 'vehicleType' still works
-          vehicleType: busType,
+          vehicleType: busType, // keep for compatibility with other screens
           busNumber: parsed.busNumber ?? parsed.bus ?? "—",
           plateNumber: parsed.plateNumber ?? parsed.plate ?? "—",
           scannedAt: new Date(),
@@ -105,8 +103,7 @@ export default function QRScanner({ navigation }) {
         name: out.name ?? "Unknown Driver",
         code: out.code ?? "N/A",
         busType,
-        // backward-compat alias
-        vehicleType: busType,
+        vehicleType: busType, // keep for compatibility
         busNumber: out.busNumber ?? "—",
         plateNumber: out.plateNumber ?? out.plate ?? "—",
         scannedAt: new Date(),
@@ -125,7 +122,7 @@ export default function QRScanner({ navigation }) {
     }
   };
 
-  const onBarcodeScanned = ({ data /*, type*/ }) => {
+  const onBarcodeScanned = ({ data }) => {
     if (!scanning || scanLock.current || infoOpen) return;
     scanLock.current = true;
     setScanning(false);
@@ -280,20 +277,13 @@ export default function QRScanner({ navigation }) {
                 </View>
               </View>
 
-              {/* Row: Bus Type + Bus Number */}
-              <View style={s.pair}>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.label}>Bus Type</Text>
-                  <Text style={s.value}>{driver?.busType ?? "—"}</Text>
-                </View>
-                <View style={{ width: 18 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={s.label}>Bus Number</Text>
-                  <Text style={s.value}>{driver?.busNumber ?? "—"}</Text>
-                </View>
+              {/* Bus Number (full width) */}
+              <View style={{ marginTop: 10 }}>
+                <Text style={s.label}>Bus Number</Text>
+                <Text style={s.value}>{driver?.busNumber ?? "—"}</Text>
               </View>
 
-              {/* Row: Plate Number */}
+              {/* Plate Number (full width) */}
               <View style={{ marginTop: 10 }}>
                 <Text style={s.label}>Plate Number</Text>
                 <Text style={s.value}>{driver?.plateNumber ?? "—"}</Text>
@@ -304,11 +294,11 @@ export default function QRScanner({ navigation }) {
               style={[s.primaryBtn, { marginTop: 14 }]}
               onPress={() => {
                 setInfoOpen(false);
-                // include busType and the old vehicleType alias for compatibility
+                // still pass through for downstream usage if needed
                 navigation.navigate("MapTracking", {
                   driver: {
                     ...driver,
-                    vehicleType: driver?.busType ?? driver?.vehicleType ?? "—",
+                    vehicleType: driver?.vehicleType ?? driver?.busType ?? "—",
                   },
                 });
               }}
@@ -455,7 +445,6 @@ const s = StyleSheet.create({
   },
   badgeTxt: { fontWeight: "700", fontSize: 11, color: C.text },
 
-  pair: { flexDirection: "row", alignItems: "flex-start", marginTop: 10 },
   label: { color: C.sub, fontSize: 11, marginBottom: 4 },
   value: { color: C.text, fontSize: 12.5, fontWeight: "600" },
 

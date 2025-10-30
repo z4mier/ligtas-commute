@@ -1,6 +1,8 @@
+// apps/api/src/index.js
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import path from "path";
 dotenv.config();
 
 if (typeof globalThis.fetch !== "function") {
@@ -8,18 +10,30 @@ if (typeof globalThis.fetch !== "function") {
   globalThis.fetch = nodeFetch;
 }
 
+/* ---------- utils ---------- */
+function abs(req, rel) {
+  if (!rel) return null;
+  if (/^https?:\/\//i.test(rel)) return rel;
+  const base = `${req.protocol}://${req.get("host")}`;
+  return `${base}${rel.startsWith("/") ? "" : "/"}${rel}`;
+}
+
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
+
+/* ✅ FIXED: routes are one level up from /src */
 import mapsRouter from "../routes/maps.js";
-import adminDriversRouter from "../routes/admin.drivers.js"; 
+import adminDriversRouter from "../routes/admin.drivers.js";
 import driversRouter from "../routes/drivers.js";
-import usersRouter from "../routes/users.js";
+import driverProfileRouter from "../routes/driver.profile.js";
+import feedbackRoutes from "../routes/feedback.js";
 
 const app = express();
 const prisma = new PrismaClient();
 
+/* ---------- app setup ---------- */
 app.set("trust proxy", 1);
 app.use(
   cors({
@@ -35,17 +49,11 @@ const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
 const GOOGLE_PLACES_KEY =
   process.env.GOOGLE_PLACES_KEY || process.env.GOOGLE_DIRECTIONS_KEY || "";
 
-// Helpers
+/* ---------- auth helpers ---------- */
 const sign = (u) =>
   jwt.sign({ sub: u.id, role: u.role, email: u.email }, JWT_SECRET, {
     expiresIn: "7d",
   });
-
-function cryptoRandom() {
-  return (
-    Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
-  );
-}
 
 function requireAuth(req, res, next) {
   const h = req.headers.authorization || "";
@@ -65,14 +73,12 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// OTP 
+/* ---------- simple OTP store (dev) ---------- */
 const otpStore = new Map();
 const OTP_TTL_MS = 5 * 60 * 1000;
 const OTP_RESEND_COOLDOWN_MS = 30 * 1000;
-
-function generateOtp() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-}
+const generateOtp = () =>
+  Math.floor(100000 + Math.random() * 900000).toString();
 function setOtp(email) {
   const code = generateOtp();
   const now = Date.now();
@@ -80,21 +86,7 @@ function setOtp(email) {
   return code;
 }
 
-async function nextSequence(tx, name) {
-  const seq = await tx.sequence.upsert({
-    where: { name },
-    update: { current: { increment: 1 } },
-    create: { name, current: 1 },
-    select: { current: true },
-  });
-  return seq.current;
-}
-function formatDriverIdNo(n) {
-  const y = new Date().getFullYear();
-  return `DRV-${y}-${String(n).padStart(6, "0")}`;
-}
-
-// Health
+/* ---------- health ---------- */
 app.get("/health", async (_req, res) => {
   try {
     await prisma.user.count();
@@ -112,12 +104,18 @@ app.get("/health", async (_req, res) => {
   }
 });
 
-app.use("/maps", mapsRouter);
-app.use("/admin", adminDriversRouter); 
-app.use("/drivers", driversRouter);
-app.use("/users", usersRouter);
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
-// Auth
+/* ---------- routers ---------- */
+app.use("/maps", mapsRouter);
+app.use("/drivers", requireAuth, driversRouter);
+app.use("/driver", requireAuth, driverProfileRouter);
+app.use("/admin", requireAuth, requireAdmin, adminDriversRouter);
+
+/* ✅ Protect feedback so req.user is present */
+app.use("/feedback", requireAuth, feedbackRoutes);
+
+/* ---------- auth endpoints ---------- */
 app.post("/auth/login", async (req, res) => {
   try {
     const schema = z.object({
@@ -154,7 +152,6 @@ app.post("/auth/login", async (req, res) => {
   }
 });
 
-// User register
 app.post("/auth/register", async (req, res) => {
   try {
     const schema = z.object({
@@ -162,7 +159,7 @@ app.post("/auth/register", async (req, res) => {
       phone: z.string().min(6),
       password: z.string().min(6),
       role: z.enum(["COMMUTER", "DRIVER"]).optional(),
-      fullName: z.string().min(1, "Full name required"),
+      fullName: z.string().min(1),
       address: z.string().optional(),
       language: z.string().optional(),
     });
@@ -199,13 +196,18 @@ app.post("/auth/register", async (req, res) => {
                     update: {
                       fullName,
                       address: address ?? existing.commuterProfile.address ?? null,
-                      language: language ?? existing.commuterProfile.language ?? "en",
+                      language:
+                        language ?? existing.commuterProfile.language ?? "en",
                     },
                   },
                 }
               : {
                   commuterProfile: {
-                    create: { fullName, address: address || null, language: language || "en" },
+                    create: {
+                      fullName,
+                      address: address || null,
+                      language: language || "en",
+                    },
                   },
                 }
             : {}),
@@ -231,7 +233,15 @@ app.post("/auth/register", async (req, res) => {
         mustChangePassword: false,
         status: "PENDING_VERIFICATION",
         ...(role === "COMMUTER" || !role
-          ? { commuterProfile: { create: { fullName, address: address || null, language: language || "en" } } }
+          ? {
+              commuterProfile: {
+                create: {
+                  fullName,
+                  address: address || null,
+                  language: language || "en",
+                },
+              },
+            }
           : {}),
       },
       include: { commuterProfile: true },
@@ -246,7 +256,9 @@ app.post("/auth/register", async (req, res) => {
         .status(400)
         .json({ message: e.errors[0]?.message || "Invalid input" });
     if (e?.code === "P2002")
-      return res.status(409).json({ message: "Email or phone already registered" });
+      return res
+        .status(409)
+        .json({ message: "Email or phone already registered" });
     console.error("REGISTER ERROR:", e);
     res.status(500).json({ message: "Server error" });
   }
@@ -325,17 +337,16 @@ app.post("/auth/verify-otp", async (req, res) => {
   }
 });
 
-// Buses
-
+/* ---------- buses (admin) ---------- */
 app.get("/buses", requireAuth, requireAdmin, async (req, res) => {
-  const { type, active } = req.query;
+  const { busType, active } = req.query;
   const where = {
-    ...(type ? { type: String(type).toUpperCase() } : {}),
+    ...(busType ? { busType: String(busType).toUpperCase() } : {}),
     ...(active != null ? { isActive: String(active) === "true" } : {}),
   };
   const buses = await prisma.bus.findMany({
     where,
-    orderBy: [{ type: "asc" }, { number: "asc" }],
+    orderBy: [{ busType: "asc" }, { number: "asc" }],
   });
   res.json(buses);
 });
@@ -347,7 +358,9 @@ app.get("/buses/:id", requireAuth, requireAdmin, async (req, res) => {
 });
 
 app.get("/buses/by-number/:number", requireAuth, requireAdmin, async (req, res) => {
-  const bus = await prisma.bus.findUnique({ where: { number: req.params.number } });
+  const bus = await prisma.bus.findFirst({
+    where: { number: req.params.number },
+  });
   if (!bus) return res.status(404).json({ message: "Bus not found" });
   res.json(bus);
 });
@@ -357,7 +370,7 @@ app.post("/buses", requireAuth, requireAdmin, async (req, res) => {
     const schema = z.object({
       number: z.string().min(1),
       plate: z.string().min(1),
-      type: z.enum(["AIRCON", "NON_AIRCON"]),
+      busType: z.enum(["AIRCON", "NON_AIRCON"]),
       isActive: z.boolean().optional(),
     });
     const input = schema.parse(req.body);
@@ -378,7 +391,7 @@ app.put("/buses/:id", requireAuth, requireAdmin, async (req, res) => {
     const schema = z.object({
       number: z.string().min(1).optional(),
       plate: z.string().min(1).optional(),
-      type: z.enum(["AIRCON", "NON_AIRCON"]).optional(),
+      busType: z.enum(["AIRCON", "NON_AIRCON"]).optional(),
       isActive: z.boolean().optional(),
     });
     const input = schema.parse(req.body);
@@ -419,109 +432,7 @@ app.delete("/buses/:id", requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-// Admin - Create Driver
-
-app.post("/admin/create-driver", requireAuth, requireAdmin, async (req, res) => {
-  const schema = z.object({
-    email: z.string().email(),
-    phone: z.string().min(6),
-    password: z.string().min(6).optional(), 
-    fullName: z.string().min(1),
-    licenseNo: z.string().min(1),
-    birthDate: z.string().min(1),
-    address: z.string().min(1),
-    busId: z.string().optional(),
-    busNo: z.string().optional(),
-    plateNumber: z.string().optional(), 
-    vehicleType: z.enum(["AIRCON", "NON_AIRCON"]).optional(), 
-    route: z.string().optional(),
-  });
-
-  try {
-    const input = schema.parse(req.body);
-    const key = input.email.toLowerCase().trim();
-    const birthDate = new Date(input.birthDate);
-    const passwordHash = await bcrypt.hash(input.password || "driver123", 12);
-    const qrToken = cryptoRandom();
-
-    let bus = null;
-
-    if (input.busId) {
-      bus = await prisma.bus.findUnique({ where: { id: input.busId } });
-    } else if (input.busNo) {
-      bus = await prisma.bus.findUnique({ where: { number: input.busNo } });
-    }
-
-    if (!bus) {
-      const normalizedPlate = (input.plateNumber || "").replace(/\s+/g, "").toUpperCase();
-      if (!normalizedPlate && !input.busNo) {
-        return res.status(400).json({ message: "Provide busId or busNo, or plateNumber (+ vehicleType) to create a bus." });
-      }
-      if (!bus && normalizedPlate) {
-        if (!input.vehicleType) {
-          return res.status(400).json({ message: "vehicleType is required when creating a new bus." });
-        }
-        bus = await prisma.bus.create({
-          data: {
-            number: input.busNo || null,
-            plate: normalizedPlate,
-            type: input.vehicleType,
-            isActive: true,
-          },
-        });
-      }
-    }
-
-    if (!bus) return res.status(400).json({ message: "Invalid bus selection." });
-    if (!bus.isActive) return res.status(400).json({ message: "Selected bus is inactive." });
-
-    const result = await prisma.$transaction(async (tx) => {
-      const seq = await nextSequence(tx, "DRIVER");
-      const driverIdNo = formatDriverIdNo(seq);
-
-      const user = await tx.user.create({
-        data: {
-          email: key,
-          phone: input.phone,
-          role: "DRIVER",
-          password: passwordHash,
-          mustChangePassword: true,
-          status: "ACTIVE",
-          driverProfile: {
-            create: {
-              fullName: input.fullName,
-              licenseNo: input.licenseNo,
-              birthDate,
-              address: input.address,
-              busId: bus.id,
-              driverIdNo,
-              route: input.route ?? null,
-              qrToken,
-              status: "ACTIVE",
-            },
-          },
-        },
-        include: { driverProfile: { include: { bus: true } } },
-      });
-
-      return { user };
-    });
-
-    return res.json({
-      message: "Driver created",
-      defaultPassword: input.password ? undefined : "driver123",
-      user: result.user,
-    });
-  } catch (e) {
-    if (e instanceof z.ZodError)
-      return res.status(400).json({ message: "Invalid input" });
-    if (e?.code === "P2002")
-      return res.status(409).json({ message: "Duplicate entry (email/phone/plate/driverIdNo/qrToken)" });
-    console.error("CREATE DRIVER ERROR:", e);
-    return res.status(500).json({ message: "Server error" });
-  }
-});
-
+/* ---------- user profile ---------- */
 app.get("/users/me", requireAuth, async (req, res) => {
   try {
     const me = await prisma.user.findUnique({
@@ -533,37 +444,32 @@ app.get("/users/me", requireAuth, async (req, res) => {
     });
     if (!me) return res.status(404).json({ message: "User not found" });
 
+    const contacts = await prisma.emergencyContact.findMany({
+      where: { userId: me.id },
+      orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
+      select: { name: true, phone: true, relation: true, priority: true },
+    });
+
+    const commuter = me.commuterProfile;
     res.json({
       id: me.id,
       email: me.email,
       phone: me.phone,
       role: me.role,
       status: me.status,
-
-      fullName:
-        me.driverProfile?.fullName ??
-        me.commuterProfile?.fullName ??
-        null,
-
-      address:
-        me.driverProfile?.address ??
-        me.commuterProfile?.address ??
-        null,
-
-      language: me.commuterProfile?.language ?? null,
-      points: me.commuterProfile?.points ?? 0,
-
+      fullName: me.driverProfile?.fullName ?? commuter?.fullName ?? null,
+      address: me.driverProfile?.address ?? commuter?.address ?? null,
+      language: commuter?.language ?? "en",
+      profileUrl: commuter?.profileUrl ? abs(req, commuter.profileUrl) : null,
+      emergencyContacts: contacts,
       driver: me.driverProfile
         ? {
-            driverIdNo: me.driverProfile.driverIdNo,
-            route: me.driverProfile.route,
-            status: me.driverProfile.status,
             bus: me.driverProfile.bus
               ? {
                   id: me.driverProfile.bus.id,
                   number: me.driverProfile.bus.number,
                   plate: me.driverProfile.bus.plate,
-                  type: me.driverProfile.bus.type,
+                  type: me.driverProfile.bus.busType,
                   isActive: me.driverProfile.bus.isActive,
                 }
               : null,
@@ -571,12 +477,143 @@ app.get("/users/me", requireAuth, async (req, res) => {
         : null,
     });
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: "Failed to fetch user" });
+    console.error("GET /users/me ERROR:", e);
+    res.status(500).json({ message: "Failed to fetch profile" });
   }
 });
 
-// Server
+app.patch("/users/me", requireAuth, async (req, res) => {
+  try {
+    const schema = z.object({
+      fullName: z.string().min(1).optional(),
+      phone: z.string().min(6).optional(),
+      address: z.string().optional(),
+      language: z.string().optional(),
+      profileUrl: z.string().optional(),
+      emergencyContacts: z
+        .array(
+          z.object({
+            name: z.string().min(1),
+            phone: z.string().min(6),
+            relation: z.string().optional().nullable(),
+            priority: z.number().int().min(0).max(2).optional(),
+          })
+        )
+        .max(3)
+        .optional(),
+    });
+
+    const input = schema.parse(req.body);
+    const userId = req.user.sub;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { commuterProfile: true, driverProfile: true },
+    });
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (input.phone) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { phone: input.phone },
+      });
+    }
+
+    const commuter =
+      user.commuterProfile ??
+      (await prisma.commuterProfile.create({
+        data: {
+          userId,
+          fullName:
+            input.fullName ?? user.driverProfile?.fullName ?? "Commuter",
+          address: input.address ?? null,
+          language: input.language ?? "en",
+          profileUrl: input.profileUrl ?? null,
+        },
+      }));
+
+    if (user.commuterProfile) {
+      await prisma.commuterProfile.update({
+        where: { id: commuter.id },
+        data: {
+          ...(input.fullName ? { fullName: input.fullName } : {}),
+          ...(input.address !== undefined ? { address: input.address ?? null } : {}),
+          ...(input.language ? { language: input.language } : {}),
+          ...(input.profileUrl !== undefined ? { profileUrl: input.profileUrl ?? null } : {}),
+        },
+      });
+    }
+
+    if (input.emergencyContacts) {
+      const payload = input.emergencyContacts
+        .slice(0, 3)
+        .map((c, i) => ({
+          userId,
+          name: c.name,
+          phone: c.phone,
+          relation: c.relation ?? null,
+          priority: c.priority ?? i,
+        }));
+
+      await prisma.$transaction([
+        prisma.emergencyContact.deleteMany({ where: { userId } }),
+        prisma.emergencyContact.createMany({ data: payload }),
+      ]);
+    }
+
+    const contacts = await prisma.emergencyContact.findMany({
+      where: { userId },
+      orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
+      select: { name: true, phone: true, relation: true, priority: true },
+    });
+
+    return res.json({
+      message: "Profile updated successfully",
+      emergencyContacts: contacts,
+    });
+  } catch (e) {
+    console.error("PATCH /users/me ERROR:", e);
+    if (e instanceof z.ZodError)
+      return res
+        .status(400)
+        .json({ message: e.errors[0]?.message || "Invalid input" });
+    if (e?.code === "P2002")
+      return res
+        .status(409)
+        .json({ message: "Duplicate entry (phone/priority per user)" });
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.patch("/users/change-password", requireAuth, async (req, res) => {
+  try {
+    const schema = z.object({
+      currentPassword: z.string().min(6),
+      newPassword: z.string().min(6),
+    });
+    const { currentPassword, newPassword } = schema.parse(req.body);
+    const user = await prisma.user.findUnique({ where: { id: req.user.sub } });
+    if (!user || !user.password)
+      return res.status(404).json({ message: "User not found" });
+
+    const ok = await bcrypt.compare(currentPassword, user.password);
+    if (!ok) return res.status(400).json({ message: "Current password is incorrect" });
+
+    const hash = await bcrypt.hash(newPassword, 12);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { password: hash, mustChangePassword: false },
+    });
+    res.json({ message: "Password updated" });
+  } catch (e) {
+    if (e instanceof z.ZodError)
+      return res.status(400).json({ message: "Invalid input" });
+    console.error("CHANGE PASSWORD ERROR:", e);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ---------- start/shutdown ---------- */
 const server = app.listen(PORT, HOST, () =>
   console.log(`API running on http://${HOST}:${PORT}`)
 );
@@ -587,6 +624,5 @@ function shutdown() {
     process.exit(0);
   });
 }
-
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);

@@ -1,5 +1,5 @@
 // apps/mobile/screens/CommuterDashboard.js
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -23,6 +23,8 @@ import {
   Poppins_700Bold,
 } from "@expo-google-fonts/poppins";
 import { API_URL } from "../constants/config";
+import { useI18n } from "../i18n/i18n";
+import * as Notify from "../lib/notify";
 
 const C = {
   bg: "#F3F4F6",
@@ -39,11 +41,26 @@ const C = {
 
 // === keep header visual metrics in sync with < Settings > screen ===
 const HEADER_TITLE_SIZE = 18;
-const HEADER_ICON_SIZE  = 22;
-const LOGO_SIZE         = 28;
-const HEADER_H          = 48;
+const HEADER_ICON_SIZE = 22;
+const LOGO_SIZE = 28;
+const HEADER_H = 48;
 
 const TRACK_KEY = "lc_tracking";
+
+/* small helper used both in Dashboard card and dropdown */
+function timeAgo(ts) {
+  if (!ts) return "";
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 5) return "Just now";
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d === 1) return "Yesterday";
+  return `${d}d ago`;
+}
 
 export default function CommuterDashboard({ navigation }) {
   const [fontsLoaded] = useFonts({
@@ -52,6 +69,7 @@ export default function CommuterDashboard({ navigation }) {
     Poppins_700Bold,
   });
 
+  const { t } = useI18n();
   const insets = useSafeAreaInsets();
 
   const [checking, setChecking] = useState(true);
@@ -83,20 +101,54 @@ export default function CommuterDashboard({ navigation }) {
   // Active tracking snapshot (from MapTracking)
   const [activeTrack, setActiveTrack] = useState(null);
 
-  // Notifications
+  // Notifications — now sourced from Notify store
   const [notifications, setNotifications] = useState([]);
-  const unreadCount = notifications.filter((n) => !n.read).length;
-
+  const unreadCount = useMemo(
+    () => notifications.filter((n) => !n.read).length,
+    [notifications]
+  );
   const [notifOpen, setNotifOpen] = useState(false);
 
-  const markAllRead = () => {
-    if (!notifications.length) return;
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  // Pull notifications from storage + subscribe for live updates
+  useEffect(() => {
+    let mounted = true;
+
+    const refresh = async () => {
+      const list = await Notify.load();
+      if (!mounted) return;
+      setNotifications(
+        list.map((n) => ({
+          ...n,
+          timeAgo: timeAgo(n.timestamp),
+        }))
+      );
+    };
+
+    // initial load
+    refresh();
+
+    // live updates when MapTracking adds a rating/incident
+    const unsub = Notify.onChange(refresh);
+
+    // also refresh whenever dashboard regains focus
+    const unsubNav = navigation.addListener("focus", refresh);
+
+    return () => {
+      mounted = false;
+      unsub?.();
+      unsubNav?.();
+    };
+  }, [navigation]);
+
+  const markAllRead = async () => {
+    const updated = await Notify.markAllRead();
+    setNotifications(updated.map((n) => ({ ...n, timeAgo: timeAgo(n.timestamp) })));
   };
 
   const openAllNotifications = () => {
     setNotifOpen(false);
-    navigation?.navigate?.("Notifications", { items: notifications });
+    // The Notifications screen loads from Notify itself; no need to pass items
+    navigation?.navigate?.("Notifications");
   };
 
   useEffect(() => {
@@ -110,7 +162,9 @@ export default function CommuterDashboard({ navigation }) {
         if (mounted) setLoadingLists(false);
       }
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   // Load/refresh active tracking snapshot whenever Dashboard gets focus
@@ -205,53 +259,63 @@ export default function CommuterDashboard({ navigation }) {
         >
           <View style={s.notifCard}>
             <View style={s.notifHeader}>
-              <Text style={s.notifTitle}>Notifications</Text>
-              <TouchableOpacity onPress={markAllRead} disabled={!notifications.length}>
+              <Text style={s.notifTitle}>{t("notifications")}</Text>
+              <TouchableOpacity
+                onPress={markAllRead}
+                disabled={!notifications.length}
+              >
                 <Text
                   style={[
                     s.notifMarkAll,
                     { color: notifications.length ? C.brand : C.hint },
                   ]}
                 >
-                  Mark all as read
+                  {t("markAllRead")}
                 </Text>
               </TouchableOpacity>
             </View>
 
             {notifications.length === 0 ? (
               <View style={s.notifEmpty}>
-                <MaterialCommunityIcons name="bell-off-outline" size={28} color={C.hint} />
-                <Text style={s.emptyTitle}>No notifications</Text>
-                <Text style={s.emptySub}>
-                  {"You\u2019re all caught up. We\u2019ll notify you here."}
-                </Text>
+                <MaterialCommunityIcons
+                  name="bell-off-outline"
+                  size={28}
+                  color={C.hint}
+                />
+                <Text style={s.emptyTitle}>{t("noNotifications")}</Text>
+                <Text style={s.emptySub}>{t("noNotificationsSub")}</Text>
               </View>
             ) : (
-              notifications.slice(0, 4).map((n) => (
+              notifications.slice(0, 3).map((n) => (
                 <View key={String(n.id)} style={s.notifRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={s.notifRowTitle}>{n.title}</Text>
                     {!!n.body && <Text style={s.notifRowBody}>{n.body}</Text>}
-                    {!!n.timeAgo && <Text style={s.notifRowTime}>{n.timeAgo}</Text>}
+                    <Text style={s.notifRowTime}>{timeAgo(n.timestamp)}</Text>
                   </View>
                   {!n.read && <View style={s.inlineDot} />}
                 </View>
               ))
             )}
 
-            <TouchableOpacity style={s.viewAllBtn} onPress={openAllNotifications}>
-              <Text style={s.viewAllBtnTxt}>View all notifications</Text>
+            <TouchableOpacity
+              style={s.viewAllBtn}
+              onPress={openAllNotifications}
+            >
+              <Text style={s.viewAllBtnTxt}>{t("viewAllNotifications")}</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
       {/* CONTENT */}
-      <ScrollView contentContainerStyle={[s.scroll, { paddingBottom: 120 + insets.bottom }]}>
+      <ScrollView
+        contentContainerStyle={[s.scroll, { paddingBottom: 120 + insets.bottom }]}
+      >
         {/* Safety Insights */}
         <View style={s.card}>
           <View style={s.cardHeader}>
-            <Text style={s.cardTitleOnly}>Safety Insights</Text>
+            <Text style={s.cardTitleOnly}>{t("safetyInsights")}</Text>
             <TouchableOpacity
               onPress={() =>
                 navigation?.navigate?.("SafetyInsightsList", {
@@ -259,7 +323,7 @@ export default function CommuterDashboard({ navigation }) {
                 })
               }
             >
-              <Text style={[s.viewAll, { color: C.brand }]}>View All</Text>
+              <Text style={[s.viewAll, { color: C.brand }]}>{t("viewAll")}</Text>
             </TouchableOpacity>
           </View>
 
@@ -269,11 +333,13 @@ export default function CommuterDashboard({ navigation }) {
             </View>
           ) : safetyItems.length === 0 ? (
             <View style={s.emptyWrap}>
-              <MaterialCommunityIcons name="shield-off-outline" size={28} color={C.hint} />
-              <Text style={s.emptyTitle}>No safety insights yet</Text>
-              <Text style={s.emptySub}>
-                You’ll see updates here when new alerts are available.
-              </Text>
+              <MaterialCommunityIcons
+                name="shield-off-outline"
+                size={28}
+                color={C.hint}
+              />
+              <Text style={s.emptyTitle}>{t("listEmptySafetyTitle")}</Text>
+              <Text style={s.emptySub}>{t("listEmptySafetySub")}</Text>
             </View>
           ) : (
             safetyItems.map((it) => (
@@ -285,10 +351,10 @@ export default function CommuterDashboard({ navigation }) {
           )}
         </View>
 
-        {/* Community (updated) */}
+        {/* Community */}
         <View style={s.card}>
           <View style={s.cardHeader}>
-            <Text style={s.cardTitleOnly}>Community</Text>
+            <Text style={s.cardTitleOnly}>{t("community")}</Text>
             <TouchableOpacity
               onPress={() =>
                 navigation?.navigate?.("CommunityList", {
@@ -296,7 +362,7 @@ export default function CommuterDashboard({ navigation }) {
                 })
               }
             >
-              <Text style={[s.viewAll, { color: C.brand }]}>View All</Text>
+              <Text style={[s.viewAll, { color: C.brand }]}>{t("viewAll")}</Text>
             </TouchableOpacity>
           </View>
 
@@ -306,11 +372,13 @@ export default function CommuterDashboard({ navigation }) {
             </View>
           ) : communityItems.length === 0 ? (
             <View style={s.emptyWrap}>
-              <MaterialCommunityIcons name="account-group-outline" size={28} color={C.hint} />
-              <Text style={s.emptyTitle}>No recent community activity</Text>
-              <Text style={s.emptySub}>
-                Ratings and reports will appear here when available.
-              </Text>
+              <MaterialCommunityIcons
+                name="account-group-outline"
+                size={28}
+                color={C.hint}
+              />
+              <Text style={s.emptyTitle}>{t("listEmptyCommunityTitle")}</Text>
+              <Text style={s.emptySub}>{t("listEmptyCommunitySub")}</Text>
             </View>
           ) : (
             communityItems.map((it) => (
@@ -325,7 +393,7 @@ export default function CommuterDashboard({ navigation }) {
         {/* Tracking */}
         <View style={s.card}>
           <View style={s.cardHeader}>
-            <Text style={s.cardTitleOnly}>Tracking</Text>
+            <Text style={s.cardTitleOnly}>{t("tracking")}</Text>
           </View>
 
           {loadingLists ? (
@@ -333,41 +401,52 @@ export default function CommuterDashboard({ navigation }) {
               <ActivityIndicator />
             </View>
           ) : !activeTrack || !activeTrack.active ? (
-            // EMPTY STATE: no Open Map button here (as requested)
             <View style={s.emptyWrap}>
-              <MaterialCommunityIcons name="map-search-outline" size={28} color={C.hint} />
-              <Text style={s.emptyTitle}>No active trips being tracked</Text>
-              <Text style={s.emptySub}>
-                You’ll see updates here when new alerts are available.
-              </Text>
+              <MaterialCommunityIcons
+                name="map-search-outline"
+                size={28}
+                color={C.hint}
+              />
+              <Text style={s.emptyTitle}>{t("trackingEmptyTitle")}</Text>
+              <Text style={s.emptySub}>{t("trackingEmptySub")}</Text>
             </View>
           ) : (
-            // ACTIVE TRACK CARD
             <View style={s.trackActiveCard}>
               <View style={{ flex: 1 }}>
-                <Text style={s.trackNow}>Tracking in progress…</Text>
+                <Text style={s.trackNow}>{t("trackingNow")}</Text>
                 {!!activeTrack.routeTitle && (
-                  <Text style={s.trackRoute} numberOfLines={1}>{activeTrack.routeTitle}</Text>
+                  <Text style={s.trackRoute} numberOfLines={1}>
+                    {activeTrack.routeTitle}
+                  </Text>
                 )}
                 <Text style={s.trackDest} numberOfLines={1}>
-                  Destination: <Text style={s.bold}>{activeTrack.destinationName}</Text>
+                  {t("destination")}:{" "}
+                  <Text style={s.bold}>{activeTrack.destinationName}</Text>
                 </Text>
                 {!!activeTrack.eta && (
                   <Text style={s.trackEta}>
-                    ETA: <Text style={s.bold}>{activeTrack.eta.durationText}</Text> • {activeTrack.eta.distanceText}
+                    {t("eta")}:{" "}
+                    <Text style={s.bold}>{activeTrack.eta.durationText}</Text>{" "}
+                    • {activeTrack.eta.distanceText}
                   </Text>
                 )}
                 {!!activeTrack?.driver?.name && (
                   <Text style={s.trackDriver}>
-                    Driver: {activeTrack.driver.name}
-                    {!!activeTrack.driver.routeName ? ` • ${activeTrack.driver.routeName}` : ""}
+                    {t("driver")}: {activeTrack.driver.name}
+                    {!!activeTrack.driver.routeName
+                      ? ` • ${activeTrack.driver.routeName}`
+                      : ""}
                   </Text>
                 )}
               </View>
 
-              <TouchableOpacity style={s.openMapBtn} onPress={openTrackingMap} activeOpacity={0.9}>
+              <TouchableOpacity
+                style={s.openMapBtn}
+                onPress={openTrackingMap}
+                activeOpacity={0.9}
+              >
                 <MaterialCommunityIcons name="map" size={18} color="#fff" />
-                <Text style={s.openMapTxt}>Open Map</Text>
+                <Text style={s.openMapTxt}>{t("openMap")}</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -378,23 +457,31 @@ export default function CommuterDashboard({ navigation }) {
       <View style={[s.tabbar, { paddingBottom: 10 + insets.bottom }]}>
         <TouchableOpacity style={s.tab} onPress={goHome}>
           <View style={s.iconWrap}>
-            <MaterialCommunityIcons name="home-variant" size={26} color={C.text} />
+            <MaterialCommunityIcons
+              name="home-variant"
+              size={26}
+              color={C.text}
+            />
           </View>
-          <Text style={[s.tabLabel, s.tabActive]}>Home</Text>
+          <Text style={[s.tabLabel, s.tabActive]}>{t("tabHome")}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={s.tab} onPress={goQR}>
           <View style={s.iconWrap}>
-            <MaterialCommunityIcons name="qrcode-scan" size={22} color={C.text} />
+            <MaterialCommunityIcons
+              name="qrcode-scan"
+              size={22}
+              color={C.text}
+            />
           </View>
-          <Text style={s.tabLabel}>QR</Text>
+          <Text style={s.tabLabel}>{t("tabQR")}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={s.tab} onPress={goSettings}>
           <View style={s.iconWrap}>
             <MaterialCommunityIcons name="cog-outline" size={22} color={C.text} />
           </View>
-          <Text style={s.tabLabel}>Settings</Text>
+          <Text style={s.tabLabel}>{t("tabSettings")}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -526,7 +613,7 @@ const s = StyleSheet.create({
   trackNow: { fontFamily: "Poppins_700Bold", color: "#16A34A", fontSize: 12, marginBottom: 2 },
   trackRoute: { fontFamily: "Poppins_700Bold", color: C.text, fontSize: 13 },
   trackDest: { fontFamily: "Poppins_400Regular", color: C.sub, fontSize: 11, marginTop: 4 },
-  trackEta:  { fontFamily: "Poppins_600SemiBold", color: C.text, fontSize: 12, marginTop: 2 },
+  trackEta: { fontFamily: "Poppins_600SemiBold", color: C.text, fontSize: 12, marginTop: 2 },
   trackDriver: { fontFamily: "Poppins_400Regular", color: C.sub, fontSize: 11, marginTop: 2 },
   bold: { fontFamily: "Poppins_700Bold", color: C.text },
 

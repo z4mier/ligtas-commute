@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   View, Text, TouchableOpacity, ScrollView, Modal, TextInput,
-  StyleSheet, ActivityIndicator, Switch, Animated,
+  StyleSheet, ActivityIndicator, Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
@@ -10,7 +10,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFonts, Poppins_400Regular, Poppins_600SemiBold, Poppins_700Bold } from "@expo-google-fonts/poppins";
 import { StatusBar } from "expo-status-bar";
 import { API_URL } from "../constants/config";
-import { useI18n, setAppLanguage, getAppLanguage } from "../i18n/i18n"; // ⬅️ added getAppLanguage
+import { useI18n, setAppLanguage, getAppLanguage } from "../i18n/i18n";
 import { useTheme, THEME } from "../theme/ThemeProvider";
 
 /* ---------------- Toast ---------------- */
@@ -79,9 +79,6 @@ const makeStyles = (C) =>
     langRowActive: { backgroundColor: C.chipActive, borderColor: C.chipActive },
     langBadge: { height: 26, minWidth: 40, paddingHorizontal: 8, borderRadius: 6, backgroundColor: C.brand, alignItems: "center", justifyContent: "center" },
 
-    progressTrack: { height: 8, backgroundColor: C.chipBg, borderRadius: 6, marginTop: 10, overflow: "hidden", borderWidth: 1, borderColor: C.border },
-    progressFill: { height: 8, backgroundColor: C.yellow },
-
     btn: { height: 44, borderRadius: 8, alignItems: "center", justifyContent: "center" },
     btnPrimary: { backgroundColor: C.brand },
     btnLight: { backgroundColor: C.ghostBg, borderWidth: 1, borderColor: C.border },
@@ -106,18 +103,28 @@ const makeStyles = (C) =>
     stackGapTight: { marginTop: 6 },
 
     eyeWrap: { position: "absolute", right: 10, top: 0, bottom: 0, justifyContent: "center", alignItems: "center", width: 32 },
+
+    // Emergency contacts
+    ecRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.border },
+    ecName: { color: C.text, fontWeight: "700" },
+    ecPhone: { color: C.text, fontSize: 12 },
+    ecRel: { color: C.text, fontSize: 12, opacity: 0.8 },
+    ecActions: { flexDirection: "row", gap: 12, alignItems: "center" },
   });
+
+/* ---------------- Helpers ---------------- */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_RE = /^(?:\+?63\s?9\d{2}[- ]?\d{3}[- ]?\d{4}|09\d{9})$/;
 
 /* ---------------- Screen ---------------- */
 export default function SettingsScreen({ navigation }) {
   const [fontsLoaded] = useFonts({ Poppins_400Regular, Poppins_600SemiBold, Poppins_700Bold });
-  const { mode, theme, toggle } = useTheme();
+  const { mode, theme } = useTheme();
   const s = useMemo(() => makeStyles(theme), [theme]);
   const { show, Toast } = useToast(theme);
 
-  // i18n — use hook for t/i18n; get normalized language separately
   const { t } = useI18n();
-  const language = getAppLanguage(); // ✅ always "en" | "tl" | "ceb"
+  const language = getAppLanguage();
 
   const [loading, setLoading] = useState(true);
 
@@ -128,10 +135,10 @@ export default function SettingsScreen({ navigation }) {
     address: "",
     createdAt: new Date().toISOString(),
     language: "en",
-    points: 0,
+    emergencyContacts: [],
   });
-  const [points, setPoints] = useState(0);
 
+  // modals
   const [profileModal, setProfileModal] = useState(false);
   const [editModal, setEditModal] = useState(false);
   const [securityModal, setSecurityModal] = useState(false);
@@ -139,6 +146,7 @@ export default function SettingsScreen({ navigation }) {
   const [termsModal, setTermsModal] = useState(false);
   const [supportModal, setSupportModal] = useState(false);
 
+  // edit profile vals
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -146,21 +154,29 @@ export default function SettingsScreen({ navigation }) {
 
   const [original, setOriginal] = useState({ fullName: "", email: "", phone: "", address: "" });
 
+  // password
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-
   const [showCur, setShowCur] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showCon, setShowCon] = useState(false);
-
   const [pErr, setPErr] = useState("");
   const [pLoading, setPLoading] = useState(false);
 
+  // emergency contacts
+  const [contacts, setContacts] = useState([]);
+  const [ecModal, setEcModal] = useState(false);
+  const [ecErr, setEcErr] = useState("");
+  const [ecLoading, setEcLoading] = useState(false);
+  const [editingIndex, setEditingIndex] = useState(-1);
+  const [ecName, setEcName] = useState("");
+  const [ecPhone, setEcPhone] = useState("");
+  const [ecRel, setEcRel] = useState("");
+
+  // profile edit err
   const [editErr, setEditErr] = useState("");
   const [editLoading, setEditLoading] = useState(false);
-
-  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   const fetchMe = useCallback(async () => {
     const token = await AsyncStorage.getItem("token");
@@ -171,7 +187,6 @@ export default function SettingsScreen({ navigation }) {
     if (!res.ok) { show(t("err.loadProfile", "Failed to load profile"), "danger"); return; }
 
     const data = await res.json();
-    const pts = Number(data?.points || 0);
     const nextProfile = {
       fullName: data?.fullName || "",
       email: data?.email || "",
@@ -179,14 +194,14 @@ export default function SettingsScreen({ navigation }) {
       address: data?.address || "",
       createdAt: data?.createdAt || new Date().toISOString(),
       language: data?.language || "en",
-      points: pts,
+      emergencyContacts: Array.isArray(data?.emergencyContacts) ? data.emergencyContacts : [],
     };
     setProfile(nextProfile);
-    setPoints(pts);
     setFullName(nextProfile.fullName);
     setEmail(nextProfile.email);
     setPhone(nextProfile.phone);
     setAddress(nextProfile.address);
+    setContacts(nextProfile.emergencyContacts.slice(0, 3));
 
     setOriginal({
       fullName: nextProfile.fullName,
@@ -261,9 +276,8 @@ export default function SettingsScreen({ navigation }) {
     }
   }
 
-  // ✅ OFFLINE language switch via helper (normalized + persisted)
+  // language switch (persisted offline)
   async function updateLanguage(next) {
-    // next is "en" | "tl" | "ceb"
     if (getAppLanguage() === next) return;
     try {
       await setAppLanguage(next);
@@ -271,6 +285,80 @@ export default function SettingsScreen({ navigation }) {
     } catch {
       show(t("err.saveLanguage", "Failed to save language"), "danger");
     }
+  }
+
+  /* ---------- Emergency Contacts CRUD ---------- */
+  function openAddContact() {
+    if (contacts.length >= 3) { show(t("err.maxContacts", "You can add up to 3 contacts only."), "danger"); return; }
+    setEditingIndex(-1);
+    setEcName(""); setEcPhone(""); setEcRel("");
+    setEcErr(""); setEcModal(true);
+  }
+
+  function openEditContact(idx) {
+    const c = contacts[idx];
+    setEditingIndex(idx);
+    setEcName(c?.name || "");
+    setEcPhone(c?.phone || "");
+    setEcRel(c?.relation || "");
+    setEcErr("");
+    setEcModal(true);
+  }
+
+  function removeContact(idx) {
+    const next = contacts.filter((_, i) => i !== idx);
+    setContacts(next);
+    saveContacts(next, false);
+  }
+
+  function phonePretty(x = "") {
+    return x.replace(/\s+/g, "").replace(/^(?:\+?63)?0?/, (m) => (m.startsWith("+63") ? "+63" : "0"));
+  }
+
+  async function saveContacts(nextList, closing = true) {
+    try {
+      const payload = nextList.map((c, i) => ({ ...c, priority: i }));
+      setEcLoading(true);
+      const token = await AsyncStorage.getItem("token");
+      const res = await fetch(`${API_URL}/users/me`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ emergencyContacts: payload }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setEcErr(data?.message || t("err.update", "Update failed"));
+        return;
+      }
+      const returned = Array.isArray(data?.emergencyContacts) ? data.emergencyContacts : payload;
+      setContacts(returned);
+      setProfile((p) => ({ ...p, emergencyContacts: returned }));
+      show(t("toast.contactsSaved", "Emergency contacts saved"));
+      if (closing) setEcModal(false);
+    } catch {
+      setEcErr(t("err.network", "Network error"));
+    } finally {
+      setEcLoading(false);
+    }
+  }
+
+  function onSubmitContact() {
+    setEcErr("");
+    const nm = ecName.trim();
+    const ph = ecPhone.trim();
+    const rl = ecRel.trim();
+    if (!nm) return setEcErr(t("err.nameReq", "Please enter a name."));
+    if (!ph || !PHONE_RE.test(ph)) return setEcErr(t("err.phoneReq", "Please enter a valid PH mobile number."));
+    const item = { name: nm, phone: ph, relation: rl || "—" };
+    let next = [...contacts];
+    if (editingIndex === -1) {
+      if (next.length >= 3) return setEcErr(t("err.maxContacts", "You can add up to 3 contacts only."));
+      next.push(item);
+    } else {
+      next[editingIndex] = item;
+    }
+    setContacts(next);
+    saveContacts(next, true);
   }
 
   async function doLogout() {
@@ -288,7 +376,6 @@ export default function SettingsScreen({ navigation }) {
   }
 
   const joinText = `${t("memberSince", "Member since")} ${new Date(profile?.createdAt || Date.now()).toLocaleString("default", { month: "long", year: "numeric" })}`;
-  const pointsPct = Math.max(0, Math.min(100, Math.round((Number(points || 0) / 100) * 100)));
 
   return (
     <SafeAreaView style={s.screen}>
@@ -310,7 +397,7 @@ export default function SettingsScreen({ navigation }) {
             <Text style={[s.small, { color: theme.textSub }]}>{t("tapToViewProfile", "Tap to view profile")}</Text>
           </View>
 
-          <TouchableOpacity style={s.profileRow} onPress={() => setProfileModal(true)}>
+        <TouchableOpacity style={s.profileRow} onPress={() => setProfileModal(true)}>
             <View style={s.avatar}>
               <Text style={[s.f700, { color: THEME.light.white, fontSize: 16 }]}>{profile.fullName?.[0]?.toUpperCase() || "U"}</Text>
             </View>
@@ -329,34 +416,45 @@ export default function SettingsScreen({ navigation }) {
           <LangRow theme={theme} s={s} active={language === "ceb"} left="PH" right={t("language.ceb", "Cebuano")} onPress={() => updateLanguage("ceb")} />
         </View>
 
-        {/* Appearance */}
+        {/* Emergency Contacts */}
         <View style={s.card}>
-          <Text style={[s.sectionTitle, s.f700]}>{t("card.appearance", "Appearance")}</Text>
-          <View style={[s.rowBetween, { marginTop: 10 }]}>
-            <View>
-              <Text style={[s.label, s.f600]}>{t("darkMode", "Dark Mode")}</Text>
-              <Text style={[s.small, { color: theme.textSub }]}>{mode === "dark" ? t("usingDark", "Using dark theme") : t("switchToDark", "Switch to dark theme")}</Text>
-            </View>
-            <Switch value={mode === "dark"} onValueChange={toggle} />
+          <View style={s.cardHeader}>
+            <Text style={[s.sectionTitle, s.f700]}>{t("card.emergency", "Emergency Contacts")}</Text>
+            <Text style={[s.small, { color: theme.textSub }]}>{t("card.emergencyHint", "Add up to 3 contacts")}</Text>
           </View>
-        </View>
 
-        {/* Loyalty */}
-        <View style={s.card}>
-          <Text style={[s.sectionTitle, s.f700]}>{t("card.loyalty", "Loyalty Rewards")}</Text>
-          <View style={s.rowBetween}>
-            <View>
-              <Text style={[s.label, s.f600]}>{t("currentPoints", "Current Points")}</Text>
-              <Text style={[s.small, { color: theme.textSub }]}>{t("pointsHint", "Earn points based on your ride")}</Text>
+          {contacts.length === 0 ? (
+            <Text style={[s.small, { color: theme.textSub, marginTop: 8 }]}>{t("noContacts", "No contacts yet.")}</Text>
+          ) : (
+            <View style={{ marginTop: 6 }}>
+              {contacts.map((c, idx) => (
+                <View key={`${c.phone}-${idx}`} style={s.ecRow}>
+                  <MaterialCommunityIcons name="account-heart-outline" size={18} color={theme.brand} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.ecName]}>{c.name}</Text>
+                    <Text style={s.ecPhone}>{phonePretty(c.phone)}</Text>
+                    {!!c.relation && <Text style={s.ecRel}>{c.relation}</Text>}
+                  </View>
+                  <View style={s.ecActions}>
+                    <TouchableOpacity onPress={() => openEditContact(idx)}>
+                      <MaterialCommunityIcons name="pencil-outline" size={18} color={theme.text} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => removeContact(idx)}>
+                      <MaterialCommunityIcons name="trash-can-outline" size={18} color={theme.danger} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
             </View>
-            <Text style={[s.f700, { color: theme.yellow }]}>{points}</Text>
-          </View>
-          <View style={s.progressTrack}><View style={[s.progressFill, { width: `${pointsPct}%`, backgroundColor: theme.yellow }]} /></View>
-          <View style={s.rowBetween}>
-            <Text style={[s.small, { color: theme.textSub }]}>{Number(points) >= 100 ? t("pointsCongrats", "Congratulations! You’ve reached the 100 point limit.") : t("pointsKeepRiding", "Keep riding to reach 100 points.")}</Text>
-            <Text style={[s.small, { color: theme.textSub }]}>{t("pointsUpTo", "Earn up to 100")}</Text>
-          </View>
-          <TouchableOpacity disabled style={[s.btn, s.btnGhost, { marginTop: 8 }]}><Text style={[s.f600, { color: theme.text }]}>{t("redeemRewards", "Redeem Rewards")}</Text></TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            onPress={openAddContact}
+            disabled={contacts.length >= 3}
+            style={[s.btn, s.btnGhost, { marginTop: 10, opacity: contacts.length >= 3 ? 0.6 : 1 }]}
+          >
+            <Text style={[s.f600, { color: theme.text }]}>{t("addContact", "Add Emergency Contact")}</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Docs / Support */}
@@ -367,8 +465,8 @@ export default function SettingsScreen({ navigation }) {
           <View style={s.rowLeft}><MaterialCommunityIcons name="help-circle-outline" size={20} color={theme.brand} /><Text style={[s.label, s.f600, { marginLeft: 8 }]}>{t("helpSupport", "Help & Support")}</Text></View>
         </TouchableOpacity>
 
-        {/* Logout */}
-        <View style={s.card}>
+        {/* Logout (keep at bottom) */}
+        <View style={[s.card, { marginBottom: 12 }]}>
           <TouchableOpacity onPress={() => setLogoutModal(true)} style={s.rowLeft}>
             <MaterialCommunityIcons name="logout" size={20} color={theme.danger} />
             <Text style={[s.f600, { color: theme.danger, marginLeft: 8 }]}>{t("logout", "Logout")}</Text>
@@ -438,11 +536,10 @@ export default function SettingsScreen({ navigation }) {
             <View style={s.infoBoxBody}>
               <EditRow theme={theme} s={s} icon="email-outline">
                 <TextInput
-                  style={s.inputFlat}
+                  style={[s.inputFlat, { opacity: 0.7 }]}
                   value={email}
-                  onChangeText={(v) => { setEmail(v); if (editErr) setEditErr(""); }}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
+                  editable={false}
+                  selectTextOnFocus={false}
                   placeholder={t("placeholder.email", "Email")}
                   placeholderTextColor={theme.textSub}
                 />
@@ -578,6 +675,66 @@ export default function SettingsScreen({ navigation }) {
               {pLoading
                 ? <ActivityIndicator color={THEME.light.white} />
                 : <Text style={[s.f600, { color: THEME.light.white }]}>{t("updatePassword", "Update Password")}</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Emergency Contact Add/Edit Modal */}
+      <Modal visible={ecModal} transparent animationType="fade">
+        <View style={s.modalOverlay}>
+          <View style={s.modalBox}>
+            <View style={s.modalHeader}>
+              <Text style={[s.f700, { fontSize: 16, color: theme.brand }]}>
+                {editingIndex === -1 ? t("addContact", "Add Emergency Contact") : t("editContact", "Edit Emergency Contact")}
+              </Text>
+              <TouchableOpacity onPress={() => setEcModal(false)}><Ionicons name="close" size={18} color={theme.brand} /></TouchableOpacity>
+            </View>
+
+            <View style={s.stackGap}>
+              <TextInput
+                style={s.input}
+                value={ecName}
+                onChangeText={(v) => { setEcName(v); if (ecErr) setEcErr(""); }}
+                placeholder={t("placeholder.fullName", "Full Name")}
+                placeholderTextColor={theme.textSub}
+              />
+            </View>
+            <View style={s.stackGap}>
+              <TextInput
+                style={s.input}
+                value={ecPhone}
+                onChangeText={(v) => { setEcPhone(v); if (ecErr) setEcErr(""); }}
+                keyboardType="phone-pad"
+                placeholder={t("placeholder.phone", "Phone (e.g. 09XXXXXXXXX)")}
+                placeholderTextColor={theme.textSub}
+              />
+            </View>
+            <View style={s.stackGap}>
+              <TextInput
+                style={s.input}
+                value={ecRel}
+                onChangeText={(v) => setEcRel(v)}
+                placeholder={t("placeholder.relation", "Relation (optional)")}
+                placeholderTextColor={theme.textSub}
+              />
+            </View>
+
+            {ecErr ? (
+              <View style={s.errBox}>
+                <MaterialCommunityIcons name="alert-circle-outline" size={16} color={THEME.light.white} />
+                <Text style={[s.small, { color: THEME.light.white, marginLeft: 6 }]}>{ecErr}</Text>
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              onPress={onSubmitContact}
+              disabled={ecLoading}
+              style={[s.btn, s.btnPrimary, { marginTop: 8, opacity: ecLoading ? 0.7 : 1 }]}
+            >
+              {ecLoading
+                ? <ActivityIndicator color={THEME.light.white} />
+                : <Text style={[s.f600, { color: THEME.light.white }]}>{t("save", "Save")}</Text>}
             </TouchableOpacity>
           </View>
         </View>

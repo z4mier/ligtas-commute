@@ -1,12 +1,15 @@
 {
   "settings": { "title": "Mga Setting" },
+
   "card": {
     "profile": "Profile",
     "language": "Pinulongan",
     "appearance": "Panagway",
     "loyalty": "Mga Ganti"
   },
+
   "language": { "en": "English", "tl": "Tagalog", "ceb": "Cebuano" },
+
   "tapToViewProfile": "I-tap aron tan-awon ang profile",
   "memberSince": "Miyembro sukad",
   "darkMode": "Dark Mode",
@@ -30,6 +33,7 @@
     "updateApp": "I-update sa pinakabag-ong bersyon",
     "permissions": "Siguroha nga naka-enable ang GPS ug camera"
   },
+
   "commonIssues": "Kasagarang Isyu",
   "issue": {
     "qr": "Dili makascan og QR? Tan-awa ang camera permissions.",
@@ -74,5 +78,33 @@
     "tryAgain": "Napakyas ang update. Sulayi pag-usab.",
     "networkTryAgain": "Sayop sa network. Sulayi pag-usab.",
     "saveLanguage": "Napakyas sa pag-save sa pinulongan"
-  }
+  },
+
+  "notifications": "Notipikasyon",
+  "markAllRead": "I-mark tanan nga nabasa",
+  "noNotifications": "Walay notipikasyon",
+  "noNotificationsSub": "Hapsay na ang tanan. Dinhi ka namo pahibawo.",
+  "viewAllNotifications": "Tan-awa tanan nga notipikasyon",
+
+  "safetyInsights": "Mga Pahimangno sa Kaluwasan",
+  "community": "Komunidad",
+  "tracking": "Pagsubay",
+  "viewAll": "Tan-awa Tanan",
+
+  "listEmptySafetyTitle": "Walay safety insights pa",
+  "listEmptySafetySub": "Makakita ka og updates dinhi kung adunay bag-ong alerto.",
+  "listEmptyCommunityTitle": "Walay bag-ong kalihokan sa komunidad",
+  "listEmptyCommunitySub": "Ang ratings ug reports makita dinhi kung magamit na.",
+  "trackingEmptyTitle": "Walay aktibong biyahe nga gisubay",
+  "trackingEmptySub": "Makakita ka og updates dinhi kung adunay bag-ong alerto.",
+
+  "trackingNow": "Nagpadayon ang pagsubay…",
+  "destination": "Destinasyon",
+  "eta": "ETA",
+  "driver": "Drayber",
+  "openMap": "Ablihi ang Mapa",
+
+  "tabHome": "Home",
+  "tabQR": "QR",
+  "tabSettings": "Mga Setting"
 }

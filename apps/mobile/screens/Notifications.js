@@ -1,6 +1,16 @@
-import React, { useLayoutEffect, useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform } from "react-native";
+import React, { useEffect, useLayoutEffect, useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  Platform,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useI18n } from "../i18n/i18n";
+import * as Notify from "../lib/notify";
 
 const C = {
   bg: "#F3F4F6",
@@ -12,29 +22,65 @@ const C = {
   brand: "#0B132B",
 };
 
+function timeAgo(ts) {
+  if (!ts) return "";
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 5) return "Just now";
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d === 1) return "Yesterday";
+  return `${d}d ago`;
+}
+
 export default function Notifications({ route, navigation }) {
-  const initial = Array.isArray(route.params?.items) ? route.params.items : [];
-  const [items, setItems] = useState(initial);
+  const { t } = useI18n();
+  const [items, setItems] = useState([]);
 
   useLayoutEffect(() => {
     navigation.setOptions({ headerShown: false });
   }, [navigation]);
 
-  const markAllRead = () => setItems(prev => prev.map(n => ({ ...n, read: true })));
+  // Load once + live updates when something calls Notify.add(...)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const list = await Notify.load();
+      if (mounted) setItems(list);
+    })();
+    const unsub = Notify.onChange(async () => setItems(await Notify.load()));
+    return () => { mounted = false; unsub(); };
+  }, []);
+
+  // Optional: if a screen navigates here with a one-off payload to inject
+  useEffect(() => {
+    const injected = route?.params?.inject;
+    if (injected) {
+      Notify.add(injected); // also persists & triggers onChange
+      navigation.setParams({ inject: undefined });
+    }
+  }, [route?.params?.inject, navigation]);
+
+  const markAllRead = async () => {
+    const updated = await Notify.markAllRead();
+    setItems(updated);
+  };
 
   return (
-    <View style={s.screen}>
-      {/* Custom Header */}
+    <SafeAreaView style={s.safeArea} edges={["top", "left", "right", "bottom"]}>
+      {/* Header */}
       <View style={s.header}>
         <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 6 }}>
             <MaterialCommunityIcons name="chevron-left" size={26} color={C.text} />
           </TouchableOpacity>
-          <Text style={s.title}>All Notifications</Text>
+          <Text style={s.title}>{t("notifications", "Notifications")}</Text>
         </View>
-
         <TouchableOpacity onPress={markAllRead} style={{ paddingHorizontal: 6 }}>
-          <Text style={s.markAll}>Mark all as read</Text>
+          <Text style={s.markAll}>{t("markAllRead", "Mark all as read")}</Text>
         </TouchableOpacity>
       </View>
 
@@ -43,26 +89,27 @@ export default function Notifications({ route, navigation }) {
         {items.length === 0 ? (
           <View style={s.emptyWrap}>
             <MaterialCommunityIcons name="bell-off-outline" size={32} color={C.hint} />
-            <Text style={s.emptyTitle}>No notifications</Text>
-            <Text style={s.emptySub}>{"You're all set — nothing new right now."}</Text>
+            <Text style={s.emptyTitle}>{t("noNotifications", "No notifications")}</Text>
+            <Text style={s.emptySub}>
+              {t("noNotificationsSub", "You’re all caught up. We’ll notify you here.").replace("’","'")}
+            </Text>
           </View>
         ) : (
           items.map(n => (
             <View key={String(n.id)} style={s.card}>
               <Text style={s.cardTitle}>{n.title}</Text>
               {!!n.body && <Text style={s.cardBody}>{n.body}</Text>}
-              {!!n.timeAgo && <Text style={s.cardTime}>{n.timeAgo}</Text>}
+              <Text style={s.cardTime}>{timeAgo(n.timestamp)}</Text>
             </View>
           ))
         )}
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: C.bg },
-
+  safeArea: { flex: 1, backgroundColor: C.bg },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -85,9 +132,7 @@ const s = StyleSheet.create({
     fontFamily: "Poppins_600SemiBold",
     fontSize: 12,
   },
-
   scroll: { padding: 12, paddingBottom: 40 },
-
   card: {
     backgroundColor: C.card,
     borderRadius: 12,
@@ -97,14 +142,18 @@ const s = StyleSheet.create({
     paddingHorizontal: 12,
     marginBottom: 10,
     ...Platform.select({
-      ios: { shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 3 } },
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.04,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 3 },
+      },
       android: { elevation: 1.5 },
     }),
   },
   cardTitle: { fontFamily: "Poppins_700Bold", color: C.text, fontSize: 13 },
   cardBody: { fontFamily: "Poppins_400Regular", color: C.sub, fontSize: 11.5, marginTop: 2 },
   cardTime: { fontFamily: "Poppins_400Regular", color: C.hint, fontSize: 11, marginTop: 6 },
-
   emptyWrap: { alignItems: "center", paddingTop: 40, gap: 6 },
   emptyTitle: { fontFamily: "Poppins_700Bold", color: C.text, fontSize: 14 },
   emptySub: { fontFamily: "Poppins_400Regular", color: C.hint, fontSize: 12, textAlign: "center" },

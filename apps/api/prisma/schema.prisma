@@ -7,70 +7,116 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ---------- MODELS ----------
-
 model User {
-  id                 String           @id @default(cuid())
-  email              String?          @unique
-  phone              String?          @unique
+  id                 String             @id @default(cuid())
+  email              String?            @unique
+  phone              String?            @unique
   password           String?
-  role               String           @default("COMMUTER")
-  status             String           @default("active")
-  mustChangePassword Boolean          @default(false)
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
+  role               String             @default("COMMUTER")
+  status             String             @default("active")
+  mustChangePassword Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
   driverProfile      DriverProfile?
   commuterProfile    CommuterProfile?
+  emergencyContacts  EmergencyContact[]
 }
 
 model DriverProfile {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  user      User     @relation(fields: [userId], references: [id])
+  driverId  String           @id @default(cuid()) @map("id") // <- Prisma name, DB column stays "id"
+  userId    String           @unique
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   fullName  String
   licenseNo String
   birthDate DateTime
   address   String
   phone     String?
   busId     String?
-  bus       Bus?     @relation("BusDrivers", fields: [busId], references: [id])
-  // Allowed values: "AIRCON" | "NON_AIRCON"
-  busType   String   @default("AIRCON")
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
+  bus       Bus?             @relation("BusDrivers", fields: [busId], references: [id])
+  busType   String           @default("AIRCON")
+  isActive  Boolean          @default(true)
+  createdAt DateTime         @default(now())
+  ratings   RideRating[]
+  incidents IncidentReport[]
 }
 
 model CommuterProfile {
-  id       String  @id @default(cuid())
-  userId   String  @unique
-  user     User    @relation(fields: [userId], references: [id])
-  fullName String
-  address  String?
-  language String  @default("en")
-  points   Int     @default(0)
+  id         String  @id @default(cuid())
+  userId     String  @unique
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName   String
+  address    String?
+  language   String  @default("en")
+  profileUrl String?
+}
+
+model EmergencyContact {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  phone     String
+  relation  String?
+  priority  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, priority])
+  @@unique([userId, phone])
+  @@unique([userId, priority])
 }
 
 model Bus {
   id       String          @id @default(cuid())
   number   String
   plate    String          @unique
-  // Keep consistent with DriverProfile: "AIRCON" | "NON_AIRCON"
   busType  String          @default("AIRCON")
   isActive Boolean         @default(true)
   drivers  DriverProfile[] @relation("BusDrivers")
 }
 
-model Otp {
-  id        String   @id @default(cuid())
-  phone     String
-  code      String
-  expiresAt DateTime
-  consumed  Boolean  @default(false)
-  createdAt DateTime @default(now())
+model RideRating {
+  id           String   @id @default(cuid())
+  driverId     String
+  commuterId   String
+  rideId       String?
+  driverScore  Int
+  vehicleScore Int
+  comment      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  driver       DriverProfile @relation(fields: [driverId], references: [driverId]) // <- updated
+
+  @@index([driverId, createdAt])
+  @@index([commuterId, createdAt])
 }
 
-model Sequence {
-  name      String   @id
-  current   Int      @default(0)
-  updatedAt DateTime @updatedAt
+model IncidentReport {
+  id           String   @id @default(cuid())
+  driverId     String
+  reporterId   String?
+  rideId       String?
+  note         String?
+  lat          Float?
+  lng          Float?
+  evidenceUrl  String?
+  status       String   @default("PENDING")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  categories   IncidentReportCategory[]
+  driver       DriverProfile @relation(fields: [driverId], references: [driverId]) // <- updated
+
+  @@index([driverId, createdAt])
+  @@index([status, createdAt])
+}
+
+model IncidentReportCategory {
+  reportId String
+  category String
+  report   IncidentReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@id([reportId, category])
 }
