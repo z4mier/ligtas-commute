@@ -24,5 +24,8 @@
   },
   "dependencies": {
     "lucide-react": "^0.547.0"
+  },
+  "prisma": {
+    "seed": "node --env-file=.env apps/api/prisma/seed.js"
   }
 }

@@ -1,13 +1,13 @@
-/* ---------- Root Theme ---------- */
+/* ---------- Root Theme (Light Blue) ---------- */
 :root {
-  --bg: #0B1220;            /* page background */
-  --card: #0B132B;          /* panels/cards/topbar/sidebar */
-  --muted: rgba(255,255,255,0.65);
-  --line: rgba(14,107,143,0.20);
-  --line-strong: rgba(14,107,143,0.35);
-  --accent: #0E6B8F;        /* brand button/active */
-  --text: #fff;
-  --danger: #ff726e;
+  --bg: #E9F4FF;            /* soft light-blue background */
+  --card: #FFFFFF;           /* white panels/cards/topbar/sidebar */
+  --muted: rgba(0, 41, 82, 0.55);
+  --line: rgba(30, 144, 255, 0.25);
+  --line-strong: rgba(30, 144, 255, 0.45);
+  --accent: #1E90FF;         /* main brand blue (dodger blue) */
+  --text: #0B1220;           /* dark text */
+  --danger: #E63946;
   --radius: 12px;
 }
 
@@ -19,7 +19,7 @@ html, body {
   background: var(--bg);
   color: var(--text);
   font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  color-scheme: dark;
+  color-scheme: light;
   scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
 }
@@ -35,7 +35,7 @@ a {
 }
 
 a:hover {
-  color: #19a4d1;
+  color: #0078E7;
 }
 
 /* ---------- Scrollbar Styling ---------- */
@@ -45,18 +45,18 @@ a:hover {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(30, 144, 255, 0.25);
   border-radius: 8px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(30, 144, 255, 0.4);
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.05);
   border-radius: 8px;
 }
 
@@ -67,6 +67,7 @@ a:hover {
   border-radius: var(--radius);
   padding: 1rem;
   color: var(--text);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .text-muted {
@@ -89,8 +90,8 @@ a:hover {
 }
 
 .btn:hover {
-  filter: brightness(1.08);
-  box-shadow: 0 0 12px rgba(14,107,143,0.45);
+  filter: brightness(1.1);
+  box-shadow: 0 0 12px rgba(30, 144, 255, 0.45);
 }
 
 .btn:disabled {

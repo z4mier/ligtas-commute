@@ -1,41 +1,25 @@
-// src/app/(protected)/layout.js
 "use client";
-import { useEffect, useState, useRef } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import RequireAdmin from "@/lib/guards";
 import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
 
 export default function ProtectedLayout({ children }) {
-  const r = useRouter();
-  const path = usePathname();
-  const [ready, setReady] = useState(false);
-  const once = useRef(false);
-
-  useEffect(() => {
-    if (once.current) return;
-    once.current = true;
-    const token = typeof window !== "undefined" && localStorage.getItem("lc_token");
-    if (!token) {
-      const next = encodeURIComponent(path || "/dashboard");
-      r.replace(`/login?next=${next}`);
-      return;
-    }
-    setReady(true);
-  }, [r, path]);
-
-  if (!ready) return null;
-
   return (
-    // Topbar spans full width; sidebar/content are below it
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)", color: "var(--text)" }}>
-      <Topbar />  {/* 👈 always at the very top */}
+    <RequireAdmin>
+      {/* App shell */}
+      <div className="flex min-h-[100dvh] bg-[#F7FAFC]">
+        {/* sticky sidebar */}
+        <Sidebar />
 
-      <div style={{ display: "flex", flex: 1 }}>
-        <Sidebar /> {/* left rail */}
-        <main style={{ flex: 1, padding: "20px 24px" }}>
-          {children}
-        </main>
+        {/* main column */}
+        <div className="flex-1 min-w-0 flex flex-col">
+          {/* sticky topbar */}
+          <Topbar />
+
+          {/* scrollable page content */}
+          <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        </div>
       </div>
-    </div>
+    </RequireAdmin>
   );
 }

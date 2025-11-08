@@ -13,7 +13,7 @@ import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import mapsRouter from "../routes/maps.js";
-import adminDriversRouter from "../routes/admin.drivers.js"; 
+import adminDriversRouter from "../routes/admin.drivers.js";
 import driversRouter from "../routes/drivers.js";
 import usersRouter from "../routes/users.js";
 
@@ -65,7 +65,7 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// OTP 
+// OTP
 const otpStore = new Map();
 const OTP_TTL_MS = 5 * 60 * 1000;
 const OTP_RESEND_COOLDOWN_MS = 30 * 1000;
@@ -113,7 +113,7 @@ app.get("/health", async (_req, res) => {
 });
 
 app.use("/maps", mapsRouter);
-app.use("/admin", adminDriversRouter); 
+app.use("/admin", adminDriversRouter);
 app.use("/drivers", driversRouter);
 app.use("/users", usersRouter);
 
@@ -199,13 +199,18 @@ app.post("/auth/register", async (req, res) => {
                     update: {
                       fullName,
                       address: address ?? existing.commuterProfile.address ?? null,
-                      language: language ?? existing.commuterProfile.language ?? "en",
+                      language:
+                        language ?? existing.commuterProfile.language ?? "en",
                     },
                   },
                 }
               : {
                   commuterProfile: {
-                    create: { fullName, address: address || null, language: language || "en" },
+                    create: {
+                      fullName,
+                      address: address || null,
+                      language: language || "en",
+                    },
                   },
                 }
             : {}),
@@ -231,7 +236,15 @@ app.post("/auth/register", async (req, res) => {
         mustChangePassword: false,
         status: "PENDING_VERIFICATION",
         ...(role === "COMMUTER" || !role
-          ? { commuterProfile: { create: { fullName, address: address || null, language: language || "en" } } }
+          ? {
+              commuterProfile: {
+                create: {
+                  fullName,
+                  address: address || null,
+                  language: language || "en",
+                },
+              },
+            }
           : {}),
       },
       include: { commuterProfile: true },
@@ -246,7 +259,9 @@ app.post("/auth/register", async (req, res) => {
         .status(400)
         .json({ message: e.errors[0]?.message || "Invalid input" });
     if (e?.code === "P2002")
-      return res.status(409).json({ message: "Email or phone already registered" });
+      return res
+        .status(409)
+        .json({ message: "Email or phone already registered" });
     console.error("REGISTER ERROR:", e);
     res.status(500).json({ message: "Server error" });
   }
@@ -330,12 +345,12 @@ app.post("/auth/verify-otp", async (req, res) => {
 app.get("/buses", requireAuth, requireAdmin, async (req, res) => {
   const { type, active } = req.query;
   const where = {
-    ...(type ? { type: String(type).toUpperCase() } : {}),
+    ...(type ? { busType: String(type).toUpperCase() } : {}),
     ...(active != null ? { isActive: String(active) === "true" } : {}),
   };
   const buses = await prisma.bus.findMany({
     where,
-    orderBy: [{ type: "asc" }, { number: "asc" }],
+    orderBy: [{ busType: "asc" }, { number: "asc" }],
   });
   res.json(buses);
 });
@@ -346,11 +361,19 @@ app.get("/buses/:id", requireAuth, requireAdmin, async (req, res) => {
   res.json(bus);
 });
 
-app.get("/buses/by-number/:number", requireAuth, requireAdmin, async (req, res) => {
-  const bus = await prisma.bus.findUnique({ where: { number: req.params.number } });
-  if (!bus) return res.status(404).json({ message: "Bus not found" });
-  res.json(bus);
-});
+app.get(
+  "/buses/by-number/:number",
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    // number is not unique in the schema; use findFirst
+    const bus = await prisma.bus.findFirst({
+      where: { number: req.params.number },
+    });
+    if (!bus) return res.status(404).json({ message: "Bus not found" });
+    res.json(bus);
+  }
+);
 
 app.post("/buses", requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -361,11 +384,20 @@ app.post("/buses", requireAuth, requireAdmin, async (req, res) => {
       isActive: z.boolean().optional(),
     });
     const input = schema.parse(req.body);
-    const bus = await prisma.bus.create({ data: input });
+    const bus = await prisma.bus.create({
+      data: {
+        number: input.number,
+        plate: input.plate,
+        busType: input.type,
+        isActive: input.isActive ?? true,
+      },
+    });
     res.status(201).json(bus);
   } catch (e) {
     if (e?.code === "P2002")
-      return res.status(409).json({ message: "Bus number or plate already exists" });
+      return res
+        .status(409)
+        .json({ message: "Bus number or plate already exists" });
     if (e instanceof z.ZodError)
       return res.status(400).json({ message: "Invalid input" });
     console.error("CREATE BUS ERROR:", e);
@@ -382,16 +414,26 @@ app.put("/buses/:id", requireAuth, requireAdmin, async (req, res) => {
       isActive: z.boolean().optional(),
     });
     const input = schema.parse(req.body);
+
+    const updateData = {
+      ...(input.number !== undefined ? { number: input.number } : {}),
+      ...(input.plate !== undefined ? { plate: input.plate } : {}),
+      ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+      ...(input.type !== undefined ? { busType: input.type } : {}),
+    };
+
     const bus = await prisma.bus.update({
       where: { id: req.params.id },
-      data: input,
+      data: updateData,
     });
     res.json(bus);
   } catch (e) {
     if (e?.code === "P2025")
       return res.status(404).json({ message: "Bus not found" });
     if (e?.code === "P2002")
-      return res.status(409).json({ message: "Bus number or plate already exists" });
+      return res
+        .status(409)
+        .json({ message: "Bus number or plate already exists" });
     if (e instanceof z.ZodError)
       return res.status(400).json({ message: "Invalid input" });
     console.error("UPDATE BUS ERROR:", e);
@@ -425,16 +467,16 @@ app.post("/admin/create-driver", requireAuth, requireAdmin, async (req, res) => 
   const schema = z.object({
     email: z.string().email(),
     phone: z.string().min(6),
-    password: z.string().min(6).optional(), 
+    password: z.string().min(6).optional(),
     fullName: z.string().min(1),
     licenseNo: z.string().min(1),
     birthDate: z.string().min(1),
     address: z.string().min(1),
     busId: z.string().optional(),
     busNo: z.string().optional(),
-    plateNumber: z.string().optional(), 
-    vehicleType: z.enum(["AIRCON", "NON_AIRCON"]).optional(), 
-    route: z.string().optional(),
+    plateNumber: z.string().optional(),
+    vehicleType: z.enum(["AIRCON", "NON_AIRCON"]).optional(),
+    route: z.string().optional(), // ignored (not in schema)
   });
 
   try {
@@ -442,42 +484,52 @@ app.post("/admin/create-driver", requireAuth, requireAdmin, async (req, res) => 
     const key = input.email.toLowerCase().trim();
     const birthDate = new Date(input.birthDate);
     const passwordHash = await bcrypt.hash(input.password || "driver123", 12);
-    const qrToken = cryptoRandom();
 
     let bus = null;
 
     if (input.busId) {
       bus = await prisma.bus.findUnique({ where: { id: input.busId } });
     } else if (input.busNo) {
-      bus = await prisma.bus.findUnique({ where: { number: input.busNo } });
+      bus = await prisma.bus.findFirst({ where: { number: input.busNo } });
     }
 
     if (!bus) {
-      const normalizedPlate = (input.plateNumber || "").replace(/\s+/g, "").toUpperCase();
+      const normalizedPlate = (input.plateNumber || "")
+        .replace(/\s+/g, "")
+        .toUpperCase();
+
       if (!normalizedPlate && !input.busNo) {
-        return res.status(400).json({ message: "Provide busId or busNo, or plateNumber (+ vehicleType) to create a bus." });
+        return res.status(400).json({
+          message:
+            "Provide busId or busNo, or plateNumber (+ vehicleType) to create a bus.",
+        });
       }
       if (!bus && normalizedPlate) {
         if (!input.vehicleType) {
-          return res.status(400).json({ message: "vehicleType is required when creating a new bus." });
+          return res
+            .status(400)
+            .json({ message: "vehicleType is required when creating a new bus." });
         }
+        const newNumber = input.busNo || normalizedPlate; // ensure not null (schema requires String)
         bus = await prisma.bus.create({
           data: {
-            number: input.busNo || null,
+            number: newNumber,
             plate: normalizedPlate,
-            type: input.vehicleType,
+            busType: input.vehicleType,
             isActive: true,
           },
         });
       }
     }
 
-    if (!bus) return res.status(400).json({ message: "Invalid bus selection." });
-    if (!bus.isActive) return res.status(400).json({ message: "Selected bus is inactive." });
+    if (!bus)
+      return res.status(400).json({ message: "Invalid bus selection." });
+    if (!bus.isActive)
+      return res.status(400).json({ message: "Selected bus is inactive." });
 
     const result = await prisma.$transaction(async (tx) => {
-      const seq = await nextSequence(tx, "DRIVER");
-      const driverIdNo = formatDriverIdNo(seq);
+      // sequence kept, but not written to schema (safe to keep for now)
+      await nextSequence(tx, "DRIVER");
 
       const user = await tx.user.create({
         data: {
@@ -493,11 +545,11 @@ app.post("/admin/create-driver", requireAuth, requireAdmin, async (req, res) => 
               licenseNo: input.licenseNo,
               birthDate,
               address: input.address,
-              busId: bus.id,
-              driverIdNo,
-              route: input.route ?? null,
-              qrToken,
-              status: "ACTIVE",
+              phone: input.phone ?? null,
+              bus: { connect: { id: bus.id } },
+              busType: bus.busType, // mirror current assigned bus type
+              isActive: true,
+              // createdAt auto
             },
           },
         },
@@ -516,7 +568,11 @@ app.post("/admin/create-driver", requireAuth, requireAdmin, async (req, res) => 
     if (e instanceof z.ZodError)
       return res.status(400).json({ message: "Invalid input" });
     if (e?.code === "P2002")
-      return res.status(409).json({ message: "Duplicate entry (email/phone/plate/driverIdNo/qrToken)" });
+      return res
+        .status(409)
+        .json({
+          message: "Duplicate entry (email/phone/plate and/or other unique field)",
+        });
     console.error("CREATE DRIVER ERROR:", e);
     return res.status(500).json({ message: "Server error" });
   }
@@ -555,15 +611,14 @@ app.get("/users/me", requireAuth, async (req, res) => {
 
       driver: me.driverProfile
         ? {
-            driverIdNo: me.driverProfile.driverIdNo,
-            route: me.driverProfile.route,
-            status: me.driverProfile.status,
+            isActive: me.driverProfile.isActive,
+            busType: me.driverProfile.busType,
             bus: me.driverProfile.bus
               ? {
                   id: me.driverProfile.bus.id,
                   number: me.driverProfile.bus.number,
                   plate: me.driverProfile.bus.plate,
-                  type: me.driverProfile.bus.type,
+                  type: me.driverProfile.bus.busType, // keep API field name 'type'
                   isActive: me.driverProfile.bus.isActive,
                 }
               : null,

@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs";
 const prisma = new PrismaClient();
 
 async function main() {
-  const hash = await bcrypt.hash("admin123", 12);
+  const adminHash = await bcrypt.hash("admin123", 12);
 
   // 1) Admin account (no profile)
   await prisma.user.upsert({
@@ -13,13 +13,13 @@ async function main() {
     update: {},
     create: {
       email: "admin@ligtas.com",
-      password: hash,
+      password: adminHash,
       role: "ADMIN",
-      status: "ACTIVE",
+      status: "active", // matches schema's default style
     },
   });
 
-  // 2) A sample commuter (name lives in CommuterProfile)
+  // 2) Sample commuter (+ CommuterProfile)
   await prisma.user.upsert({
     where: { email: "test@user.com" },
     update: {},
@@ -27,7 +27,7 @@ async function main() {
       email: "test@user.com",
       password: await bcrypt.hash("password123", 12),
       role: "COMMUTER",
-      status: "ACTIVE",
+      status: "active",
       commuterProfile: {
         create: {
           fullName: "Test Dev",
@@ -38,32 +38,19 @@ async function main() {
     },
   });
 
-  // 3) A sample bus + driver (driver name lives in DriverProfile)
+  // 3) One sample bus
   const bus = await prisma.bus.upsert({
     where: { plate: "ABC1234" },
     update: {},
     create: {
       number: "3000",
       plate: "ABC1234",
-      type: "AIRCON",
+      busType: "AIRCON", // allowed: "AIRCON" | "NON_AIRCON"
       isActive: true,
     },
   });
 
-  // simple sequence for driverIdNo if none exists
-  async function nextSequence(name) {
-    const seq = await prisma.sequence.upsert({
-      where: { name },
-      update: { current: { increment: 1 } },
-      create: { name, current: 1 },
-      select: { current: true },
-    });
-    return seq.current;
-  }
-  const n = await nextSequence("DRIVER");
-  const y = new Date().getFullYear();
-  const driverIdNo = `DRV-${y}-${String(n).padStart(6, "0")}`;
-
+  // 4) Sample driver (+ DriverProfile)
   await prisma.user.upsert({
     where: { email: "driver@ligtas.com" },
     update: {},
@@ -71,21 +58,34 @@ async function main() {
       email: "driver@ligtas.com",
       password: await bcrypt.hash("driver123", 12),
       role: "DRIVER",
-      status: "ACTIVE",
+      status: "active",
       driverProfile: {
         create: {
           fullName: "Sample Driver",
           licenseNo: "DL-1234567",
           birthDate: new Date("1995-01-01"),
           address: "Cebu City",
-          busId: bus.id,
-          driverIdNo,
-          route: "Route A",
-          qrToken: Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2),
-          status: "ACTIVE",
+          // Optional phone if you want:
+          // phone: "09123456789",
+
+          // Link to the bus (either busId OR relation connect works)
+          busId: bus.id, // ✅ valid per your schema
+          // Alternatively:
+          // bus: { connect: { id: bus.id } },
+
+          // Optional overrides (your schema provides defaults):
+          // busType: "AIRCON",
+          // isActive: true,
         },
       },
     },
+  });
+
+  // Optional: initialize a sequence row if you plan to use it later
+  await prisma.sequence.upsert({
+    where: { name: "DRIVER" },
+    update: {},
+    create: { name: "DRIVER", current: 0 },
   });
 
   console.log("✅ Seed complete");
@@ -93,7 +93,7 @@ async function main() {
 
 main()
   .catch((e) => {
-    console.error(e);
+    console.error("❌ Seed error:", e);
     process.exit(1);
   })
   .finally(async () => {
