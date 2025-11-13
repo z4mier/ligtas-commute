@@ -80,7 +80,7 @@ r.patch("/me", requireAuth, async (req, res) => {
   try {
     const Body = z.object({
       fullName: z.string().min(1).optional(),
-      email: z.string().email().optional(),        // email is non-editable in the app, but allowed here
+      email: z.string().email().optional(),  
       phone: z.string().min(6).optional(),
       address: z.string().optional(),
       language: z.string().optional(),
