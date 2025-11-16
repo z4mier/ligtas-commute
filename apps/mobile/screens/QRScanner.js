@@ -13,6 +13,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL } from "../constants/config";
 
 const C = {
@@ -62,57 +63,152 @@ export default function QRScanner({ navigation }) {
     navigation.goBack();
   }, [navigation, resetScan]);
 
+  const buildDriverObjectFromApi = (out) => {
+    const busType =
+      out.busType ??
+      out.vehicleType ??
+      out.bus?.type ??
+      out.vehicle ??
+      "—";
+
+    const driverProfileId =
+      out.driverProfileId ??
+      out.driverId ??
+      out.id ??
+      out.driver?.id ??
+      null;
+
+    const busId = out.busId ?? out.bus?.id ?? null;
+
+    return {
+      id: driverProfileId,
+      driverProfileId,
+      busId,
+
+      name:
+        out.name ??
+        out.fullName ??
+        out.driverName ??
+        "Unknown Driver",
+
+      code:
+        out.code ??
+        out.driverCode ??
+        out.qrCode ??
+        (out.driverId || out.id || "N/A"),
+
+      busType,
+      vehicleType: busType,
+
+      busNumber:
+        out.busNumber ??
+        out.bus?.number ??
+        out.busNo ??
+        "—",
+
+      plateNumber:
+        out.plateNumber ??
+        out.bus?.plate ??
+        out.plate ??
+        "—",
+
+      routeName: out.routeName ?? out.route ?? "",
+
+      scannedAt: new Date(),
+    };
+  };
+
+  const buildDriverObjectFromJson = (parsed) => {
+    const busType =
+      parsed.busType ??
+      parsed.vehicleType ??
+      parsed.vehicle ??
+      "—";
+
+    const driverProfileId =
+      parsed.driverProfileId ??
+      parsed.driverId ??
+      parsed.id ??
+      null;
+
+    const busId = parsed.busId ?? parsed.bus?.id ?? null;
+
+    return {
+      id: driverProfileId,
+      driverProfileId,
+      busId,
+
+      name: parsed.name ?? "Unknown Driver",
+      code:
+        parsed.code ??
+        parsed.driverCode ??
+        parsed.driverId ??
+        parsed.id ??
+        "N/A",
+
+      busType,
+      vehicleType: busType,
+
+      busNumber: parsed.busNumber ?? parsed.bus ?? "—",
+      plateNumber:
+        parsed.plateNumber ??
+        parsed.plate ??
+        "—",
+
+      routeName: parsed.routeName ?? parsed.route ?? "",
+
+      scannedAt: new Date(),
+    };
+  };
+
   const handlePayload = async (data) => {
     try {
-      // 1) Accept JSON embedded in QR
+      console.log("[QRScanner] scanned data =", data);
+
+      // 1) Accept JSON embedded in QR (no API needed)
       let parsed = null;
       try {
         parsed = JSON.parse(String(data));
       } catch {}
 
-      if (parsed && (parsed.driverId || parsed.name || parsed.code)) {
-        const busType = parsed.busType ?? parsed.vehicleType ?? parsed.vehicle ?? "—";
-        const obj = {
-          name: parsed.name ?? "Unknown Driver",
-          code: parsed.code ?? parsed.driverId ?? "N/A",
-          busType,
-          vehicleType: busType, // keep for compatibility with other screens
-          busNumber: parsed.busNumber ?? parsed.bus ?? "—",
-          plateNumber: parsed.plateNumber ?? parsed.plate ?? "—",
-          scannedAt: new Date(),
-        };
+      if (parsed && (parsed.driverId || parsed.name || parsed.code || parsed.id)) {
+        const obj = buildDriverObjectFromJson(parsed);
+        console.log("[QRScanner] using embedded JSON driver =", obj);
         setDriver(obj);
         setInfoOpen(true);
         return;
       }
 
-      // 2) Ask API to resolve arbitrary payload
+      // 2) Fallback: ask API to resolve arbitrary payload
       setLoadingLookup(true);
+
+      const token = await AsyncStorage.getItem("authToken");
+
       const res = await fetch(`${API_URL}/drivers/scan`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ payload: data }),
       });
+
       const out = await res.json().catch(() => ({}));
       setLoadingLookup(false);
 
-      if (!res.ok) throw new Error(out?.message || "Driver not found for this QR.");
+      if (!res.ok) {
+        console.log("[QRScanner] /drivers/scan error", res.status, out);
+        throw new Error(out?.message || out?.error || "Driver not found for this QR.");
+      }
 
-      const busType = out.busType ?? out.vehicleType ?? "—";
-      const obj = {
-        name: out.name ?? "Unknown Driver",
-        code: out.code ?? "N/A",
-        busType,
-        vehicleType: busType, // keep for compatibility
-        busNumber: out.busNumber ?? "—",
-        plateNumber: out.plateNumber ?? out.plate ?? "—",
-        scannedAt: new Date(),
-      };
+      const obj = buildDriverObjectFromApi(out);
+      console.log("[QRScanner] resolved driver from API =", obj);
+
       setDriver(obj);
       setInfoOpen(true);
     } catch (e) {
+      console.error("[QRScanner] handlePayload error:", e);
       setError(e.message || "Scan failed. Try again.");
-      // allow re-scan shortly after an error
       setTimeout(() => {
         scanLock.current = false;
         setScanning(true);
@@ -122,7 +218,8 @@ export default function QRScanner({ navigation }) {
     }
   };
 
-  const onBarcodeScanned = ({ data }) => {
+  const onBarcodeScanned = ({ data, type }) => {
+    console.log("[QRScanner] onBarcodeScanned", { type, data });
     if (!scanning || scanLock.current || infoOpen) return;
     scanLock.current = true;
     setScanning(false);
@@ -188,7 +285,7 @@ export default function QRScanner({ navigation }) {
     <SafeAreaView style={s.screen} edges={["top", "bottom"]}>
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
-      {/* Header (safe-area aware) */}
+      {/* Header */}
       <View
         style={[
           s.topBar,
@@ -223,7 +320,9 @@ export default function QRScanner({ navigation }) {
             ) : (
               <>
                 <MaterialCommunityIcons name="qrcode-scan" size={34} color={C.hint} />
-                <Text style={[s.hint, { marginTop: 8 }]}>{error ? error : "Hold on…"}</Text>
+                <Text style={[s.hint, { marginTop: 8 }]}>
+                  {error ? error : "Hold on…"}
+                </Text>
               </>
             )}
           </View>
@@ -248,10 +347,9 @@ export default function QRScanner({ navigation }) {
         visible={infoOpen}
         transparent
         animationType="fade"
-        onShow={() => setScanning(false)} // pause scanning while modal is visible
+        onShow={() => setScanning(false)}
         onRequestClose={() => {
           setInfoOpen(false);
-          // allow rescan after closing
           setTimeout(() => {
             scanLock.current = false;
             setScanning(true);
@@ -277,13 +375,11 @@ export default function QRScanner({ navigation }) {
                 </View>
               </View>
 
-              {/* Bus Number (full width) */}
               <View style={{ marginTop: 10 }}>
                 <Text style={s.label}>Bus Number</Text>
                 <Text style={s.value}>{driver?.busNumber ?? "—"}</Text>
               </View>
 
-              {/* Plate Number (full width) */}
               <View style={{ marginTop: 10 }}>
                 <Text style={s.label}>Plate Number</Text>
                 <Text style={s.value}>{driver?.plateNumber ?? "—"}</Text>
@@ -292,9 +388,29 @@ export default function QRScanner({ navigation }) {
 
             <TouchableOpacity
               style={[s.primaryBtn, { marginTop: 14 }]}
-              onPress={() => {
+              onPress={async () => {
+                try {
+                  if (driver) {
+                    const normalized = {
+                      ...driver,
+                      driverProfileId:
+                        driver.driverProfileId ??
+                        driver.driverId ??
+                        driver.id ??
+                        null,
+                      busId: driver.busId ?? null,
+                    };
+                    await AsyncStorage.setItem(
+                      "LC_CURRENT_DRIVER",
+                      JSON.stringify(normalized)
+                    );
+                    console.log("[QRScanner] stored driver in AsyncStorage", normalized);
+                  }
+                } catch (e) {
+                  console.log("[QRScanner] failed to store driver", e);
+                }
+
                 setInfoOpen(false);
-                // still pass through for downstream usage if needed
                 navigation.navigate("MapTracking", {
                   driver: {
                     ...driver,
@@ -315,7 +431,6 @@ export default function QRScanner({ navigation }) {
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.bg },
   center: { alignItems: "center", justifyContent: "center" },
-
   topBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -335,7 +450,6 @@ const s = StyleSheet.create({
     justifyContent: "center",
   },
   topTitle: { fontWeight: "700", fontSize: 14, color: C.text },
-
   cameraWrap: {
     flex: 1,
     margin: 12,
@@ -346,7 +460,6 @@ const s = StyleSheet.create({
     backgroundColor: "#000",
   },
   camera: { flex: 1 },
-
   overlay: {
     position: "absolute",
     left: 0,
@@ -372,7 +485,6 @@ const s = StyleSheet.create({
     textShadowColor: "rgba(0,0,0,0.6)",
     textShadowRadius: 6,
   },
-
   actionsRow: { paddingHorizontal: 14 },
   secondaryBtn: {
     flexDirection: "row",
@@ -386,8 +498,6 @@ const s = StyleSheet.create({
     borderColor: C.border,
   },
   secondaryBtnTxt: { color: C.brand, fontWeight: "700", fontSize: 13 },
-
-  // Modal styles
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.18)" },
   infoCardWrap: {
     position: "absolute",
@@ -425,7 +535,6 @@ const s = StyleSheet.create({
   },
   infoTitle: { fontWeight: "700", fontSize: 14, color: C.text },
   infoSub: { color: C.sub, fontSize: 12, marginBottom: 10 },
-
   infoBox: {
     borderWidth: 1,
     borderColor: C.border,
@@ -444,10 +553,8 @@ const s = StyleSheet.create({
     paddingHorizontal: 10,
   },
   badgeTxt: { fontWeight: "700", fontSize: 11, color: C.text },
-
   label: { color: C.sub, fontSize: 11, marginBottom: 4 },
   value: { color: C.text, fontSize: 12.5, fontWeight: "600" },
-
   primaryBtn: {
     backgroundColor: C.brand,
     borderRadius: 10,

@@ -1,4 +1,4 @@
-generator client {
+enerator client {
   provider = "prisma-client-js"
 }
 
@@ -23,7 +23,7 @@ model User {
 }
 
 model DriverProfile {
-  driverId  String           @id @default(cuid()) @map("id") // <- Prisma name, DB column stays "id"
+  driverId  String           @id @default(cuid()) @map("id")
   userId    String           @unique
   user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   fullName  String
@@ -38,6 +38,7 @@ model DriverProfile {
   createdAt DateTime         @default(now())
   ratings   RideRating[]
   incidents IncidentReport[]
+  trips     Trip[]
 }
 
 model CommuterProfile {
@@ -48,6 +49,7 @@ model CommuterProfile {
   address    String?
   language   String  @default("en")
   profileUrl String?
+  trips      Trip[]
 }
 
 model EmergencyContact {
@@ -61,10 +63,10 @@ model EmergencyContact {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([userId])
-  @@index([userId, priority])
   @@unique([userId, phone])
   @@unique([userId, priority])
+  @@index([userId])
+  @@index([userId, priority])
 }
 
 model Bus {
@@ -74,49 +76,84 @@ model Bus {
   busType  String          @default("AIRCON")
   isActive Boolean         @default(true)
   drivers  DriverProfile[] @relation("BusDrivers")
+  trips    Trip[]
+}
+
+model Trip {
+  id                String          @id @default(cuid())
+  commuterProfileId String
+  commuterProfile   CommuterProfile @relation(fields: [commuterProfileId], references: [id])
+  driverProfileId   String?
+  driverProfile     DriverProfile?  @relation(fields: [driverProfileId], references: [driverId])
+  busId             String?
+  bus               Bus?            @relation(fields: [busId], references: [id])
+
+  driverName        String?
+  busNumber         String?
+  busPlate          String?
+
+  status            String          @default("ONGOING")
+  startedAt         DateTime        @default(now())
+  endedAt           DateTime?
+  originLat         Float?
+  originLng         Float?
+  destLat           Float?
+  destLng           Float?
+  originLabel       String?
+  destLabel         String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  incidentReports   IncidentReport[]
+
+  @@index([commuterProfileId, status])
+  @@index([driverProfileId])
+  @@index([busId])
+  @@index([status, endedAt])
 }
 
 model RideRating {
-  id           String   @id @default(cuid())
-  driverId     String
-  commuterId   String
-  rideId       String?
-  driverScore  Int
-  vehicleScore Int
-  comment      String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id         String   @id @default(cuid())
+  driverId   String
+  commuterId String
+  rideId     String?
+  score      Int      @default(5)
+  comment    String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  driver       DriverProfile @relation(fields: [driverId], references: [driverId]) // <- updated
+  driver DriverProfile @relation(fields: [driverId], references: [driverId])
 
   @@index([driverId, createdAt])
   @@index([commuterId, createdAt])
 }
 
 model IncidentReport {
-  id           String   @id @default(cuid())
-  driverId     String
-  reporterId   String?
-  rideId       String?
-  note         String?
-  lat          Float?
-  lng          Float?
-  evidenceUrl  String?
-  status       String   @default("PENDING")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String   @id @default(cuid())
+  driverId    String
+  reporterId  String?
+  tripId      String?
+  note        String?
+  lat         Float?
+  lng         Float?
+  evidenceUrl String?
+  status      String   @default("PENDING")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  categories   IncidentReportCategory[]
-  driver       DriverProfile @relation(fields: [driverId], references: [driverId]) // <- updated
+  categories IncidentCategory[]
+  driver     DriverProfile @relation(fields: [driverId], references: [driverId])
+  trip       Trip?         @relation(fields: [tripId], references: [id])
 
   @@index([driverId, createdAt])
   @@index([status, createdAt])
+  @@index([tripId, createdAt])
 }
 
-model IncidentReportCategory {
-  reportId String
-  category String
-  report   IncidentReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+model IncidentCategory {
+  incidentId String
+  category   String
+  incident   IncidentReport @relation(fields: [incidentId], references: [id], onDelete: Cascade)
 
-  @@id([reportId, category])
+  @@id([incidentId, category])
 }

@@ -23,12 +23,19 @@ import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 
-/* ✅ FIXED: routes are one level up from /src */
+// Mailer
+import { sendOtpEmail } from "./utils/mailer.js";
+
 import mapsRouter from "../routes/maps.js";
+import tripsRouter from "../routes/trips.js";
+import incidentsRouter from "../routes/incidents.js";
 import adminDriversRouter from "../routes/admin.drivers.js";
 import driversRouter from "../routes/drivers.js";
 import driverProfileRouter from "../routes/driver.profile.js";
 import feedbackRoutes from "../routes/feedback.js";
+import commuterTripsRouter from "../routes/commuter.trips.js";
+
+
 
 const app = express();
 const prisma = new PrismaClient();
@@ -73,6 +80,15 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+function requireUserAuth(req, res, next) {
+  return requireAuth(req, res, () => {
+    if (req.user?.role !== "COMMUTER") {
+      return res.status(403).json({ message: "Commuters only" });
+    }
+    next();
+  });
+}
+
 /* ---------- simple OTP store (dev) ---------- */
 const otpStore = new Map();
 const OTP_TTL_MS = 5 * 60 * 1000;
@@ -108,11 +124,12 @@ app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 /* ---------- routers ---------- */
 app.use("/maps", mapsRouter);
+app.use("/api/trips", tripsRouter);
+app.use("/api/incidents", incidentsRouter);
 app.use("/drivers", requireAuth, driversRouter);
 app.use("/driver", requireAuth, driverProfileRouter);
 app.use("/admin", requireAuth, requireAdmin, adminDriversRouter);
-
-/* ✅ Protect feedback so req.user is present */
+app.use("/commuter", requireUserAuth, commuterTripsRouter);
 app.use("/feedback", requireAuth, feedbackRoutes);
 
 /* ---------- auth endpoints ---------- */
@@ -215,6 +232,11 @@ app.post("/auth/register", async (req, res) => {
       });
 
       const code = setOtp(key);
+      try {
+        await sendOtpEmail(key, code);
+      } catch (err) {
+        console.error("MAILTRAP SEND OTP (existing) ERROR:", err);
+      }
       console.log(`OTP (unverified existing) for ${key}: ${code}`);
       return res.status(200).json({
         code: "UNVERIFIED",
@@ -248,6 +270,11 @@ app.post("/auth/register", async (req, res) => {
     });
 
     const code = setOtp(key);
+    try {
+      await sendOtpEmail(key, code);
+    } catch (err) {
+      console.error("MAILTRAP SEND OTP (new user) ERROR:", err);
+    }
     console.log(`OTP for ${key}: ${code}`);
     res.status(201).json({ message: "Registered. OTP sent.", user });
   } catch (e) {
@@ -288,6 +315,11 @@ app.post("/auth/request-otp", async (req, res) => {
     }
 
     const code = setOtp(key);
+    try {
+      await sendOtpEmail(key, code);
+    } catch (err) {
+      console.error("MAILTRAP SEND OTP (request-otp) ERROR:", err);
+    }
     console.log(`[request-otp] Resent OTP for ${key}: ${code}`);
     return res.json({
       message: "OTP sent",
@@ -357,13 +389,18 @@ app.get("/buses/:id", requireAuth, requireAdmin, async (req, res) => {
   res.json(bus);
 });
 
-app.get("/buses/by-number/:number", requireAuth, requireAdmin, async (req, res) => {
-  const bus = await prisma.bus.findFirst({
-    where: { number: req.params.number },
-  });
-  if (!bus) return res.status(404).json({ message: "Bus not found" });
-  res.json(bus);
-});
+app.get(
+  "/buses/by-number/:number",
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const bus = await prisma.bus.findFirst({
+      where: { number: req.params.number },
+    });
+    if (!bus) return res.status(404).json({ message: "Bus not found" });
+    res.json(bus);
+  }
+);
 
 app.post("/buses", requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -378,7 +415,9 @@ app.post("/buses", requireAuth, requireAdmin, async (req, res) => {
     res.status(201).json(bus);
   } catch (e) {
     if (e?.code === "P2002")
-      return res.status(409).json({ message: "Bus number or plate already exists" });
+      return res
+        .status(409)
+        .json({ message: "Bus number or plate already exists" });
     if (e instanceof z.ZodError)
       return res.status(400).json({ message: "Invalid input" });
     console.error("CREATE BUS ERROR:", e);
@@ -404,7 +443,9 @@ app.put("/buses/:id", requireAuth, requireAdmin, async (req, res) => {
     if (e?.code === "P2025")
       return res.status(404).json({ message: "Bus not found" });
     if (e?.code === "P2002")
-      return res.status(409).json({ message: "Bus number or plate already exists" });
+      return res
+        .status(409)
+        .json({ message: "Bus number or plate already exists" });
     if (e instanceof z.ZodError)
       return res.status(400).json({ message: "Invalid input" });
     console.error("UPDATE BUS ERROR:", e);
@@ -537,9 +578,13 @@ app.patch("/users/me", requireAuth, async (req, res) => {
         where: { id: commuter.id },
         data: {
           ...(input.fullName ? { fullName: input.fullName } : {}),
-          ...(input.address !== undefined ? { address: input.address ?? null } : {}),
+          ...(input.address !== undefined
+            ? { address: input.address ?? null }
+            : {}),
           ...(input.language ? { language: input.language } : {}),
-          ...(input.profileUrl !== undefined ? { profileUrl: input.profileUrl ?? null } : {}),
+          ...(input.profileUrl !== undefined
+            ? { profileUrl: input.profileUrl ?? null }
+            : {}),
         },
       });
     }
@@ -597,7 +642,10 @@ app.patch("/users/change-password", requireAuth, async (req, res) => {
       return res.status(404).json({ message: "User not found" });
 
     const ok = await bcrypt.compare(currentPassword, user.password);
-    if (!ok) return res.status(400).json({ message: "Current password is incorrect" });
+    if (!ok)
+      return res
+        .status(400)
+        .json({ message: "Current password is incorrect" });
 
     const hash = await bcrypt.hash(newPassword, 12);
     await prisma.user.update({

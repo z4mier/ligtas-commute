@@ -6,9 +6,77 @@ import { z } from "zod";
 const prisma = new PrismaClient();
 const router = Router();
 
-/* Auth middleware is applied in index.js:
-   app.use("/drivers", requireAuth, driversRouter)
-*/
+/**
+ * Resolve driver info from a QR payload.
+ * Used by the commuter app QR scanner.
+ *
+ * Body: { payload: string }
+ *  - If payload is JSON with driverId, we try that.
+ *  - Otherwise we try it as driverProfile.id, then as userId.
+ */
+router.post("/scan", async (req, res) => {
+  try {
+    const schema = z.object({
+      payload: z.string().min(1),
+    });
+    const { payload } = schema.parse(req.body);
+
+    const raw = payload.trim();
+
+    let parsed = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      // not JSON, ignore
+    }
+
+    let candidateId = raw;
+    if (parsed && typeof parsed === "object") {
+      candidateId =
+        parsed.driverId ||
+        parsed.driverProfileId ||
+        parsed.userId ||
+        raw;
+    }
+
+    // 1) try as driverProfile.id
+    let prof = await prisma.driverProfile.findUnique({
+      where: { id: candidateId },
+      include: { bus: true },
+    });
+
+    // 2) if not found, try as userId
+    if (!prof) {
+      prof = await prisma.driverProfile.findFirst({
+        where: { userId: candidateId },
+        include: { bus: true },
+      });
+    }
+
+    if (!prof) {
+      return res
+        .status(404)
+        .json({ message: "Driver not found for this QR." });
+    }
+
+    return res.json({
+      id: prof.id,
+      userId: prof.userId,
+      name: prof.fullName,
+      code: prof.id, // you can change this if you have a custom code field
+      busNumber: prof.bus?.number ?? null,
+      plateNumber: prof.bus?.plate ?? null,
+      busType: prof.bus?.busType ?? null,
+      vehicleType: prof.bus?.busType ?? null,
+    });
+  } catch (e) {
+    console.error("POST /drivers/scan ERROR", e);
+    if (e instanceof z.ZodError) {
+      return res.status(400).json({ message: "Invalid payload" });
+    }
+    return res.status(500).json({ message: "Server error" });
+  }
+});
 
 /**
  * Resolve driver profile by a User.id (useful when the app only knows the driver's userId).
@@ -25,7 +93,7 @@ router.get("/by-user/:userId", async (req, res) => {
     if (!prof) return res.status(404).json({ message: "Driver profile not found" });
 
     return res.json({
-      id: prof.id,                // <- DriverProfile.id  (this is what ratings need)
+      id: prof.id, // DriverProfile.id
       userId: prof.userId,
       fullName: prof.fullName,
       bus: prof.bus
@@ -64,8 +132,5 @@ router.get("/current", async (req, res) => {
     return res.status(500).json({ message: "Server error" });
   }
 });
-
-/* (Optional) Add your existing list/set status endpoints below if you had them…
-   Keeping the file short since the goal here is the lookup endpoints above. */
 
 export default router;

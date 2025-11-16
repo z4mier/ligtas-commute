@@ -21,6 +21,7 @@ import SafetyInsightsList from "./screens/SafetyInsightsList";
 import CommunityList from "./screens/CommunityList";
 import MapTracking from "./screens/MapTracking";
 import DriverTracking from "./screens/DriverTracking";
+import TripDetails from "./screens/TripDetails";
 
 const Stack = createNativeStackNavigator();
 
@@ -41,13 +42,25 @@ export default function App() {
               options={{ headerShown: true, title: "Settings" }}
             />
             <Stack.Screen name="DriverTracking" component={DriverTracking} />
-            <Stack.Screen name="CommuterDashboard" component={CommuterDashboard} />
+            <Stack.Screen
+              name="CommuterDashboard"
+              component={CommuterDashboard}
+            />
             <Stack.Screen name="Settings" component={SettingsScreen} />
             <Stack.Screen name="QRScanner" component={QRScanner} />
             <Stack.Screen name="Notifications" component={Notifications} />
-            <Stack.Screen name="SafetyInsightsList" component={SafetyInsightsList} />
+            <Stack.Screen
+              name="SafetyInsightsList"
+              component={SafetyInsightsList}
+            />
             <Stack.Screen name="CommunityList" component={CommunityList} />
             <Stack.Screen name="MapTracking" component={MapTracking} />
+
+            <Stack.Screen
+              name="TripDetails"
+              component={TripDetails}
+              options={{ headerShown: false }}
+            />
           </Stack.Navigator>
         </NavigationContainer>
       </SafeAreaProvider>

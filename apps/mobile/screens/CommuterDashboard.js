@@ -34,20 +34,14 @@ const C = {
   sub: "#6B7280",
   hint: "#9CA3AF",
   brand: "#0B132B",
-  redDark: "#B91C1C",
-  star: "#F59E0B",
   dot: "#EF4444",
 };
 
-// === keep header visual metrics in sync with < Settings > screen ===
 const HEADER_TITLE_SIZE = 18;
 const HEADER_ICON_SIZE = 22;
 const LOGO_SIZE = 28;
 const HEADER_H = 48;
 
-const TRACK_KEY = "lc_tracking";
-
-/* small helper used both in Dashboard card and dropdown */
 function timeAgo(ts) {
   if (!ts) return "";
   const s = Math.floor((Date.now() - ts) / 1000);
@@ -62,6 +56,25 @@ function timeAgo(ts) {
   return `${d}d ago`;
 }
 
+// 👉 "13 Nov 2025, 02:29 am" style
+function fmtDateTime(x) {
+  if (!x) return "—";
+  const d = new Date(x);
+  return d.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function cleanPlace(s) {
+  if (!s) return "Unknown destination";
+  return s.trim();
+}
+
 export default function CommuterDashboard({ navigation }) {
   const [fontsLoaded] = useFonts({
     Poppins_400Regular,
@@ -73,6 +86,21 @@ export default function CommuterDashboard({ navigation }) {
   const insets = useSafeAreaInsets();
 
   const [checking, setChecking] = useState(true);
+  const [me, setMe] = useState(null);
+
+  // notifications
+  const [notifications, setNotifications] = useState([]);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const unreadCount = useMemo(
+    () => notifications.filter((n) => !n.read).length,
+    [notifications]
+  );
+
+  // recent trips from API
+  const [recentTrips, setRecentTrips] = useState([]);
+  const [loadingTrips, setLoadingTrips] = useState(false);
+
+  // ---- auth + profile ----
   useEffect(() => {
     (async () => {
       try {
@@ -85,6 +113,8 @@ export default function CommuterDashboard({ navigation }) {
           await AsyncStorage.removeItem("token");
           return navigation.replace("Login");
         }
+        const data = await res.json().catch(() => null);
+        if (data) setMe(data);
       } catch {
         return navigation.replace("Login");
       } finally {
@@ -93,23 +123,13 @@ export default function CommuterDashboard({ navigation }) {
     })();
   }, [navigation]);
 
-  // Lists
-  const [safetyItems] = useState([]);
-  const [communityItems] = useState([]);
-  const [loadingLists, setLoadingLists] = useState(false);
+  const displayName = useMemo(() => {
+    if (!me) return "";
+    const basis = me.fullName || me.email || "";
+    return basis.split(" ")[0];
+  }, [me]);
 
-  // Active tracking snapshot (from MapTracking)
-  const [activeTrack, setActiveTrack] = useState(null);
-
-  // Notifications — now sourced from Notify store
-  const [notifications, setNotifications] = useState([]);
-  const unreadCount = useMemo(
-    () => notifications.filter((n) => !n.read).length,
-    [notifications]
-  );
-  const [notifOpen, setNotifOpen] = useState(false);
-
-  // Pull notifications from storage + subscribe for live updates
+  // ---- load notifications ----
   useEffect(() => {
     let mounted = true;
 
@@ -124,68 +144,60 @@ export default function CommuterDashboard({ navigation }) {
       );
     };
 
-    // initial load
     refresh();
 
-    // live updates when MapTracking adds a rating/incident
-    const unsub = Notify.onChange(refresh);
-
-    // also refresh whenever dashboard regains focus
+    const unsubStore = Notify.onChange(refresh);
     const unsubNav = navigation.addListener("focus", refresh);
 
     return () => {
       mounted = false;
-      unsub?.();
+      unsubStore?.();
       unsubNav?.();
     };
   }, [navigation]);
 
   const markAllRead = async () => {
     const updated = await Notify.markAllRead();
-    setNotifications(updated.map((n) => ({ ...n, timeAgo: timeAgo(n.timestamp) })));
+    setNotifications(
+      updated.map((n) => ({ ...n, timeAgo: timeAgo(n.timestamp) }))
+    );
   };
 
   const openAllNotifications = () => {
     setNotifOpen(false);
-    // The Notifications screen loads from Notify itself; no need to pass items
     navigation?.navigate?.("Notifications");
   };
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        setLoadingLists(true);
-        // fetch list data here if needed
-      } catch {
-      } finally {
-        if (mounted) setLoadingLists(false);
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  // Load/refresh active tracking snapshot whenever Dashboard gets focus
+  // ---- load recent trips when dashboard gains focus ----
   useEffect(() => {
     const unsub = navigation.addListener("focus", async () => {
       try {
-        const json = await AsyncStorage.getItem(TRACK_KEY);
-        setActiveTrack(json ? JSON.parse(json) : null);
-      } catch {
-        setActiveTrack(null);
+        setLoadingTrips(true);
+        const token = await AsyncStorage.getItem("token");
+        if (!token) {
+          setRecentTrips([]);
+          return;
+        }
+        const res = await fetch(`${API_URL}/commuter/trips/recent`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => []);
+        setRecentTrips(Array.isArray(data) ? data : []);
+      } catch (e) {
+        console.log("load recent trips error:", e);
+        setRecentTrips([]);
+      } finally {
+        setLoadingTrips(false);
       }
     });
+
     return unsub;
   }, [navigation]);
 
+  // bottom nav actions
   const goSettings = () => navigation?.navigate?.("Settings");
   const goQR = () => navigation?.navigate?.("QRScanner");
   const goHome = () => navigation?.navigate?.("CommuterDashboard");
-
-  // IMPORTANT: your Map screen route name — update if different
-  const openTrackingMap = () => navigation?.navigate?.("Tracking");
 
   if (!fontsLoaded || checking) {
     return (
@@ -199,7 +211,7 @@ export default function CommuterDashboard({ navigation }) {
     <SafeAreaView style={s.screen} edges={["top", "bottom"]}>
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
-      {/* HEADER */}
+      {/* TOP BAR */}
       <View
         style={[
           s.topBar,
@@ -239,7 +251,7 @@ export default function CommuterDashboard({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* NOTIFICATIONS DROPDOWN */}
+      {/* NOTIFICATION DROPDOWN */}
       <Modal
         visible={notifOpen}
         transparent
@@ -290,8 +302,10 @@ export default function CommuterDashboard({ navigation }) {
                 <View key={String(n.id)} style={s.notifRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={s.notifRowTitle}>{n.title}</Text>
-                    {!!n.body && <Text style={s.notifRowBody}>{n.body}</Text>}
-                    <Text style={s.notifRowTime}>{timeAgo(n.timestamp)}</Text>
+                    {!!n.body && (
+                      <Text style={s.notifRowBody}>{n.body}</Text>
+                    )}
+                    <Text style={s.notifRowTime}>{n.timeAgo}</Text>
                   </View>
                   {!n.read && <View style={s.inlineDot} />}
                 </View>
@@ -310,157 +324,144 @@ export default function CommuterDashboard({ navigation }) {
 
       {/* CONTENT */}
       <ScrollView
-        contentContainerStyle={[s.scroll, { paddingBottom: 120 + insets.bottom }]}
+        contentContainerStyle={[
+          s.scroll,
+          { paddingBottom: 120 + insets.bottom },
+        ]}
       >
-        {/* Safety Insights */}
-        <View style={s.card}>
-          <View style={s.cardHeader}>
-            <Text style={s.cardTitleOnly}>{t("safetyInsights")}</Text>
-            <TouchableOpacity
-              onPress={() =>
-                navigation?.navigate?.("SafetyInsightsList", {
-                  items: safetyItems,
-                })
-              }
-            >
-              <Text style={[s.viewAll, { color: C.brand }]}>{t("viewAll")}</Text>
-            </TouchableOpacity>
-          </View>
+        {/* GREETING */}
+        <View style={s.hero}>
+          <Text style={s.heroHello}>Hello,</Text>
+          <Text style={s.heroName}>
+            {displayName || t("commuter" /* fallback */)}
+          </Text>
+          <Text style={s.heroSub}>Ready for a safer commute today?</Text>
+        </View>
 
-          {loadingLists ? (
+        {/* 1️⃣ RECENT TRIPS – MoveIt style */}
+        <View style={s.card}>
+          <Text style={s.sectionTitle}>Recent trips</Text>
+
+          {loadingTrips ? (
             <View style={s.emptyWrap}>
               <ActivityIndicator />
+              <Text style={s.emptySub}>Loading your trips…</Text>
             </View>
-          ) : safetyItems.length === 0 ? (
+          ) : recentTrips.length === 0 ? (
             <View style={s.emptyWrap}>
               <MaterialCommunityIcons
-                name="shield-off-outline"
+                name="history"
                 size={28}
                 color={C.hint}
               />
-              <Text style={s.emptyTitle}>{t("listEmptySafetyTitle")}</Text>
-              <Text style={s.emptySub}>{t("listEmptySafetySub")}</Text>
+              <Text style={s.emptyTitle}>No trips yet</Text>
+              <Text style={s.emptySub}>
+                Your completed rides will appear here after you finish a trip.
+              </Text>
             </View>
           ) : (
-            safetyItems.map((it) => (
-              <View key={String(it.id)} style={s.itemRow}>
-                <Text style={s.itemTitle}>{it.title}</Text>
-                <Text style={s.itemTime}>{it.time}</Text>
-              </View>
-            ))
+            recentTrips.slice(0, 10).map((trip) => {
+              const title = `Ride to ${cleanPlace(trip.destLabel)}`;
+              const dateTimeStr = fmtDateTime(
+                trip.endedAt || trip.startedAt
+              );
+
+              const driverName =
+                trip.driverProfile?.fullName ||
+                trip.driverProfile?.name ||
+                null;
+
+              const busLabel =
+                trip.bus?.number ||
+                trip.bus?.plate ||
+                (trip.busId ? `Bus #${trip.busId}` : null);
+
+              return (
+                <TouchableOpacity
+                  key={String(trip.id)}
+                  style={s.tripRow}
+                  activeOpacity={0.9}
+                  onPress={() =>
+                    navigation?.navigate?.("TripDetails", { trip })
+                  }
+                >
+                  {/* avatar with bus icon */}
+                  <View style={s.tripAvatar}>
+                    <MaterialCommunityIcons
+                      name="bus"
+                      size={20}
+                      color="#FFFFFF"
+                    />
+                  </View>
+
+                  {/* main text */}
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.tripTitle} numberOfLines={1}>
+                      {title}
+                    </Text>
+                    <Text style={s.tripSubtitle}>{dateTimeStr}</Text>
+
+                    {(driverName || busLabel) && (
+                      <View style={s.tripMetaRow}>
+                        {driverName && (
+                          <View style={s.tripMetaChip}>
+                            <MaterialCommunityIcons
+                              name="account"
+                              size={13}
+                              color={C.brand}
+                            />
+                            <Text
+                              style={s.tripMetaText}
+                              numberOfLines={1}
+                            >
+                              {driverName}
+                            </Text>
+                          </View>
+                        )}
+                        {busLabel && (
+                          <View style={s.tripMetaChip}>
+                            <MaterialCommunityIcons
+                              name="bus"
+                              size={13}
+                              color={C.brand}
+                            />
+                            <Text
+                              style={s.tripMetaText}
+                              numberOfLines={1}
+                            >
+                              {busLabel}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
+                  </View>
+
+                  {/* chevron */}
+                  <MaterialCommunityIcons
+                    name="chevron-right"
+                    size={20}
+                    color={C.sub}
+                  />
+                </TouchableOpacity>
+              );
+            })
           )}
         </View>
 
-        {/* Community */}
-        <View style={s.card}>
-          <View style={s.cardHeader}>
-            <Text style={s.cardTitleOnly}>{t("community")}</Text>
-            <TouchableOpacity
-              onPress={() =>
-                navigation?.navigate?.("CommunityList", {
-                  items: communityItems,
-                })
-              }
-            >
-              <Text style={[s.viewAll, { color: C.brand }]}>{t("viewAll")}</Text>
-            </TouchableOpacity>
-          </View>
-
-          {loadingLists ? (
-            <View style={s.emptyWrap}>
-              <ActivityIndicator />
-            </View>
-          ) : communityItems.length === 0 ? (
-            <View style={s.emptyWrap}>
-              <MaterialCommunityIcons
-                name="account-group-outline"
-                size={28}
-                color={C.hint}
-              />
-              <Text style={s.emptyTitle}>{t("listEmptyCommunityTitle")}</Text>
-              <Text style={s.emptySub}>{t("listEmptyCommunitySub")}</Text>
-            </View>
-          ) : (
-            communityItems.map((it) => (
-              <View key={String(it.id)} style={s.itemRow}>
-                <Text style={s.itemTitle}>{it.title}</Text>
-                <Text style={s.itemTime}>{it.time}</Text>
-              </View>
-            ))
-          )}
-        </View>
-
-        {/* Tracking */}
-        <View style={s.card}>
-          <View style={s.cardHeader}>
-            <Text style={s.cardTitleOnly}>{t("tracking")}</Text>
-          </View>
-
-          {loadingLists ? (
-            <View style={s.emptyWrap}>
-              <ActivityIndicator />
-            </View>
-          ) : !activeTrack || !activeTrack.active ? (
-            <View style={s.emptyWrap}>
-              <MaterialCommunityIcons
-                name="map-search-outline"
-                size={28}
-                color={C.hint}
-              />
-              <Text style={s.emptyTitle}>{t("trackingEmptyTitle")}</Text>
-              <Text style={s.emptySub}>{t("trackingEmptySub")}</Text>
-            </View>
-          ) : (
-            <View style={s.trackActiveCard}>
-              <View style={{ flex: 1 }}>
-                <Text style={s.trackNow}>{t("trackingNow")}</Text>
-                {!!activeTrack.routeTitle && (
-                  <Text style={s.trackRoute} numberOfLines={1}>
-                    {activeTrack.routeTitle}
-                  </Text>
-                )}
-                <Text style={s.trackDest} numberOfLines={1}>
-                  {t("destination")}:{" "}
-                  <Text style={s.bold}>{activeTrack.destinationName}</Text>
-                </Text>
-                {!!activeTrack.eta && (
-                  <Text style={s.trackEta}>
-                    {t("eta")}:{" "}
-                    <Text style={s.bold}>{activeTrack.eta.durationText}</Text>{" "}
-                    • {activeTrack.eta.distanceText}
-                  </Text>
-                )}
-                {!!activeTrack?.driver?.name && (
-                  <Text style={s.trackDriver}>
-                    {t("driver")}: {activeTrack.driver.name}
-                    {!!activeTrack.driver.routeName
-                      ? ` • ${activeTrack.driver.routeName}`
-                      : ""}
-                  </Text>
-                )}
-              </View>
-
-              <TouchableOpacity
-                style={s.openMapBtn}
-                onPress={openTrackingMap}
-                activeOpacity={0.9}
-              >
-                <MaterialCommunityIcons name="map" size={18} color="#fff" />
-                <Text style={s.openMapTxt}>{t("openMap")}</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
+        {/* you can add back your "Where's your bus" + announcements sections here
+            using the existing styles (busSection, busCard, annItem, etc.)
+            – I kept them untouched in the styles below */}
       </ScrollView>
 
       {/* BOTTOM NAV */}
       <View style={[s.tabbar, { paddingBottom: 10 + insets.bottom }]}>
         <TouchableOpacity style={s.tab} onPress={goHome}>
-          <View style={s.iconWrap}>
+          <View style={[s.iconWrap, s.iconWrapActive]}>
             <MaterialCommunityIcons
               name="home-variant"
-              size={26}
-              color={C.text}
+              size={24}
+              color="#fff"
             />
           </View>
           <Text style={[s.tabLabel, s.tabActive]}>{t("tabHome")}</Text>
@@ -471,7 +472,7 @@ export default function CommuterDashboard({ navigation }) {
             <MaterialCommunityIcons
               name="qrcode-scan"
               size={22}
-              color={C.text}
+              color={C.brand}
             />
           </View>
           <Text style={s.tabLabel}>{t("tabQR")}</Text>
@@ -479,7 +480,11 @@ export default function CommuterDashboard({ navigation }) {
 
         <TouchableOpacity style={s.tab} onPress={goSettings}>
           <View style={s.iconWrap}>
-            <MaterialCommunityIcons name="cog-outline" size={22} color={C.text} />
+            <MaterialCommunityIcons
+              name="cog-outline"
+              size={22}
+              color={C.brand}
+            />
           </View>
           <Text style={s.tabLabel}>{t("tabSettings")}</Text>
         </TouchableOpacity>
@@ -508,7 +513,6 @@ const s = StyleSheet.create({
     letterSpacing: 0.2,
   },
   notifBtn: { padding: 6 },
-
   dot: {
     position: "absolute",
     right: -2,
@@ -521,61 +525,54 @@ const s = StyleSheet.create({
 
   scroll: { padding: 12 },
 
+  /* HERO */
+  hero: { marginBottom: 8 },
+  heroHello: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 13,
+    color: C.sub,
+  },
+  heroName: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 20,
+    color: C.text,
+  },
+  heroSub: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 11,
+    color: C.hint,
+    marginTop: 2,
+  },
+
+  /* GENERIC CARD */
   card: {
     backgroundColor: C.card,
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: 16,
+    padding: 14,
     borderWidth: 1,
     borderColor: C.border,
     marginBottom: 12,
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOpacity: 0.05,
-        shadowRadius: 6,
-        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.04,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 4 },
       },
-      android: { elevation: 1.5 },
+      android: { elevation: 2 },
     }),
   },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+  sectionTitle: {
+    fontFamily: "Poppins_600SemiBold",
+    color: C.text,
+    fontSize: 14,
   },
 
-  cardTitleOnly: { fontFamily: "Poppins_600SemiBold", color: C.text, fontSize: 14 },
-  viewAll: { fontFamily: "Poppins_400Regular", color: C.hint, fontSize: 12 },
-
-  // generic list rows
-  itemRow: {
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    backgroundColor: "#FAFAFA",
-  },
-  itemTitle: { fontFamily: "Poppins_600SemiBold", color: C.text, fontSize: 12.5 },
-  itemTime: { fontFamily: "Poppins_400Regular", color: C.hint, fontSize: 11, marginTop: 2 },
-
-  // community (buttons removed; style kept for reuse if needed)
-  actionRow: { flexDirection: "row", gap: 12, marginTop: 8, marginBottom: 6 },
-  btn: {
-    flex: 1,
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  btnTxt: { color: "#fff", fontFamily: "Poppins_700Bold", fontSize: 13 },
-
-  // tracking – empty
+  /* RECENT TRIPS */
   emptyWrap: {
     borderWidth: 1,
     borderColor: C.border,
-    borderRadius: 10,
+    borderRadius: 12,
     paddingVertical: 18,
     paddingHorizontal: 14,
     alignItems: "center",
@@ -596,64 +593,235 @@ const s = StyleSheet.create({
     fontSize: 11,
     textAlign: "center",
   },
-
-  // tracking – active card
-  trackActiveCard: {
-    marginTop: 8,
+  tripRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: C.border,
-    borderRadius: 10,
-    backgroundColor: "#FAFAFA",
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    backgroundColor: "#F9FAFB",
+    gap: 10,
+  },
+  tripAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: C.brand,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tripTitle: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 13,
+    color: C.text,
+  },
+  tripSubtitle: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 11.5,
+    color: C.sub,
+    marginTop: 2,
+  },
+  tripMetaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 6,
+  },
+  tripMetaChip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "#EEF2FF",
+    gap: 4,
   },
-  trackNow: { fontFamily: "Poppins_700Bold", color: "#16A34A", fontSize: 12, marginBottom: 2 },
-  trackRoute: { fontFamily: "Poppins_700Bold", color: C.text, fontSize: 13 },
-  trackDest: { fontFamily: "Poppins_400Regular", color: C.sub, fontSize: 11, marginTop: 4 },
-  trackEta: { fontFamily: "Poppins_600SemiBold", color: C.text, fontSize: 12, marginTop: 2 },
-  trackDriver: { fontFamily: "Poppins_400Regular", color: C.sub, fontSize: 11, marginTop: 2 },
+  tripMetaText: {
+    fontFamily: "Poppins_500Medium",
+    fontSize: 11,
+    color: C.brand,
+    maxWidth: 120,
+  },
+
+  /* WHERE'S YOUR BUS (styles kept for future sections) */
+  busSection: { marginBottom: 12 },
+  busTitle: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 15,
+    color: C.text,
+  },
+  busSub: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 11,
+    color: C.sub,
+    marginBottom: 6,
+  },
+  busCard: {
+    backgroundColor: C.card,
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 4 },
+      },
+      android: { elevation: 2 },
+    }),
+  },
+  busRowTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+  busRoute: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 14,
+    color: C.text,
+  },
+  busMeta: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 11,
+    color: C.sub,
+    marginTop: 2,
+  },
+  etaBubble: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#EEF2FF",
+    alignItems: "center",
+  },
+  etaLabel: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 9,
+    color: "#4F46E5",
+  },
+  etaValue: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 13,
+    color: "#312E81",
+  },
+  busRowBottom: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 10,
+  },
+  busDistance: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 11,
+    color: C.sub,
+    flex: 1,
+    marginRight: 6,
+  },
+  busMapBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: C.brand,
+  },
+  busMapTxt: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 11,
+    color: "#fff",
+    marginLeft: 6,
+  },
+  busEmptyInner: { alignItems: "center", gap: 6 },
+  busScanBtn: {
+    marginTop: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: C.brand,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  busScanTxt: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 11,
+    color: "#fff",
+  },
+
+  /* ANNOUNCEMENTS */
+  annHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  annItem: {
+    marginTop: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#F9FAFB",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  annTitle: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 12.5,
+    color: C.text,
+  },
+  annBody: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 11,
+    color: C.sub,
+    marginTop: 2,
+  },
+  annTime: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 10,
+    color: C.hint,
+    marginTop: 4,
+  },
+
   bold: { fontFamily: "Poppins_700Bold", color: C.text },
 
-  openMapBtn: {
-    backgroundColor: C.brand,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  openMapTxt: { color: "#fff", fontFamily: "Poppins_700Bold", fontSize: 12.5 },
-
-  // bottom nav
+  /* BOTTOM NAV */
   tabbar: {
     position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
     flexDirection: "row",
-    backgroundColor: "#E5E7EB",
+    backgroundColor: "#FFFFFF",
     paddingVertical: 10,
-    paddingHorizontal: 18,
+    paddingHorizontal: 20,
     justifyContent: "space-between",
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
   },
   tab: { alignItems: "center", justifyContent: "center", flex: 1 },
   iconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: "#fff",
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "#F3F4F6",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 4,
   },
-  tabLabel: { fontFamily: "Poppins_600SemiBold", color: "#6B7280", fontSize: 12 },
-  tabActive: { color: C.text },
+  iconWrapActive: {
+    backgroundColor: C.brand,
+  },
+  tabLabel: {
+    fontFamily: "Poppins_600SemiBold",
+    color: "#6B7280",
+    fontSize: 11,
+  },
+  tabActive: { color: C.brand },
 
-  // notifications modal
+  /* NOTIF MODAL */
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.12)" },
   notifCardWrap: { position: "absolute", right: 12 },
   notifCard: {
@@ -680,9 +848,15 @@ const s = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  notifTitle: { fontFamily: "Poppins_700Bold", fontSize: 14, color: C.text },
-  notifMarkAll: { fontFamily: "Poppins_600SemiBold", fontSize: 12 },
-
+  notifTitle: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 14,
+    color: C.text,
+  },
+  notifMarkAll: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 12,
+  },
   notifEmpty: {
     paddingHorizontal: 16,
     paddingVertical: 22,
@@ -704,11 +878,30 @@ const s = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  notifRowTitle: { fontFamily: "Poppins_600SemiBold", color: C.text, fontSize: 12.5 },
-  notifRowBody: { fontFamily: "Poppins_400Regular", color: C.sub, fontSize: 11, marginTop: 2 },
-  notifRowTime: { fontFamily: "Poppins_400Regular", color: C.hint, fontSize: 10.5, marginTop: 2 },
-  inlineDot: { width: 8, height: 8, borderRadius: 8, backgroundColor: C.dot, marginLeft: 6 },
-
+  notifRowTitle: {
+    fontFamily: "Poppins_600SemiBold",
+    color: C.text,
+    fontSize: 12.5,
+  },
+  notifRowBody: {
+    fontFamily: "Poppins_400Regular",
+    color: C.sub,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  notifRowTime: {
+    fontFamily: "Poppins_400Regular",
+    color: C.hint,
+    fontSize: 10.5,
+    marginTop: 2,
+  },
+  inlineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 8,
+    backgroundColor: C.dot,
+    marginLeft: 6,
+  },
   viewAllBtn: {
     paddingVertical: 12,
     alignItems: "center",
@@ -716,5 +909,9 @@ const s = StyleSheet.create({
     borderTopColor: C.border,
     marginTop: 10,
   },
-  viewAllBtnTxt: { fontFamily: "Poppins_700Bold", color: C.brand, fontSize: 12.5 },
+  viewAllBtnTxt: {
+    fontFamily: "Poppins_700Bold",
+    color: C.brand,
+    fontSize: 12.5,
+  },
 });
