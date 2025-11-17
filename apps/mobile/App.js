@@ -23,6 +23,7 @@ import MapTracking from "./screens/MapTracking";
 import DriverTracking from "./screens/DriverTracking";
 import TripDetails from "./screens/TripDetails";
 
+
 const Stack = createNativeStackNavigator();
 
 export default function App() {

@@ -369,17 +369,26 @@ app.post("/auth/verify-otp", async (req, res) => {
 
 /* ---------- buses (admin) ---------- */
 app.get("/buses", requireAuth, requireAdmin, async (req, res) => {
-  const { busType, active } = req.query;
+  // accept busType, type, or vehicleType as query param
+  const { busType, type, vehicleType, active } = req.query;
+  const typeParam = busType || type || vehicleType;
+
   const where = {
-    ...(busType ? { busType: String(busType).toUpperCase() } : {}),
-    ...(active != null ? { isActive: String(active) === "true" } : {}),
+    ...(typeParam
+      ? { busType: String(typeParam).toUpperCase() }
+      : {}),
+    ...(active != null
+      ? { isActive: String(active) === "true" }
+      : {}),
   };
+
   const buses = await prisma.bus.findMany({
     where,
     orderBy: [{ busType: "asc" }, { number: "asc" }],
   });
   res.json(buses);
 });
+
 
 app.get("/buses/:id", requireAuth, requireAdmin, async (req, res) => {
   const bus = await prisma.bus.findUnique({ where: { id: req.params.id } });

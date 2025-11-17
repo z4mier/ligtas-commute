@@ -66,7 +66,7 @@ function normalizeDriver(p) {
     licenseNo: pick(p.licenseNo),
     birthDate: p.birthDate,
     address: pick(p.address),
-    vehicleType: pick(bus.vehicleType || p.vehicleType),
+    vehicleType: pick(bus.busType || p.vehicleType),
     busNo: pick(bus.number || p.busNo),
     plateNumber: pick(bus.plate || p.plateNumber),
     active: Boolean(p.active ?? (p.status ? p.status === "ACTIVE" : true)),
@@ -95,7 +95,7 @@ function NiceSelect({
   placeholder,
   disabled,
   ariaLabel,
-  listMaxHeight = 300, // ← ensure scrollable
+  listMaxHeight = 300,
 }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef(null);
@@ -174,11 +174,13 @@ function NiceSelect({
             boxShadow: "0 8px 20px rgba(0,0,0,.45)",
             zIndex: 60,
             maxHeight: listMaxHeight,
-            overflowY: "auto", // ← scroll
+            overflowY: "auto",
           }}
         >
           {options.length === 0 ? (
-            <div style={{ padding: "10px 12px", color: "#9CA3AF" }}>No options</div>
+            <div style={{ padding: "10px 12px", color: "#9CA3AF" }}>
+              No options
+            </div>
           ) : (
             options.map((o) => (
               <div
@@ -246,11 +248,10 @@ export default function DriverManagementPage() {
   // Edit modal
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState(null);
-  const [editError, setEditError] = useState(""); // ← inline modal error
+  const [editError, setEditError] = useState("");
   const eupd = (k, v) => {
     setEditForm((s) => (s ? { ...s, [k]: v } : s));
     if (editError) {
-      // try clearing once the form is valid again
       const msg = validateFormBase({ ...(editForm || {}), [k]: v });
       if (!msg) setEditError("");
     }
@@ -318,7 +319,7 @@ export default function DriverManagementPage() {
         setListRefreshing(true);
         aborter = new AbortController();
         const res = await fetch(
-          `${API_URL}/buses?type=${encodeURIComponent(
+          `${API_URL}/buses?busType=${encodeURIComponent(
             vehicleType
           )}&active=true`,
           { headers: authHeaders(), signal: aborter.signal }
@@ -430,28 +431,47 @@ export default function DriverManagementPage() {
     const selected = (busList || []).find((b) => String(b.id) === String(busId));
     const payload = /^\d+$/.test(String(selected.id))
       ? { ...form, busId: Number(selected.id) }
-      : { ...form, vehicleType, busNo: selected.number, plateNumber: selected.plate };
+      : {
+          ...form,
+          vehicleType,
+          busNo: selected.number,
+          plateNumber: selected.plate,
+        };
 
     try {
       setLoading(true);
       setSubmitting(true);
       const data = await createDriver(payload);
       setFlash({ type: "success", text: data?.message || "Driver registered." });
-      // reset
-      setForm({ fullName: "", email: "", phone: "", birthDate: "", licenseNo: "", address: "" });
-      setVehicleType(""); setBusList([]); setBusId(""); setBusPlate("");
+      setForm({
+        fullName: "",
+        email: "",
+        phone: "",
+        birthDate: "",
+        licenseNo: "",
+        address: "",
+      });
+      setVehicleType("");
+      setBusList([]);
+      setBusId("");
+      setBusPlate("");
       await loadDrivers();
       setTab("info");
     } catch (e) {
       const msg = (e?.response?.data?.message || e?.message || "").toLowerCase();
       let nice = "Server error";
-      if (msg.includes("email") && msg.includes("exist")) nice = "Email already in use.";
-      else if (msg.includes("phone") && msg.includes("exist")) nice = "Phone number already in use.";
-      else if (msg.includes("license") && msg.includes("exist")) nice = "Driver’s license number already in use.";
-      else if (msg.includes("bus") && (msg.includes("taken") || msg.includes("assigned"))) nice = "This bus is already assigned.";
+      if (msg.includes("email") && msg.includes("exist"))
+        nice = "Email already in use.";
+      else if (msg.includes("phone") && msg.includes("exist"))
+        nice = "Phone number already in use.";
+      else if (msg.includes("license") && msg.includes("exist"))
+        nice = "Driver’s license number already in use.";
+      else if (msg.includes("bus") && (msg.includes("taken") || msg.includes("assigned")))
+        nice = "This bus is already assigned.";
       else if (msg.includes("invalid email")) nice = "Invalid email.";
       else if (msg.includes("invalid phone")) nice = "Invalid phone number.";
-      else if (msg.includes("under 18") || msg.includes("18")) nice = "Driver must be at least 18 years old.";
+      else if (msg.includes("under 18") || msg.includes("18"))
+        nice = "Driver must be at least 18 years old.";
       else if (msg) nice = e.response?.data?.message || e.message;
       setFlash({ type: "error", text: nice });
     } finally {
@@ -511,7 +531,7 @@ export default function DriverManagementPage() {
     if (!editForm) return;
     const base = validateFormBase(editForm);
     if (base) {
-      setEditError(base); // ← show in modal
+      setEditError(base);
       return;
     }
 
@@ -531,7 +551,12 @@ export default function DriverManagementPage() {
         body =
           /^\d+$/.test(String(found.id))
             ? { ...body, busId: Number(found.id) }
-            : { ...body, vehicleType: editForm.vehicleType, busNo: found.number, plateNumber: found.plate };
+            : {
+                ...body,
+                vehicleType: editForm.vehicleType,
+                busNo: found.number,
+                plateNumber: found.plate,
+              };
       }
     }
 
@@ -549,7 +574,12 @@ export default function DriverManagementPage() {
   /* ---------- Styles ---------- */
   const S = {
     page: { display: "grid", gap: 16 },
-    tabs: { display: "flex", gap: 20, borderBottom: "1px solid var(--line)", marginBottom: 16 },
+    tabs: {
+      display: "flex",
+      gap: 20,
+      borderBottom: "1px solid var(--line)",
+      marginBottom: 16,
+    },
     tabBtn: (active) => ({
       padding: "10px 0",
       borderBottom: `2px solid ${active ? "var(--text)" : "transparent"}`,
@@ -557,52 +587,144 @@ export default function DriverManagementPage() {
       color: active ? "var(--text)" : "var(--muted)",
       cursor: "pointer",
     }),
-    card: { background: "var(--card)", border: "1px solid var(--line)", borderRadius: 16, padding: 20 },
-    label: { fontWeight: 600, marginBottom: 6, fontSize: 13, color: "var(--muted)" },
+    card: {
+      background: "var(--card)",
+      border: "1px solid var(--line)",
+      borderRadius: 16,
+      padding: 20,
+    },
+    label: {
+      fontWeight: 600,
+      marginBottom: 6,
+      fontSize: 13,
+      color: "var(--muted)",
+    },
     input: {
-      width: "100%", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10,
-      padding: "10px 12px", fontSize: 14, background: "rgba(255,255,255,0.05)", color: "#f5f5f5",
+      width: "100%",
+      border: "1px solid rgba(255,255,255,0.1)",
+      borderRadius: 10,
+      padding: "10px 12px",
+      fontSize: 14,
+      background: "rgba(255,255,255,0.05)",
+      color: "#f5f5f5",
       outline: "none",
     },
     field: { display: "grid", gap: 6 },
     grid2: { display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" },
     grid3: { display: "grid", gap: 12, gridTemplateColumns: "repeat(3,1fr)" },
     btn: {
-      width: "100%", background: "#0E4371", color: "white", border: "none", borderRadius: 10,
-      padding: "12px 0", fontWeight: 700, letterSpacing: 0.2, cursor: "pointer", transition: ".2s",
+      width: "100%",
+      background: "#0E4371",
+      color: "white",
+      border: "none",
+      borderRadius: 10,
+      padding: "12px 0",
+      fontWeight: 700,
+      letterSpacing: 0.2,
+      cursor: "pointer",
+      transition: ".2s",
       boxShadow: "0 0 0 rgba(19,94,161,0)",
     },
-    btnHover: { background: "#135ea1", boxShadow: "0 0 12px rgba(19,94,161,.55)" },
-    badge: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#9CA3AF" },
-    dot: (on) => ({ height: 6, width: 6, borderRadius: 999, background: on ? "#22c55e" : "#ef4444" }),
-    searchRow: { display: "flex", gap: 10, alignItems: "center", marginBottom: 12 },
+    btnHover: {
+      background: "#135ea1",
+      boxShadow: "0 0 12px rgba(19,94,161,.55)",
+    },
+    badge: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6,
+      fontSize: 12,
+      color: "#9CA3AF",
+    },
+    dot: (on) => ({
+      height: 6,
+      width: 6,
+      borderRadius: 999,
+      background: on ? "#22c55e" : "#ef4444",
+    }),
+    searchRow: {
+      display: "flex",
+      gap: 10,
+      alignItems: "center",
+      marginBottom: 12,
+    },
     search: {
-      flex: 1, width: "100%", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10,
-      padding: "10px 12px", background: "rgba(255,255,255,0.05)", color: "#f5f5f5",
+      flex: 1,
+      width: "100%",
+      border: "1px solid rgba(255,255,255,0.1)",
+      borderRadius: 10,
+      padding: "10px 12px",
+      background: "rgba(255,255,255,0.05)",
+      color: "#f5f5f5",
     },
     refresh: {
-      padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.15)",
-      background: "rgba(255,255,255,0.06)", color: "#e5e7eb", cursor: "pointer",
+      padding: "10px 12px",
+      borderRadius: 10,
+      border: "1px solid rgba(255,255,255,0.15)",
+      background: "rgba(255,255,255,0.06)",
+      color: "#e5e7eb",
+      cursor: "pointer",
     },
-    drvCard: { border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: 16, background: "rgba(255,255,255,0.03)" },
-    drvHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 },
+    drvCard: {
+      border: "1px solid rgba(255,255,255,0.08)",
+      borderRadius: 14,
+      padding: 16,
+      background: "rgba(255,255,255,0.03)",
+    },
+    drvHeader: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 10,
+    },
     drvName: { fontWeight: 800, fontSize: 18, display: "flex", gap: 10 },
-    idPill: { padding: "4px 10px", borderRadius: 999, background: "rgba(255,255,255,0.1)", fontSize: 12, color: "#e5e7eb" },
-    drvGrid: { display: "grid", gap: 10, gridTemplateColumns: "repeat(2,minmax(0,1fr))", marginTop: 10 },
-    drvRow: { display: "grid", gridTemplateColumns: "120px 1fr", gap: 8, fontSize: 14, color: "#cbd5e1" },
+    idPill: {
+      padding: "4px 10px",
+      borderRadius: 999,
+      background: "rgba(255,255,255,0.1)",
+      fontSize: 12,
+      color: "#e5e7eb",
+    },
+    drvGrid: {
+      display: "grid",
+      gap: 10,
+      gridTemplateColumns: "repeat(2,minmax(0,1fr))",
+      marginTop: 10,
+    },
+    drvRow: {
+      display: "grid",
+      gridTemplateColumns: "120px 1fr",
+      gap: 8,
+      fontSize: 14,
+      color: "#cbd5e1",
+    },
     drvActions: { display: "flex", gap: 10, marginTop: 12 },
     btnGhost: {
-      padding: "8px 10px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.15)",
-      background: "rgba(255,255,255,0.06)", color: "#e5e7eb", cursor: "pointer",
-      display: "inline-flex", alignItems: "center", gap: 8,
+      padding: "8px 10px",
+      borderRadius: 10,
+      border: "1px solid rgba(255,255,255,0.15)",
+      background: "rgba(255,255,255,0.06)",
+      color: "#e5e7eb",
+      cursor: "pointer",
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 8,
     },
     btnGreen: {
-      padding: "8px 10px", borderRadius: 10, border: "1px solid rgba(34,197,94,.35)",
-      background: "rgba(34,197,94,.18)", color: "#bbf7d0", cursor: "pointer",
+      padding: "8px 10px",
+      borderRadius: 10,
+      border: "1px solid rgba(34,197,94,.35)",
+      background: "rgba(34,197,94,.18)",
+      color: "#bbf7d0",
+      cursor: "pointer",
     },
     btnRed: {
-      padding: "8px 10px", borderRadius: 10, border: "1px solid rgba(239,68,68,.35)",
-      background: "rgba(239,68,68,.18)", color: "#fecaca", cursor: "pointer",
+      padding: "8px 10px",
+      borderRadius: 10,
+      border: "1px solid rgba(239,68,68,.35)",
+      background: "rgba(239,68,68,.18)",
+      color: "#fecaca",
+      cursor: "pointer",
     },
     muted: { color: "#94a3b8", fontSize: 14 },
     flash: (type) => ({
@@ -610,21 +732,56 @@ export default function DriverManagementPage() {
       borderRadius: 8,
       fontSize: 14,
       color: type === "error" ? "#fca5a5" : "#86efac",
-      background: type === "error" ? "rgba(239,68,68,.15)" : "rgba(34,197,94,.12)",
-      border: type === "error" ? "1px solid rgba(239,68,68,.35)" : "1px solid rgba(34,197,94,.35)",
+      background:
+        type === "error" ? "rgba(239,68,68,.15)" : "rgba(34,197,94,.12)",
+      border:
+        type === "error"
+          ? "1px solid rgba(239,68,68,.35)"
+          : "1px solid rgba(34,197,94,.35)",
       transition: "opacity .2s ease",
     }),
-    // modal
-    overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "grid", placeItems: "center", zIndex: 80 },
-    modal: { width: "min(720px, 96vw)", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 16, padding: 16 },
-    modalHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+    overlay: {
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,.6)",
+      display: "grid",
+      placeItems: "center",
+      zIndex: 80,
+    },
+    modal: {
+      width: "min(720px, 96vw)",
+      background: "var(--card)",
+      border: "1px solid var(--line)",
+      borderRadius: 16,
+      padding: 16,
+    },
+    modalHeader: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 8,
+    },
     iconBtn: {
-      height: 36, width: 36, display: "grid", placeItems: "center", borderRadius: 10,
-      border: "1px solid rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.06)", color: "#e5e7eb", cursor: "pointer",
+      height: 36,
+      width: 36,
+      display: "grid",
+      placeItems: "center",
+      borderRadius: 10,
+      border: "1px solid rgba(255,255,255,0.15)",
+      background: "rgba(255,255,255,0.06)",
+      color: "#e5e7eb",
+      cursor: "pointer",
     },
     danger: {
-      display: "flex", alignItems: "center", gap: 10, padding: 12, borderRadius: 12,
-      border: "1px solid rgba(239,68,68,.35)", background: "rgba(239,68,68,.12)", color: "#fecaca", marginBottom: 12,
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      padding: 12,
+      borderRadius: 12,
+      border: "1px solid rgba(239,68,68,.35)",
+      background: "rgba(239,68,68,.12)",
+      color: "#fecaca",
+      marginBottom: 12,
     },
     modalFlash: (type = "error") => ({
       marginBottom: 10,
@@ -632,31 +789,58 @@ export default function DriverManagementPage() {
       borderRadius: 10,
       fontSize: 14,
       color: type === "error" ? "#fca5a5" : "#86efac",
-      background: type === "error" ? "rgba(239,68,68,.15)" : "rgba(34,197,94,.12)",
-      border: type === "error" ? "1px solid rgba(239,68,68,.35)" : "1px solid rgba(34,197,94,.35)",
+      background:
+        type === "error" ? "rgba(239,68,68,.15)" : "rgba(34,197,94,.12)",
+      border:
+        type === "error"
+          ? "1px solid rgba(239,68,68,.35)"
+          : "1px solid rgba(34,197,94,.35)",
     }),
   };
 
   return (
     <div style={S.page}>
       <div>
-        <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>Driver Management</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>
+          Driver Management
+        </h1>
         <p style={{ margin: "6px 0 0", color: "var(--muted)" }}>
           Register new drivers and manage applications.
         </p>
       </div>
 
       <div style={S.tabs}>
-        <div style={S.tabBtn(tab === "info")} onClick={() => setTab("info")}>Informations</div>
-        <div style={S.tabBtn(tab === "register")} onClick={() => setTab("register")}>Register Driver</div>
+        <div
+          style={S.tabBtn(tab === "info")}
+          onClick={() => setTab("info")}
+        >
+          Informations
+        </div>
+        <div
+          style={S.tabBtn(tab === "register")}
+          onClick={() => setTab("register")}
+        >
+          Register Driver
+        </div>
       </div>
 
-      {flash.text && <div aria-live="polite" role="status" style={S.flash(flash.type)}>{flash.text}</div>}
+      {flash.text && (
+        <div aria-live="polite" role="status" style={S.flash(flash.type)}>
+          {flash.text}
+        </div>
+      )}
 
       {tab === "register" ? (
-        /* ---------- REGISTER CARD ---------- */
         <section style={S.card}>
-          <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
+          <div
+            style={{
+              fontWeight: 700,
+              fontSize: 18,
+              marginBottom: 8,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
             <span>+ Register New Driver</span>
             <span style={S.badge}>
               <span style={S.dot(!listRefreshing)} />
@@ -664,43 +848,81 @@ export default function DriverManagementPage() {
             </span>
           </div>
 
-          <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }} noValidate>
+          <form
+            onSubmit={onSubmit}
+            style={{ display: "grid", gap: 12 }}
+            noValidate
+          >
             <div style={S.grid2}>
               <div style={S.field}>
                 <label style={S.label}>Full Name</label>
-                <input style={S.input} placeholder="Juan Dela Cruz" value={form.fullName}
-                       onChange={(e) => upd("fullName", e.target.value)} required />
+                <input
+                  style={S.input}
+                  placeholder="Juan Dela Cruz"
+                  value={form.fullName}
+                  onChange={(e) => upd("fullName", e.target.value)}
+                  required
+                />
               </div>
               <div style={S.field}>
                 <label style={S.label}>Phone Number</label>
-                <input style={S.input} placeholder="09XXXXXXXXX or +639XXXXXXXXX" value={form.phone}
-                       onChange={(e) => upd("phone", e.target.value)} required inputMode="tel" />
+                <input
+                  style={S.input}
+                  placeholder="09XXXXXXXXX or +639XXXXXXXXX"
+                  value={form.phone}
+                  onChange={(e) => upd("phone", e.target.value)}
+                  required
+                  inputMode="tel"
+                />
               </div>
             </div>
 
             <div style={S.grid2}>
               <div style={S.field}>
                 <label style={S.label}>Email</label>
-                <input style={S.input} type="email" placeholder="driver@example.com" value={form.email}
-                       onChange={(e) => upd("email", e.target.value)} required />
+                <input
+                  style={S.input}
+                  type="email"
+                  placeholder="driver@example.com"
+                  value={form.email}
+                  onChange={(e) => upd("email", e.target.value)}
+                  required
+                />
               </div>
               <div style={S.field}>
                 <label style={S.label}>Driver’s License Number</label>
-                <input style={S.input} placeholder="X00-00-000000" value={form.licenseNo}
-                       onChange={(e) => upd("licenseNo", e.target.value.toUpperCase())} required />
+                <input
+                  style={S.input}
+                  placeholder="X00-00-000000"
+                  value={form.licenseNo}
+                  onChange={(e) =>
+                    upd("licenseNo", e.target.value.toUpperCase())
+                  }
+                  required
+                />
               </div>
             </div>
 
             <div style={S.grid2}>
               <div style={S.field}>
                 <label style={S.label}>Birth Date</label>
-                <input style={S.input} type="date" value={form.birthDate}
-                       onChange={(e) => upd("birthDate", e.target.value)} required />
+                <input
+                  style={S.input}
+                  type="date"
+                  value={form.birthDate}
+                  onChange={(e) => upd("birthDate", e.target.value)}
+                  required
+                />
               </div>
               <div style={S.field}>
                 <label style={S.label}>Address</label>
-                <input style={S.input} placeholder="Street, Barangay, City" value={form.address}
-                       onChange={(e) => upd("address", e.target.value)} required />
+                <input
+                  style={S.input}
+                  placeholder="Street, Barangay, City"
+                  value={form.address}
+                  onChange={(e) => upd("address", e.target.value)}
+                  required
+                />
               </div>
             </div>
 
@@ -711,7 +933,10 @@ export default function DriverManagementPage() {
                   ariaLabel="Vehicle Type"
                   value={vehicleType}
                   onChange={(v) => setVehicleType(v)}
-                  options={[{ value: "AIRCON", label: "Ceres Bus (AC)" }, { value: "NON_AIRCON", label: "Ceres Bus (Non-AC)" }]}
+                  options={[
+                    { value: "AIRCON", label: "Ceres Bus (AC)" },
+                    { value: "NON_AIRCON", label: "Ceres Bus (Non-AC)" },
+                  ]}
                   placeholder="Select vehicle type"
                   listMaxHeight={300}
                 />
@@ -724,12 +949,20 @@ export default function DriverManagementPage() {
                   value={busId}
                   onChange={(v) => setBusId(v)}
                   options={busOptions}
-                  placeholder={vehicleType ? "Select bus number" : "Select vehicle first"}
+                  placeholder={
+                    vehicleType ? "Select bus number" : "Select vehicle first"
+                  }
                   disabled={!vehicleType}
                   listMaxHeight={300}
                 />
                 {vehicleType && busOptions.length === 0 && (
-                  <div style={{ marginTop: 6, fontSize: 12, color: "#fca5a5" }}>
+                  <div
+                    style={{
+                      marginTop: 6,
+                      fontSize: 12,
+                      color: "#fca5a5",
+                    }}
+                  >
                     All buses for this type are already assigned.
                   </div>
                 )}
@@ -737,7 +970,15 @@ export default function DriverManagementPage() {
 
               <div style={S.field}>
                 <label style={S.label}>Plate Number</label>
-                <input style={{ ...S.input, background: "rgba(255,255,255,0.03)" }} placeholder="Auto-filled" value={busPlate} readOnly />
+                <input
+                  style={{
+                    ...S.input,
+                    background: "rgba(255,255,255,0.03)",
+                  }}
+                  placeholder="Auto-filled"
+                  value={busPlate}
+                  readOnly
+                />
               </div>
             </div>
 
@@ -745,26 +986,54 @@ export default function DriverManagementPage() {
               type="submit"
               disabled={loading || submitting}
               style={{ ...S.btn }}
-              onMouseEnter={(e) => Object.assign(e.currentTarget.style, S.btnHover)}
-              onMouseLeave={(e) => Object.assign(e.currentTarget.style, S.btn)}
+              onMouseEnter={(e) =>
+                Object.assign(e.currentTarget.style, S.btnHover)
+              }
+              onMouseLeave={(e) =>
+                Object.assign(e.currentTarget.style, S.btn)
+              }
             >
-              {loading ? "Registering..." : "Register Driver & Generate QR Code"}
+              {loading
+                ? "Registering..."
+                : "Register Driver & Generate QR Code"}
             </button>
           </form>
         </section>
       ) : (
-        /* ---------- LIST CARD ---------- */
         <section style={S.card}>
-          <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 10 }}>Driver Informations</div>
+          <div
+            style={{ fontWeight: 700, fontSize: 18, marginBottom: 10 }}
+          >
+            Driver Informations
+          </div>
 
           <div style={S.searchRow}>
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search…" style={S.search} />
-            <button style={S.refresh} onClick={loadDrivers} disabled={drvLoading}>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search…"
+              style={S.search}
+            />
+            <button
+              style={S.refresh}
+              onClick={loadDrivers}
+              disabled={drvLoading}
+            >
               {drvLoading ? "Loading…" : "Refresh"}
             </button>
           </div>
 
-          {drvError && <div style={{ ...S.muted, marginBottom: 8, color: "#fca5a5" }}>Error: {drvError}</div>}
+          {drvError && (
+            <div
+              style={{
+                ...S.muted,
+                marginBottom: 8,
+                color: "#fca5a5",
+              }}
+            >
+              Error: {drvError}
+            </div>
+          )}
 
           {drvLoading ? (
             <div style={S.muted}>Loading drivers…</div>
@@ -772,40 +1041,94 @@ export default function DriverManagementPage() {
             <div style={S.muted}>No drivers found.</div>
           ) : (
             <div style={{ display: "grid", gap: 12 }}>
-              {filtered.map((d) => (
-                <div key={d.id} style={S.drvCard}>
-                  <div style={S.drvHeader}>
-                    <div style={S.drvName}>
-                      <span>{d.fullName || "Unnamed Driver"}</span>
-                      <span style={S.idPill}>{shortId(d.id)}</span>
+              {filtered.map((d, idx) => {
+                const key =
+                  d.id ||
+                  d.email ||
+                  d.licenseNo ||
+                  `drv-${idx}`;
+
+                return (
+                  <div key={key} style={S.drvCard}>
+                    <div style={S.drvHeader}>
+                      <div style={S.drvName}>
+                        <span>{d.fullName || "Unnamed Driver"}</span>
+                        <span style={S.idPill}>{shortId(d.id)}</span>
+                      </div>
+                      <button
+                        title="Edit driver"
+                        style={S.iconBtn}
+                        onClick={() => openEdit(d)}
+                      >
+                        <Pencil size={16} />
+                      </button>
                     </div>
-                    <button title="Edit driver" style={S.iconBtn} onClick={() => openEdit(d)}>
-                      <Pencil size={16} />
-                    </button>
-                  </div>
 
-                  <div style={S.drvGrid}>
-                    <div style={S.drvRow}><div>Email:</div><div>{d.email}</div></div>
-                    <div style={S.drvRow}><div>Phone:</div><div>{d.phone}</div></div>
-                    <div style={S.drvRow}><div>Birth Date:</div><div>{fmtDate(d.birthDate)}</div></div>
-                    <div style={S.drvRow}><div>License:</div><div>{d.licenseNo}</div></div>
-                    <div style={S.drvRow}><div>Address:</div><div>{d.address}</div></div>
-                    <div style={S.drvRow}><div>Vehicle:</div><div>{d.vehicleType}</div></div>
-                    <div style={S.drvRow}><div>Bus Number:</div><div>{d.busNo}</div></div>
-                    <div style={S.drvRow}><div>Plate Number:</div><div>{d.plateNumber}</div></div>
-                    <div style={S.drvRow}><div>Applied:</div><div>{fmtDate(d.createdAt)}</div></div>
-                  </div>
+                    <div style={S.drvGrid}>
+                      <div style={S.drvRow}>
+                        <div>Email:</div>
+                        <div>{d.email}</div>
+                      </div>
+                      <div style={S.drvRow}>
+                        <div>Phone:</div>
+                        <div>{d.phone}</div>
+                      </div>
+                      <div style={S.drvRow}>
+                        <div>Birth Date:</div>
+                        <div>{fmtDate(d.birthDate)}</div>
+                      </div>
+                      <div style={S.drvRow}>
+                        <div>License:</div>
+                        <div>{d.licenseNo}</div>
+                      </div>
+                      <div style={S.drvRow}>
+                        <div>Address:</div>
+                        <div>{d.address}</div>
+                      </div>
+                      <div style={S.drvRow}>
+                        <div>Vehicle:</div>
+                        <div>{d.vehicleType}</div>
+                      </div>
+                      <div style={S.drvRow}>
+                        <div>Bus Number:</div>
+                        <div>{d.busNo}</div>
+                      </div>
+                      <div style={S.drvRow}>
+                        <div>Plate Number:</div>
+                        <div>{d.plateNumber}</div>
+                      </div>
+                      <div style={S.drvRow}>
+                        <div>Applied:</div>
+                        <div>{fmtDate(d.createdAt)}</div>
+                      </div>
+                    </div>
 
-                  <div style={S.drvActions}>
-                    <button style={S.btnGhost} onClick={() => openQr(d)}><Eye size={16} /> View</button>
-                    {d.active ? (
-                      <button style={S.btnRed} onClick={() => askDeactivate(d)}>Deactivate</button>
-                    ) : (
-                      <button style={S.btnGreen} onClick={() => toggleDriverActive(d, true)}>Reactivate</button>
-                    )}
+                    <div style={S.drvActions}>
+                      <button
+                        style={S.btnGhost}
+                        onClick={() => openQr(d)}
+                      >
+                        <Eye size={16} /> View
+                      </button>
+                      {d.active ? (
+                        <button
+                          style={S.btnRed}
+                          onClick={() => askDeactivate(d)}
+                        >
+                          Deactivate
+                        </button>
+                      ) : (
+                        <button
+                          style={S.btnGreen}
+                          onClick={() => toggleDriverActive(d, true)}
+                        >
+                          Reactivate
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
@@ -813,70 +1136,174 @@ export default function DriverManagementPage() {
 
       {/* QR MODAL */}
       {qrOpen && (
-        <div style={S.overlay} onMouseDown={() => setQrOpen(false)}>
-          <div style={S.modal} onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <div
+          style={S.overlay}
+          onMouseDown={() => setQrOpen(false)}
+        >
+          <div
+            style={S.modal}
+            onMouseDown={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
             <div style={S.modalHeader}>
               <strong>Driver QR Code</strong>
-              <button style={S.iconBtn} onClick={() => setQrOpen(false)}><X size={16} /></button>
+              <button
+                style={S.iconBtn}
+                onClick={() => setQrOpen(false)}
+              >
+                <X size={16} />
+              </button>
             </div>
-            <div style={{ display: "grid", placeItems: "center", padding: 16, gap: 12 }}>
-              <img src={qrImg} alt="Driver QR" style={{ width: 240, height: 240, borderRadius: 12, border: "1px solid rgba(255,255,255,0.1)" }} />
-              <a href={qrImg} download={`${qrDriver ? shortId(qrDriver.id) : "driver-qr"}.png`} style={{ ...S.btn, width: "auto", padding: "10px 14px" }}>
-                <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}><Download size={16} /> Download QR</span>
+            <div
+              style={{
+                display: "grid",
+                placeItems: "center",
+                padding: 16,
+                gap: 12,
+              }}
+            >
+              <img
+                src={qrImg}
+                alt="Driver QR"
+                style={{
+                  width: 240,
+                  height: 240,
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,0.1)",
+                }}
+              />
+              <a
+                href={qrImg}
+                download={`${
+                  qrDriver ? shortId(qrDriver.id) : "driver-qr"
+                }.png`}
+                style={{
+                  ...S.btn,
+                  width: "auto",
+                  padding: "10px 14px",
+                }}
+              >
+                <span
+                  style={{
+                    display: "inline-flex",
+                    gap: 8,
+                    alignItems: "center",
+                  }}
+                >
+                  <Download size={16} /> Download QR
+                </span>
               </a>
             </div>
           </div>
         </div>
       )}
 
-      {/* EDIT MODAL (with inline error + scrollable selects) */}
+      {/* EDIT MODAL */}
       {editOpen && editForm && (
-        <div style={S.overlay} onMouseDown={() => setEditOpen(false)}>
-          <div style={S.modal} onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <div
+          style={S.overlay}
+          onMouseDown={() => setEditOpen(false)}
+        >
+          <div
+            style={S.modal}
+            onMouseDown={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
             <div style={S.modalHeader}>
               <strong>Edit Driver</strong>
-              <button style={S.iconBtn} onClick={() => setEditOpen(false)}><X size={16} /></button>
+              <button
+                style={S.iconBtn}
+                onClick={() => setEditOpen(false)}
+              >
+                <X size={16} />
+              </button>
             </div>
 
-            {editError && <div style={S.modalFlash("error")}>{editError}</div>}
+            {editError && (
+              <div style={S.modalFlash("error")}>{editError}</div>
+            )}
 
-            <form onSubmit={saveEdit} style={{ display: "grid", gap: 12 }}>
+            <form
+              onSubmit={saveEdit}
+              style={{ display: "grid", gap: 12 }}
+            >
               <div style={S.grid2}>
                 <div style={S.field}>
                   <label style={S.label}>Full Name</label>
-                  <input style={S.input} value={editForm.fullName}
-                         onChange={(e) => eupd("fullName", e.target.value)} required />
+                  <input
+                    style={S.input}
+                    value={editForm.fullName}
+                    onChange={(e) =>
+                      eupd("fullName", e.target.value)
+                    }
+                    required
+                  />
                 </div>
                 <div style={S.field}>
                   <label style={S.label}>Phone Number</label>
-                  <input style={S.input} value={editForm.phone}
-                         onChange={(e) => eupd("phone", e.target.value)} required inputMode="tel" />
+                  <input
+                    style={S.input}
+                    value={editForm.phone}
+                    onChange={(e) =>
+                      eupd("phone", e.target.value)
+                    }
+                    required
+                    inputMode="tel"
+                  />
                 </div>
               </div>
 
               <div style={S.grid2}>
                 <div style={S.field}>
                   <label style={S.label}>Email</label>
-                  <input style={S.input} type="email" value={editForm.email}
-                         onChange={(e) => eupd("email", e.target.value)} required />
+                  <input
+                    style={S.input}
+                    type="email"
+                    value={editForm.email}
+                    onChange={(e) =>
+                      eupd("email", e.target.value)
+                    }
+                    required
+                  />
                 </div>
                 <div style={S.field}>
                   <label style={S.label}>Driver’s License Number</label>
-                  <input style={S.input} value={editForm.licenseNo}
-                         onChange={(e) => eupd("licenseNo", e.target.value.toUpperCase())} required />
+                  <input
+                    style={S.input}
+                    value={editForm.licenseNo}
+                    onChange={(e) =>
+                      eupd("licenseNo", e.target.value.toUpperCase())
+                    }
+                    required
+                  />
                 </div>
               </div>
 
               <div style={S.grid2}>
                 <div style={S.field}>
                   <label style={S.label}>Birth Date</label>
-                  <input style={S.input} type="date" value={editForm.birthDate}
-                         onChange={(e) => eupd("birthDate", e.target.value)} required />
+                  <input
+                    style={S.input}
+                    type="date"
+                    value={editForm.birthDate}
+                    onChange={(e) =>
+                      eupd("birthDate", e.target.value)
+                    }
+                    required
+                  />
                 </div>
                 <div style={S.field}>
                   <label style={S.label}>Address</label>
-                  <input style={S.input} value={editForm.address}
-                         onChange={(e) => eupd("address", e.target.value)} required />
+                  <input
+                    style={S.input}
+                    value={editForm.address}
+                    onChange={(e) =>
+                      eupd("address", e.target.value)
+                    }
+                    required
+                  />
                 </div>
               </div>
 
@@ -887,9 +1314,20 @@ export default function DriverManagementPage() {
                     ariaLabel="Vehicle Type"
                     value={editForm.vehicleType}
                     onChange={(v) =>
-                      setEditForm((s) => ({ ...s, vehicleType: v, busId: "", busPlate: "" }))
+                      setEditForm((s) => ({
+                        ...s,
+                        vehicleType: v,
+                        busId: "",
+                        busPlate: "",
+                      }))
                     }
-                    options={[{ value: "AIRCON", label: "Ceres Bus (AC)" }, { value: "NON_AIRCON", label: "Ceres Bus (Non-AC)" }]}
+                    options={[
+                      { value: "AIRCON", label: "Ceres Bus (AC)" },
+                      {
+                        value: "NON_AIRCON",
+                        label: "Ceres Bus (Non-AC)",
+                      },
+                    ]}
                     placeholder="Select vehicle type"
                     listMaxHeight={300}
                   />
@@ -902,27 +1340,43 @@ export default function DriverManagementPage() {
                     value={editForm.busId}
                     onChange={(v) => eupd("busId", v)}
                     options={
-                      (editForm.vehicleType ? (BUS_CATALOG[editForm.vehicleType] || []) : [])
-                        .filter((b) => !usedBusNumbers.has(String(b.number)))
+                      (editForm.vehicleType
+                        ? BUS_CATALOG[editForm.vehicleType] || []
+                        : []
+                      )
+                        .filter((b) =>
+                          usedBusNumbers.has(String(b.number))
+                            ? false
+                            : true
+                        )
                         .sort(byBusNumber)
                         .map((b) => ({ value: b.id, label: b.number }))
+
                     }
-                    placeholder={editForm.vehicleType ? "Select bus number" : "Select vehicle first"}
+                    placeholder={
+                      editForm.vehicleType
+                        ? "Select bus number"
+                        : "Select vehicle first"
+                    }
                     disabled={!editForm.vehicleType}
-                    listMaxHeight={300} // ← scrollable
+                    listMaxHeight={300}
                   />
                 </div>
 
                 <div style={S.field}>
                   <label style={S.label}>Plate Number</label>
                   <input
-                    style={{ ...S.input, background: "rgba(255,255,255,0.03)" }}
+                    style={{
+                      ...S.input,
+                      background: "rgba(255,255,255,0.03)",
+                    }}
                     placeholder="Auto-filled"
                     value={
                       (editForm.vehicleType &&
                         editForm.busId &&
                         (BUS_CATALOG[editForm.vehicleType] || []).find(
-                          (b) => String(b.id) === String(editForm.busId)
+                          (b) =>
+                            String(b.id) === String(editForm.busId)
                         )?.plate) || ""
                     }
                     readOnly
@@ -930,11 +1384,28 @@ export default function DriverManagementPage() {
                 </div>
               </div>
 
-              <div style={{ display: "flex", justifyContent: "end", gap: 10 }}>
-                <button type="button" style={S.btnGhost} onClick={() => setEditOpen(false)}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "end",
+                  gap: 10,
+                }}
+              >
+                <button
+                  type="button"
+                  style={S.btnGhost}
+                  onClick={() => setEditOpen(false)}
+                >
                   Cancel
                 </button>
-                <button type="submit" style={{ ...S.btn, width: "auto", padding: "10px 16px" }}>
+                <button
+                  type="submit"
+                  style={{
+                    ...S.btn,
+                    width: "auto",
+                    padding: "10px 16px",
+                  }}
+                >
                   Save Changes
                 </button>
               </div>
@@ -945,19 +1416,57 @@ export default function DriverManagementPage() {
 
       {/* CONFIRM DEACTIVATE */}
       {confirm.open && confirm.driver && (
-        <div style={S.overlay} onMouseDown={() => setConfirm({ open: false, driver: null })}>
-          <div style={S.modal} onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <div
+          style={S.overlay}
+          onMouseDown={() =>
+            setConfirm({ open: false, driver: null })
+          }
+        >
+          <div
+            style={S.modal}
+            onMouseDown={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
             <div style={S.modalHeader}>
               <strong>Deactivate Driver?</strong>
-              <button style={S.iconBtn} onClick={() => setConfirm({ open: false, driver: null })}><X size={16} /></button>
+              <button
+                style={S.iconBtn}
+                onClick={() =>
+                  setConfirm({ open: false, driver: null })
+                }
+              >
+                <X size={16} />
+              </button>
             </div>
             <div style={S.danger}>
               <AlertTriangle size={18} />
-              This will disable the driver’s account. The assigned bus number becomes available for new registrations.
+              This will disable the driver’s account. The assigned bus
+              number becomes available for new registrations.
             </div>
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button style={S.btnGhost} onClick={() => setConfirm({ open: false, driver: null })}>Cancel</button>
-              <button style={{ ...S.btnRed }} onClick={() => toggleDriverActive(confirm.driver, false)}>Yes, Deactivate</button>
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                style={S.btnGhost}
+                onClick={() =>
+                  setConfirm({ open: false, driver: null })
+                }
+              >
+                Cancel
+              </button>
+              <button
+                style={{ ...S.btnRed }}
+                onClick={() =>
+                  toggleDriverActive(confirm.driver, false)
+                }
+              >
+                Yes, Deactivate
+              </button>
             </div>
           </div>
         </div>

@@ -4,13 +4,17 @@ const API_URL =
   process.env.NEXT_PUBLIC_API ||
   "http://localhost:4000";
 
+/* ---------- AUTH ---------- */
+
 export async function apiLogin({ email, password }) {
   const res = await fetch(`${API_URL}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
+
   const data = await res.json().catch(() => ({}));
+
   if (!res.ok) throw new Error(data.message || "Login failed");
 
   if (data.token) {
@@ -24,6 +28,7 @@ export async function apiLogin({ email, password }) {
       })
     );
   }
+
   return data;
 }
 
@@ -41,18 +46,29 @@ export function authHeaders(extra = {}) {
   };
 }
 
+/* ---------- CORE REQUEST WRAPPER ---------- */
+
 async function request(path, { method = "GET", headers, body } = {}) {
   const url = path.startsWith("http") ? path : `${API_URL}${path}`;
+
   const res = await fetch(url, {
     method,
-    headers: { "Content-Type": "application/json", ...authHeaders(headers || {}) },
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(headers || {}),
+    },
     body: body && typeof body === "object" ? JSON.stringify(body) : body,
   });
+
   const data = await res.json().catch(() => ({}));
+
   if (!res.ok) {
     if (res.status === 401) apiLogout();
-    throw new Error(data.error || data.message || `Error ${res.status}`);
+    const err = new Error(data.error || data.message || `Error ${res.status}`);
+    err.status = res.status; // 👈 keep HTTP status so callers can branch
+    throw err;
   }
+
   return data;
 }
 
@@ -60,20 +76,70 @@ export async function API(path, options = {}) {
   return request(path, options);
 }
 
+/* ---------- DRIVERS ---------- */
+
+/**
+ * List drivers.
+ * Tries /admin/driver-profiles then falls back to /admin/drivers if 404.
+ */
 export async function listDrivers() {
-  const data = await request("/admin/driver-profiles");
-  return data?.items ?? [];
+  try {
+    const data = await request("/admin/driver-profiles");
+    return data?.items ?? [];
+  } catch (err) {
+    if (err.status === 404) {
+      // maybe older route name
+      const data = await request("/admin/drivers");
+      // some backends return { items: [...] }, some return [...];
+      return Array.isArray(data?.items) ? data.items : data ?? [];
+    }
+    throw err;
+  }
 }
 
 export async function getDriver(id) {
-  return request(`/admin/driver-profiles/${id}`);
+  try {
+    return await request(`/admin/driver-profiles/${id}`);
+  } catch (err) {
+    if (err.status === 404) {
+      return request(`/admin/drivers/${id}`);
+    }
+    throw err;
+  }
 }
 
+/**
+ * Create a driver.
+ * 1) POST /admin/driver-profiles
+ * 2) if 404, POST /admin/create-driver
+ * 3) if still 404, POST /admin/drivers
+ */
 export async function createDriver(payload) {
-  return request("/admin/create-driver", {
-    method: "POST",
-    body: payload,
-  });
+  // prefer RESTful route
+  try {
+    return await request("/admin/driver-profiles", {
+      method: "POST",
+      body: payload,
+    });
+  } catch (err) {
+    if (err.status !== 404) throw err;
+
+    // legacy path 1
+    try {
+      return await request("/admin/create-driver", {
+        method: "POST",
+        body: payload,
+      });
+    } catch (err2) {
+      if (err2.status !== 404) throw err2;
+
+      // legacy path 2
+      return request("/admin/drivers", {
+        method: "POST",
+        body: payload,
+      });
+    }
+  }
 }
 
 export async function previewIdentifiers({ busNumber, plateNumber }) {
@@ -83,9 +149,24 @@ export async function previewIdentifiers({ busNumber, plateNumber }) {
   });
 }
 
+/**
+ * Update driver active / inactive status.
+ * Try /admin/driver-status, fall back if needed.
+ */
 export async function setDriverStatus({ driverId, status }) {
-  return request("/admin/driver-status", {
-    method: "PATCH",
-    body: { driverId, status },
-  });
+  try {
+    return await request("/admin/driver-status", {
+      method: "PATCH",
+      body: { driverId, status },
+    });
+  } catch (err) {
+    if (err.status === 404) {
+      // maybe older route like /admin/drivers/status
+      return request("/admin/drivers/status", {
+        method: "PATCH",
+        body: { driverId, status },
+      });
+    }
+    throw err;
+  }
 }
