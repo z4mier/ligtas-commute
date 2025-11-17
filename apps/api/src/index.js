@@ -32,7 +32,6 @@ import incidentsRouter from "../routes/incidents.js";
 import adminDriversRouter from "../routes/admin.drivers.js";
 import driversRouter from "../routes/drivers.js";
 import driverProfileRouter from "../routes/driver.profile.js";
-import feedbackRoutes from "../routes/feedback.js";
 import commuterTripsRouter from "../routes/commuter.trips.js";
 
 
@@ -130,7 +129,6 @@ app.use("/drivers", requireAuth, driversRouter);
 app.use("/driver", requireAuth, driverProfileRouter);
 app.use("/admin", requireAuth, requireAdmin, adminDriversRouter);
 app.use("/commuter", requireUserAuth, commuterTripsRouter);
-app.use("/feedback", requireAuth, feedbackRoutes);
 
 /* ---------- auth endpoints ---------- */
 app.post("/auth/login", async (req, res) => {
