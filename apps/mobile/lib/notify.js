@@ -3,16 +3,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const KEY_PREFIX = "lc_notifications_v1:";
 
-// listeners for realtime-ish updates
 const subscribers = new Set();
 
-/**
- * Build a storage key based on the current token.
- * So each logged-in user has their own notification list.
- */
 async function getStorageKey() {
   const token = await AsyncStorage.getItem("token");
-  // if somehow wala token, treat as "anon"
   return `${KEY_PREFIX}${token || "anon"}`;
 }
 
@@ -46,10 +40,6 @@ async function writeRaw(list) {
     console.log("[notify] writeRaw error", e);
   }
 }
-
-/* ------------------------------------------------------------------ */
-/* PUBLIC API                                                          */
-/* ------------------------------------------------------------------ */
 
 export async function load() {
   return readRaw();
