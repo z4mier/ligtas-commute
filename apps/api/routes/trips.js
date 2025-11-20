@@ -6,9 +6,6 @@ const prisma = new PrismaClient();
 const router = express.Router();
 
 /* ---------- RECENT TRIPS FOR A COMMUTER ---------- */
-/**
- * GET /api/trips/recent?commuterProfileId=...
- */
 router.get("/recent", async (req, res) => {
   try {
     const { commuterProfileId } = req.query;
@@ -49,19 +46,6 @@ router.get("/recent", async (req, res) => {
 });
 
 /* ---------- SUBMIT / UPDATE RATING FOR A TRIP ---------- */
-/**
- * POST /api/trips/:tripId/rating
- * Body:
- * {
- *   rating: number (1–5),
- *   comment?: string
- * }
- *
- * Uses RideRating model:
- * - driverId = trip.driverProfileId
- * - commuterId = trip.commuterProfileId
- * - rideId = trip.id
- */
 router.post("/:tripId/rating", async (req, res) => {
   const { tripId } = req.params;
   const { rating, comment } = req.body || {};
@@ -91,7 +75,6 @@ router.post("/:tripId/rating", async (req, res) => {
       });
     }
 
-    // One rating per trip per commuter
     const existing = await prisma.rideRating.findFirst({
       where: {
         rideId: trip.id,

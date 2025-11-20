@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -22,7 +22,7 @@ import { API_URL } from "../constants/config";
 
 const RESEND_SECONDS = 60;
 const OTP_LENGTH = 6;
-const TOKEN_KEY = "token";
+const TOKEN_KEY = "token"; 
 
 export default function OtpVerifyScreen({ route, navigation }) {
   const { email } = route.params;
@@ -41,6 +41,11 @@ export default function OtpVerifyScreen({ route, navigation }) {
 
   const timerRef = useRef(null);
 
+  useEffect(() => {
+    startCountdown();
+    return () => clearInterval(timerRef.current);
+  }, []);
+
   function startCountdown() {
     clearInterval(timerRef.current);
     setRemaining(RESEND_SECONDS);
@@ -54,42 +59,6 @@ export default function OtpVerifyScreen({ route, navigation }) {
       });
     }, 1000);
   }
-
-  const sendOtp = useCallback(async () => {
-    try {
-      setLoading(true);
-
-      const res = await fetch(`${API_URL}/auth/request-otp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: (email || "").trim().toLowerCase() }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || "Failed to send OTP.");
-
-      // Dev only: log OTP sa console para makita nimo while testing
-      if (__DEV__ && data?.otp) {
-        console.log("DEV OTP (check email/SMS in real use):", data.otp);
-      }
-
-      // No success Alert here – silent lang sa user side
-      setCode("");
-      startCountdown();
-    } catch (e) {
-      // Error lang ang i-alert
-      Alert.alert("Error", e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [email]);
-
-  useEffect(() => {
-    // Auto-send OTP every time mo-open ang OTP screen (including re-login sa unverified user)
-    sendOtp();
-
-    return () => clearInterval(timerRef.current);
-  }, [sendOtp]);
 
   function mmss(n) {
     const m = Math.floor(n / 60).toString().padStart(2, "0");
@@ -157,7 +126,31 @@ export default function OtpVerifyScreen({ route, navigation }) {
 
   async function resend() {
     if (loading || remaining > 0) return;
-    await sendOtp();
+    try {
+      setLoading(true);
+
+      const res = await fetch(`${API_URL}/auth/request-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: (email || "").trim().toLowerCase() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || "Failed to resend.");
+
+      if (data?.otp) {
+        console.log("DEV OTP:", data.otp);
+        Alert.alert("OTP Sent (DEV)", `Code: ${data.otp}`);
+      } else {
+        Alert.alert("OTP Sent", "A new code has been sent. Check your email/terminal.");
+      }
+
+      startCountdown();
+      setCode("");
+    } catch (e) {
+      Alert.alert("Error", e.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (showTerms) {
@@ -439,13 +432,7 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  otpCellActive: {
-    borderColor: COLORS.brand,
-    shadowColor: COLORS.brand,
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 2,
-  },
+  otpCellActive: { borderColor: COLORS.brand, shadowColor: COLORS.brand, shadowOpacity: 0.15, shadowRadius: 4, elevation: 2 },
   otpChar: { fontSize: 20, color: "#0F172A", fontWeight: "700" },
 
   // Buttons

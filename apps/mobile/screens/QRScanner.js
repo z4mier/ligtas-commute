@@ -1,5 +1,11 @@
 // apps/mobile-driver/screens/QRScanner.js
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   View,
   Text,
@@ -32,10 +38,9 @@ const HEADER_H = 48;
 export default function QRScanner({ navigation }) {
   const insets = useSafeAreaInsets();
 
-  // Permissions via expo-camera
+  // Camera permissions
   const [permission, requestPermission] = useCameraPermissions();
   const hasPermission = !!permission?.granted;
-  const canAskAgain = !!permission?.canAskAgain;
 
   const [scanning, setScanning] = useState(true);
   const scanLock = useRef(false);
@@ -45,37 +50,52 @@ export default function QRScanner({ navigation }) {
   const [loadingLookup, setLoadingLookup] = useState(false);
   const [error, setError] = useState("");
 
-  // Ask once on mount if status is undetermined
-  useEffect(() => {
-    if (!permission) requestPermission();
-  }, [permission, requestPermission]);
+ useEffect(() => {
+  if (!permission) {
+    requestPermission();
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [permission]);
 
+
+  /** Reset scanning */
   const resetScan = useCallback(() => {
     scanLock.current = false;
     setScanning(true);
     setError("");
   }, []);
 
+  /** Close modal and go back */
   const closeAndBack = useCallback(() => {
-    setInfoOpen(false);
-    setDriver(null);
-    resetScan();
-    navigation.goBack();
-  }, [navigation, resetScan]);
+  setInfoOpen(false);
+  setDriver(null);
+  resetScan();
+  navigation.goBack();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
 
-  const buildDriverObjectFromApi = (out) => {
-    const busType =
+
+  /** ------------------------------
+   *  NORMALIZATION HELPERS
+   *  ------------------------------ */
+
+  const normalizeBusType = (out) => {
+    return (
       out.busType ??
       out.vehicleType ??
       out.bus?.type ??
-      out.vehicle ??
-      "—";
+      out.bus?.busType ??
+      "—"
+    );
+  };
 
+  /** Build driver object from API response */
+  const normalizeDriverFromApi = (out) => {
     const driverProfileId =
       out.driverProfileId ??
       out.driverId ??
       out.id ??
-      out.driver?.id ??
+      out.profileId ??
       null;
 
     const busId = out.busId ?? out.bus?.id ?? null;
@@ -85,46 +105,26 @@ export default function QRScanner({ navigation }) {
       driverProfileId,
       busId,
 
-      name:
-        out.name ??
-        out.fullName ??
-        out.driverName ??
-        "Unknown Driver",
-
+      name: out.name ?? out.fullName ?? "Unknown Driver",
       code:
         out.code ??
         out.driverCode ??
-        out.qrCode ??
-        (out.driverId || out.id || "N/A"),
+        out.driverId ??
+        out.id ??
+        "N/A",
 
-      busType,
-      vehicleType: busType,
+      busNumber: out.busNumber ?? out.bus?.number ?? "—",
+      plateNumber: out.plateNumber ?? out.bus?.plate ?? "—",
 
-      busNumber:
-        out.busNumber ??
-        out.bus?.number ??
-        out.busNo ??
-        "—",
-
-      plateNumber:
-        out.plateNumber ??
-        out.bus?.plate ??
-        out.plate ??
-        "—",
-
-      routeName: out.routeName ?? out.route ?? "",
+      busType: normalizeBusType(out),
+      vehicleType: normalizeBusType(out),
 
       scannedAt: new Date(),
     };
   };
 
-  const buildDriverObjectFromJson = (parsed) => {
-    const busType =
-      parsed.busType ??
-      parsed.vehicleType ??
-      parsed.vehicle ??
-      "—";
-
+  /** Build driver object from JSON QR */
+  const normalizeDriverFromJson = (parsed) => {
     const driverProfileId =
       parsed.driverProfileId ??
       parsed.driverId ??
@@ -146,40 +146,39 @@ export default function QRScanner({ navigation }) {
         parsed.id ??
         "N/A",
 
-      busType,
-      vehicleType: busType,
-
       busNumber: parsed.busNumber ?? parsed.bus ?? "—",
-      plateNumber:
-        parsed.plateNumber ??
-        parsed.plate ??
-        "—",
+      plateNumber: parsed.plateNumber ?? parsed.plate ?? "—",
 
-      routeName: parsed.routeName ?? parsed.route ?? "",
+      busType: normalizeBusType(parsed),
+      vehicleType: normalizeBusType(parsed),
 
       scannedAt: new Date(),
     };
   };
 
+  /** ---------------------------------
+   *  MAIN HANDLER FOR SCANNED PAYLOAD
+   *  --------------------------------- */
   const handlePayload = async (data) => {
     try {
       console.log("[QRScanner] scanned data =", data);
 
-      // 1) Accept JSON embedded in QR (no API needed)
+      // Try JSON first
       let parsed = null;
       try {
         parsed = JSON.parse(String(data));
       } catch {}
 
-      if (parsed && (parsed.driverId || parsed.name || parsed.code || parsed.id)) {
-        const obj = buildDriverObjectFromJson(parsed);
-        console.log("[QRScanner] using embedded JSON driver =", obj);
+      // If QR contains embedded JSON (developer/test QR)
+      if (parsed && (parsed.driverId || parsed.driverProfileId || parsed.name)) {
+        const obj = normalizeDriverFromJson(parsed);
+        console.log("[QRScanner] parsed embedded JSON:", obj);
         setDriver(obj);
         setInfoOpen(true);
         return;
       }
 
-      // 2) Fallback: ask API to resolve arbitrary payload
+      /** Fallback: call API */
       setLoadingLookup(true);
 
       const token = await AsyncStorage.getItem("authToken");
@@ -197,36 +196,38 @@ export default function QRScanner({ navigation }) {
       setLoadingLookup(false);
 
       if (!res.ok) {
-        console.log("[QRScanner] /drivers/scan error", res.status, out);
-        throw new Error(out?.message || out?.error || "Driver not found for this QR.");
+        console.log("[QRScanner] API ERROR:", out);
+        throw new Error(out?.message || "Invalid QR code");
       }
 
-      const obj = buildDriverObjectFromApi(out);
-      console.log("[QRScanner] resolved driver from API =", obj);
+      const obj = normalizeDriverFromApi(out);
+      console.log("[QRScanner] Driver from API:", obj);
 
       setDriver(obj);
       setInfoOpen(true);
     } catch (e) {
-      console.error("[QRScanner] handlePayload error:", e);
+      console.error("[QRScanner] handlePayload ERROR:", e);
       setError(e.message || "Scan failed. Try again.");
+
       setTimeout(() => {
         scanLock.current = false;
         setScanning(true);
       }, 1500);
-    } finally {
-      setLoadingLookup(false);
     }
   };
 
-  const onBarcodeScanned = ({ data, type }) => {
-    console.log("[QRScanner] onBarcodeScanned", { type, data });
+  /** Camera callback */
+  const onBarcodeScanned = ({ data }) => {
     if (!scanning || scanLock.current || infoOpen) return;
+
     scanLock.current = true;
     setScanning(false);
     setError("");
+
     handlePayload(data);
   };
 
+  /** Time text for modal */
   const timeText = useMemo(() => {
     if (!driver?.scannedAt) return "";
     const d = driver.scannedAt;
@@ -235,25 +236,22 @@ export default function QRScanner({ navigation }) {
     return `Scanned on ${date}, ${time}`;
   }, [driver]);
 
-  // --- WEB FALLBACK ---
+  /** =============================
+   *   PERMISSION / LOADING STATES
+   *  ============================= */
+
   if (Platform.OS === "web") {
     return (
-      <SafeAreaView style={[s.screen, s.center]} edges={["top", "bottom"]}>
-        <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+      <SafeAreaView style={[s.screen, s.center]}>
         <MaterialCommunityIcons name="web" size={34} color={C.hint} />
-        <Text style={[s.title, { marginTop: 8 }]}>QR Scanner not available on Web Dev</Text>
-        <Text style={s.hint}>Use Expo Go on a real phone (or an emulator) to test the camera scanner.</Text>
-        <TouchableOpacity style={[s.primaryBtn, { marginTop: 14 }]} onPress={() => navigation.goBack()}>
-          <Text style={s.primaryBtnTxt}>Go Back</Text>
-        </TouchableOpacity>
+        <Text style={s.hint}>Camera not available on web</Text>
       </SafeAreaView>
     );
   }
 
   if (!permission) {
     return (
-      <SafeAreaView style={[s.screen, s.center]} edges={["top", "bottom"]}>
-        <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+      <SafeAreaView style={[s.screen, s.center]}>
         <ActivityIndicator />
         <Text style={s.hint}>Requesting camera permission…</Text>
       </SafeAreaView>
@@ -262,53 +260,40 @@ export default function QRScanner({ navigation }) {
 
   if (!hasPermission) {
     return (
-      <SafeAreaView style={[s.screen, s.center]} edges={["top", "bottom"]}>
-        <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
-        <MaterialCommunityIcons name="camera-off-outline" size={34} color={C.hint} />
-        <Text style={[s.title, { marginTop: 8 }]}>Camera permission needed</Text>
-        <Text style={s.hint}>Please enable camera access in your phone settings.</Text>
-
-        {canAskAgain ? (
-          <TouchableOpacity style={[s.primaryBtn, { marginTop: 14 }]} onPress={requestPermission}>
-            <Text style={s.primaryBtnTxt}>Request Again</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity style={[s.primaryBtn, { marginTop: 14 }]} onPress={() => navigation.goBack()}>
-            <Text style={s.primaryBtnTxt}>Go Back</Text>
-          </TouchableOpacity>
-        )}
+      <SafeAreaView style={[s.screen, s.center]}>
+        <Text style={s.hint}>Camera permission required</Text>
+        <TouchableOpacity style={s.primaryBtn} onPress={requestPermission}>
+          <Text style={s.primaryBtnTxt}>Enable</Text>
+        </TouchableOpacity>
       </SafeAreaView>
     );
   }
 
+  /** =============================
+   *        MAIN UI
+   *  ============================= */
+
   return (
-    <SafeAreaView style={s.screen} edges={["top", "bottom"]}>
+    <SafeAreaView style={s.screen}>
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
-      {/* Header */}
-      <View
-        style={[
-          s.topBar,
-          {
-            paddingTop: insets.top,
-            height: insets.top + HEADER_H,
-          },
-        ]}
-      >
+      {/* HEADER */}
+      <View style={[s.topBar, { paddingTop: insets.top, height: HEADER_H + insets.top }]}>
         <TouchableOpacity style={s.iconBtn} onPress={closeAndBack}>
           <MaterialCommunityIcons name="arrow-left" size={22} color={C.text} />
         </TouchableOpacity>
-        <Text style={s.topTitle}>Scan Driver QR Code</Text>
+        <Text style={s.topTitle}>Scan Driver QR</Text>
         <View style={{ width: 36 }} />
       </View>
 
+      {/* CAMERA */}
       <View style={s.cameraWrap}>
         {scanning ? (
           <CameraView
             style={s.camera}
-            facing="back"
-            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
             onBarcodeScanned={onBarcodeScanned}
+            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+            facing="back"
           />
         ) : (
           <View style={[s.camera, s.center]}>
@@ -321,20 +306,21 @@ export default function QRScanner({ navigation }) {
               <>
                 <MaterialCommunityIcons name="qrcode-scan" size={34} color={C.hint} />
                 <Text style={[s.hint, { marginTop: 8 }]}>
-                  {error ? error : "Hold on…"}
+                  {error || "Processing…"}
                 </Text>
               </>
             )}
           </View>
         )}
 
-        {/* Overlay */}
+        {/* Scan frame */}
         <View pointerEvents="none" style={s.overlay}>
           <View style={s.frame} />
-          <Text style={s.overlayHint}>Position the QR code within the frame to scan</Text>
+          <Text style={s.overlayHint}>Align QR inside the frame</Text>
         </View>
       </View>
 
+      {/* RESCAN */}
       <View style={[s.actionsRow, { paddingBottom: 14 + insets.bottom }]}>
         <TouchableOpacity style={s.secondaryBtn} onPress={resetScan}>
           <MaterialCommunityIcons name="reload" size={18} color={C.brand} />
@@ -342,22 +328,18 @@ export default function QRScanner({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* Driver Info Modal */}
+      {/* DRIVER INFO MODAL */}
       <Modal
         visible={infoOpen}
         transparent
         animationType="fade"
-        onShow={() => setScanning(false)}
         onRequestClose={() => {
           setInfoOpen(false);
-          setTimeout(() => {
-            scanLock.current = false;
-            setScanning(true);
-          }, 200);
+          resetScan();
         }}
       >
         <View style={s.modalBg} />
-        <View style={s.infoCardWrap} pointerEvents="box-none">
+        <View style={s.infoCardWrap}>
           <View style={s.infoCard}>
             <View style={s.infoHeader}>
               <Text style={s.infoTitle}>Driver Information</Text>
@@ -365,11 +347,13 @@ export default function QRScanner({ navigation }) {
                 <MaterialCommunityIcons name="close" size={20} color={C.text} />
               </TouchableOpacity>
             </View>
+
             {!!timeText && <Text style={s.infoSub}>{timeText}</Text>}
 
             <View style={s.infoBox}>
               <View style={s.row}>
                 <Text style={s.key}>{driver?.name ?? "—"}</Text>
+
                 <View style={s.badge}>
                   <Text style={s.badgeTxt}>{driver?.code ?? "—"}</Text>
                 </View>
@@ -389,33 +373,22 @@ export default function QRScanner({ navigation }) {
             <TouchableOpacity
               style={[s.primaryBtn, { marginTop: 14 }]}
               onPress={async () => {
-                try {
-                  if (driver) {
-                    const normalized = {
-                      ...driver,
-                      driverProfileId:
-                        driver.driverProfileId ??
-                        driver.driverId ??
-                        driver.id ??
-                        null,
-                      busId: driver.busId ?? null,
-                    };
-                    await AsyncStorage.setItem(
-                      "LC_CURRENT_DRIVER",
-                      JSON.stringify(normalized)
-                    );
-                    console.log("[QRScanner] stored driver in AsyncStorage", normalized);
-                  }
-                } catch (e) {
-                  console.log("[QRScanner] failed to store driver", e);
-                }
+                const normalized = {
+                  ...driver,
+                  driverProfileId:
+                    driver?.driverProfileId ??
+                    driver?.id ??
+                    null,
+                  busId: driver?.busId ?? null,
+                };
 
-                setInfoOpen(false);
+                await AsyncStorage.setItem(
+                  "LC_CURRENT_DRIVER",
+                  JSON.stringify(normalized)
+                );
+
                 navigation.navigate("MapTracking", {
-                  driver: {
-                    ...driver,
-                    vehicleType: driver?.vehicleType ?? driver?.busType ?? "—",
-                  },
+                  driver: normalized,
                 });
               }}
             >
@@ -428,9 +401,13 @@ export default function QRScanner({ navigation }) {
   );
 }
 
+/** =============================
+ *  STYLES
+ *  ============================= */
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.bg },
   center: { alignItems: "center", justifyContent: "center" },
+
   topBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -450,6 +427,7 @@ const s = StyleSheet.create({
     justifyContent: "center",
   },
   topTitle: { fontWeight: "700", fontSize: 14, color: C.text },
+
   cameraWrap: {
     flex: 1,
     margin: 12,
@@ -457,9 +435,9 @@ const s = StyleSheet.create({
     overflow: "hidden",
     borderWidth: 1,
     borderColor: C.border,
-    backgroundColor: "#000",
   },
   camera: { flex: 1 },
+
   overlay: {
     position: "absolute",
     left: 0,
@@ -468,7 +446,6 @@ const s = StyleSheet.create({
     bottom: 0,
     alignItems: "center",
     justifyContent: "center",
-    paddingBottom: 20,
   },
   frame: {
     width: 240,
@@ -485,7 +462,9 @@ const s = StyleSheet.create({
     textShadowColor: "rgba(0,0,0,0.6)",
     textShadowRadius: 6,
   },
+
   actionsRow: { paddingHorizontal: 14 },
+
   secondaryBtn: {
     flexDirection: "row",
     gap: 8,
@@ -497,17 +476,19 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.border,
   },
-  secondaryBtnTxt: { color: C.brand, fontWeight: "700", fontSize: 13 },
+  secondaryBtnTxt: { color: C.brand, fontSize: 13, fontWeight: "700" },
+
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.18)" },
+
   infoCardWrap: {
     position: "absolute",
     left: 0,
     right: 0,
     top: 0,
     bottom: 0,
+    padding: 16,
     alignItems: "center",
     justifyContent: "center",
-    padding: 16,
   },
   infoCard: {
     width: "100%",
@@ -517,24 +498,16 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.border,
     padding: 14,
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOpacity: 0.08,
-        shadowRadius: 10,
-        shadowOffset: { width: 0, height: 6 },
-      },
-      android: { elevation: 3 },
-    }),
   },
+
   infoHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 6,
   },
   infoTitle: { fontWeight: "700", fontSize: 14, color: C.text },
-  infoSub: { color: C.sub, fontSize: 12, marginBottom: 10 },
+  infoSub: { color: C.sub, fontSize: 12, marginTop: 4, marginBottom: 8 },
+
   infoBox: {
     borderWidth: 1,
     borderColor: C.border,
@@ -542,27 +515,33 @@ const s = StyleSheet.create({
     padding: 12,
     backgroundColor: "#FAFAFA",
   },
-  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+
   key: { fontWeight: "700", color: C.text, fontSize: 13 },
+
   badge: {
     borderRadius: 16,
     borderWidth: 1,
     borderColor: C.border,
-    backgroundColor: "#fff",
     paddingVertical: 4,
     paddingHorizontal: 10,
+    backgroundColor: "#fff",
   },
-  badgeTxt: { fontWeight: "700", fontSize: 11, color: C.text },
-  label: { color: C.sub, fontSize: 11, marginBottom: 4 },
-  value: { color: C.text, fontSize: 12.5, fontWeight: "600" },
+  badgeTxt: { fontSize: 11, fontWeight: "700" },
+
+  label: { fontSize: 11, color: C.sub },
+  value: { fontSize: 12.5, fontWeight: "600", color: C.text },
+
   primaryBtn: {
     backgroundColor: C.brand,
     borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
     paddingVertical: 12,
+    alignItems: "center",
   },
-  primaryBtnTxt: { color: "#fff", fontWeight: "700", fontSize: 13 },
-  title: { fontWeight: "700", fontSize: 14, color: C.text },
-  hint: { color: C.hint, fontSize: 12, textAlign: "center", paddingHorizontal: 16 },
+  primaryBtnTxt: { color: "#fff", fontSize: 13, fontWeight: "700" },
 });

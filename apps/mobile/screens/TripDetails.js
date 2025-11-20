@@ -26,6 +26,12 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL } from "../constants/config";
 
+// ✅ NEW: notification helpers
+import {
+  addRatingSubmitted,
+  addIncidentSubmitted,
+} from "../lib/notify";
+
 const C = {
   bg: "#F3F4F6",
   card: "#FFFFFF",
@@ -77,10 +83,16 @@ export default function TripDetails({ route, navigation }) {
   const { trip } = route.params || {};
 
   const initialRating =
-    trip?.ratingScore ?? trip?.rating ?? trip?.score ?? null;
+    trip?.ratingScore ??
+    trip?.rating ??
+    trip?.score ??
+    null;
 
   const initialNotes =
-    trip?.ratingComment ?? trip?.comment ?? trip?.feedback ?? "";
+    trip?.ratingComment ??
+    trip?.comment ??
+    trip?.feedback ??
+    "";
 
   const hasInitialRating = initialRating != null && initialRating > 0;
 
@@ -91,7 +103,7 @@ export default function TripDetails({ route, navigation }) {
   const [submitting, setSubmitting] = useState(false);
 
   const [reportModalVisible, setReportModalVisible] = useState(false);
-  const [reportCategories, setReportCategories] = useState([]); // multiple categories
+  const [reportCategories, setReportCategories] = useState([]);
   const [reportNotes, setReportNotes] = useState("");
   const [submittingReport, setSubmittingReport] = useState(false);
 
@@ -160,15 +172,21 @@ export default function TripDetails({ route, navigation }) {
       ? driverName.trim().charAt(0).toUpperCase()
       : "?";
 
+  /* ------------------------------------------------------------------
+   * SUBMIT RATING
+   * ------------------------------------------------------------------ */
   const onSubmitRating = async () => {
     if (!rating || submitting) return;
 
     try {
       setSubmitting(true);
 
-      const token = await AsyncStorage.getItem("authToken");
+      const token = await AsyncStorage.getItem("token");
+      const url = `${API_URL}/commuter/trips/${trip.id}/rating`;
 
-      const res = await fetch(`${API_URL}/trips/${trip.id}/rating`, {
+      console.log("[TripDetails] submitting rating →", url);
+
+      const res = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -180,16 +198,40 @@ export default function TripDetails({ route, navigation }) {
         }),
       });
 
-      const data = await res.json().catch(() => ({}));
+      const text = await res.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { raw: text };
+      }
+
+      console.log(
+        "[TripDetails] rating response status =",
+        res.status,
+        "data =",
+        data
+      );
 
       if (!res.ok) {
-        console.log("[TripDetails] rating error response =", data);
-        throw new Error(data.error || "Failed to submit rating");
+        throw new Error(
+          data.error || `Failed to submit rating (status ${res.status})`
+        );
       }
+
+      // ✅ Mark this trip as rated in the current screen / nav params
+      const updatedTrip = {
+        ...trip,
+        ratingScore: rating,
+        ratingComment: notes?.trim() || null,
+      };
+      navigation.setParams({ trip: updatedTrip });
+
+      // ✅ Create a notification for the bell (Rating submitted)
+      await addRatingSubmitted({ trip: updatedTrip, rating });
 
       setSubmitting(false);
       setMode("summary");
-
       Alert.alert("Thank you!", "Your rating has been submitted.");
     } catch (err) {
       console.error("[TripDetails] rating error", err);
@@ -198,6 +240,9 @@ export default function TripDetails({ route, navigation }) {
     }
   };
 
+  /* ------------------------------------------------------------------
+   * SUBMIT INCIDENT REPORT
+   * ------------------------------------------------------------------ */
   const onSubmitReport = async () => {
     if (reportCategories.length === 0 && !reportNotes.trim()) {
       Alert.alert(
@@ -209,9 +254,9 @@ export default function TripDetails({ route, navigation }) {
 
     try {
       setSubmittingReport(true);
-      const token = await AsyncStorage.getItem("authToken");
+      const token = await AsyncStorage.getItem("token");
 
-      const res = await fetch(`${API_URL}/incidents`, {
+      const res = await fetch(`${API_URL}/api/incidents`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -219,17 +264,26 @@ export default function TripDetails({ route, navigation }) {
         },
         body: JSON.stringify({
           tripId: trip.id,
-          categories: reportCategories, // send array
+          categories: reportCategories,
           note: reportNotes.trim() || null,
         }),
       });
 
-      const data = await res.json().catch(() => ({}));
+      const text = await res.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { raw: text };
+      }
 
       if (!res.ok) {
         console.log("[TripDetails] report error response =", data);
         throw new Error(data.error || "Failed to submit report");
       }
+
+      // ✅ Create a notification for the bell (Issue reported)
+      await addIncidentSubmitted({ trip });
 
       setSubmittingReport(false);
       setReportModalVisible(false);
@@ -416,9 +470,9 @@ export default function TripDetails({ route, navigation }) {
                   <Text style={styles.summaryLabel}>Ride rating</Text>
                   <View style={styles.summaryValueRow}>
                     <Text style={styles.summaryRatingText}>
-                      {rating || "—"}
+                      {rating || initialRating || "—"}
                     </Text>
-                    {!!rating && (
+                    {!!(rating || initialRating) && (
                       <>
                         <MaterialCommunityIcons
                           name="star"
@@ -427,7 +481,11 @@ export default function TripDetails({ route, navigation }) {
                           style={{ marginHorizontal: 2 }}
                         />
                         <Text style={styles.summaryLabelSmall}>
-                          • {RATING_LABELS[rating] || ""}
+                          •{" "}
+                          {
+                            RATING_LABELS[rating || initialRating] ||
+                            ""
+                          }
                         </Text>
                       </>
                     )}

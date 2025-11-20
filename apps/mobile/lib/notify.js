@@ -1,99 +1,123 @@
 // apps/mobile/lib/notify.js
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const KEY = "lc_notifications_v1";
-let listeners = [];
+const KEY_PREFIX = "lc_notifications_v1:";
 
-/* -------- core helpers -------- */
-async function load() {
+// listeners for realtime-ish updates
+const subscribers = new Set();
+
+/**
+ * Build a storage key based on the current token.
+ * So each logged-in user has their own notification list.
+ */
+async function getStorageKey() {
+  const token = await AsyncStorage.getItem("token");
+  // if somehow wala token, treat as "anon"
+  return `${KEY_PREFIX}${token || "anon"}`;
+}
+
+async function readRaw() {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
-    const arr = raw ? JSON.parse(raw) : [];
-    // normalize + newest first
-    const list = (Array.isArray(arr) ? arr : [])
-      .map(n => ({
-        id: n.id ?? String(n.timestamp ?? Date.now()),
-        title: n.title ?? "",
-        body: n.body ?? "",
-        timestamp: typeof n.timestamp === "number" ? n.timestamp : Date.parse(n.timestamp) || Date.now(),
-        read: !!n.read,
-        type: n.type ?? "info",
-      }))
-      .sort((a, b) => b.timestamp - a.timestamp);
-    return list;
-  } catch {
+    const key = await getStorageKey();
+    const raw = await AsyncStorage.getItem(key);
+    if (!raw) return [];
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data)) return [];
+    return data;
+  } catch (e) {
+    console.log("[notify] readRaw error", e);
     return [];
   }
 }
 
-async function save(list) {
+async function writeRaw(list) {
   try {
-    await AsyncStorage.setItem(KEY, JSON.stringify(list));
-  } catch {}
-}
-
-function emitChange() {
-  for (const cb of listeners) {
-    try { cb(); } catch {}
+    const key = await getStorageKey();
+    await AsyncStorage.setItem(key, JSON.stringify(list));
+    // inform listeners (CommuterDashboard)
+    subscribers.forEach((fn) => {
+      try {
+        fn();
+      } catch (e) {
+        console.log("[notify] subscriber error", e);
+      }
+    });
+  } catch (e) {
+    console.log("[notify] writeRaw error", e);
   }
 }
 
-export function onChange(cb) {
-  listeners.push(cb);
-  return () => {
-    listeners = listeners.filter(x => x !== cb);
-  };
+/* ------------------------------------------------------------------ */
+/* PUBLIC API                                                          */
+/* ------------------------------------------------------------------ */
+
+export async function load() {
+  return readRaw();
 }
 
-/* -------- public API -------- */
-export async function add({ title, body = "", type = "info", timestamp }) {
-  const list = await load();
-  const item = {
-    id: String(Date.now()) + "-" + Math.random().toString(36).slice(2, 8),
-    title: title || "Notification",
-    body,
-    type,
-    read: false,
-    timestamp: typeof timestamp === "number" ? timestamp : Date.now(),
-  };
-  const next = [item, ...list];
-  await save(next);
-  emitChange();
-  return next;
+export function onChange(cb) {
+  subscribers.add(cb);
+  return () => subscribers.delete(cb);
 }
 
 export async function markAllRead() {
-  const list = await load();
-  const next = list.map(n => ({ ...n, read: true }));
-  await save(next);
-  emitChange();
-  return next;
+  const list = await readRaw();
+  const updated = list.map((n) => ({ ...n, read: true }));
+  await writeRaw(updated);
+  return updated;
 }
 
-export async function clearAll() {
-  await save([]);
-  emitChange();
-  return [];
+/**
+ * Helper to push a new notification object
+ */
+async function baseAddNotification(partial) {
+  const list = await readRaw();
+  const now = Date.now();
+
+  const item = {
+    id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
+    title: "",
+    body: "",
+    type: "generic",
+    read: false,
+    timestamp: now,
+    ...partial,
+  };
+
+  // keep latest 50 only
+  const updated = [item, ...list].slice(0, 50);
+  await writeRaw(updated);
+  return item;
 }
 
-/* -------- convenience creators used by MapTracking -------- */
-export async function addRatingSubmitted({ driverName }) {
-  return add({
-    type: "rating",
-    title: "Thanks for your rating!",
-    body: driverName ? `Your rating for ${driverName} was submitted.` : "Your ride rating was submitted.",
+/* ------------------------------------------------------------------ */
+/* SPECIFIC NOTIFICATIONS                                              */
+/* ------------------------------------------------------------------ */
+
+// For rating submitted from TripDetails
+export async function addRatingSubmitted({ trip, rating }) {
+  const dest = trip?.destLabel || "your stop";
+  const title = "Thanks for your rating";
+  const body = `You rated your trip to ${dest} as ${rating} ★.`;
+
+  return baseAddNotification({
+    type: "rating_submitted",
+    title,
+    body,
+    rideId: trip?.id ?? null,
   });
 }
 
-export async function addIncidentSubmitted({ categories = [] }) {
-  const cats = Array.isArray(categories) ? categories.filter(Boolean) : [];
-  const label = cats.length ? cats.join(", ") : "incident";
-  return add({
-    type: "incident",
-    title: "Incident reported",
-    body: `We received your report${cats.length ? ` (${label})` : ""}.`,
+// For incident report submitted from TripDetails
+export async function addIncidentSubmitted({ trip }) {
+  const dest = trip?.destLabel || "your stop";
+  const title = "Issue reported";
+  const body = `Your report for the trip to ${dest} has been received.`;
+
+  return baseAddNotification({
+    type: "incident_submitted",
+    title,
+    body,
+    rideId: trip?.id ?? null,
   });
 }
-
-/* expose load for screens */
-export { load };

@@ -7,45 +7,35 @@ const prisma = new PrismaClient();
 const router = Router();
 
 /**
- * Resolve driver info from a QR payload.
- * Used by the commuter app QR scanner.
- *
- * Body: { payload: string }
- *  - If payload is JSON with driverId, we try that.
- *  - Otherwise we try it as driverProfile.id, then as userId.
+ * POST /drivers/scan
+ * Resolve QR → driverProfile + bus
  */
 router.post("/scan", async (req, res) => {
   try {
-    const schema = z.object({
-      payload: z.string().min(1),
-    });
-    const { payload } = schema.parse(req.body);
-
+    const { payload } = z.object({ payload: z.string().min(1) }).parse(req.body);
     const raw = payload.trim();
 
+    // Try parse as JSON
     let parsed = null;
     try {
       parsed = JSON.parse(raw);
-    } catch {
-      // not JSON, ignore
-    }
+    } catch {}
 
-    let candidateId = raw;
-    if (parsed && typeof parsed === "object") {
-      candidateId =
-        parsed.driverId ||
-        parsed.driverProfileId ||
-        parsed.userId ||
-        raw;
-    }
+    // Extract candidate ID
+    let candidateId =
+      parsed?.driverProfileId ||
+      parsed?.driverId ||
+      parsed?.userId ||
+      parsed?.id ||
+      raw;
 
-    // 1) try as driverProfile.id
+    // 1) Try match with DriverProfile.id
     let prof = await prisma.driverProfile.findUnique({
       where: { id: candidateId },
       include: { bus: true },
     });
 
-    // 2) if not found, try as userId
+    // 2) Try match with DriverProfile.userId
     if (!prof) {
       prof = await prisma.driverProfile.findFirst({
         where: { userId: candidateId },
@@ -54,33 +44,48 @@ router.post("/scan", async (req, res) => {
     }
 
     if (!prof) {
-      return res
-        .status(404)
-        .json({ message: "Driver not found for this QR." });
+      return res.status(404).json({ message: "Driver not found for this QR." });
     }
 
+    /* -----------------------------
+     * FIX: Correct driver name field
+     * ----------------------------- */
+    const driverName =
+      prof.driverName || // correct schema
+      prof.fullName ||   // fallback if old schema
+      prof.name ||
+      "Unknown Driver";
+
+    /* -----------------------------
+     * Normalize response
+     * ----------------------------- */
     return res.json({
-      id: prof.id,
+      driverProfileId: prof.id,
       userId: prof.userId,
-      name: prof.fullName,
-      code: prof.id, // you can change this if you have a custom code field
+
+      // Correct driver name
+      name: driverName,
+      code: prof.id, // you can change to QR code if needed
+
+      busId: prof.busId ?? null,
+
       busNumber: prof.bus?.number ?? null,
       plateNumber: prof.bus?.plate ?? null,
+
       busType: prof.bus?.busType ?? null,
-      vehicleType: prof.bus?.busType ?? null,
+      vehicleType: prof.bus?.busType ?? null, // consistent with mobile naming
     });
   } catch (e) {
     console.error("POST /drivers/scan ERROR", e);
-    if (e instanceof z.ZodError) {
+    if (e instanceof z.ZodError)
       return res.status(400).json({ message: "Invalid payload" });
-    }
+
     return res.status(500).json({ message: "Server error" });
   }
 });
 
 /**
- * Resolve driver profile by a User.id (useful when the app only knows the driver's userId).
- * Returns { id, userId, fullName, bus } where id is DriverProfile.id
+ * GET /drivers/by-user/:userId
  */
 router.get("/by-user/:userId", async (req, res) => {
   try {
@@ -90,14 +95,26 @@ router.get("/by-user/:userId", async (req, res) => {
       where: { userId },
       include: { bus: true },
     });
-    if (!prof) return res.status(404).json({ message: "Driver profile not found" });
+
+    if (!prof)
+      return res.status(404).json({ message: "Driver profile not found" });
+
+    const driverName =
+      prof.driverName || prof.fullName || prof.name || "Unknown Driver";
 
     return res.json({
-      id: prof.id, // DriverProfile.id
+      driverProfileId: prof.id,
       userId: prof.userId,
-      fullName: prof.fullName,
+      fullName: driverName,
+
+      busId: prof.busId,
       bus: prof.bus
-        ? { id: prof.bus.id, number: prof.bus.number, plate: prof.bus.plate, type: prof.bus.busType }
+        ? {
+            id: prof.bus.id,
+            number: prof.bus.number,
+            plate: prof.bus.plate,
+            type: prof.bus.busType,
+          }
         : null,
     });
   } catch (e) {
@@ -107,8 +124,7 @@ router.get("/by-user/:userId", async (req, res) => {
 });
 
 /**
- * Get current user's driver profile (when the logged user is a driver).
- * Handy as a last-resort lookup.
+ * GET /drivers/current (Driver-side auth)
  */
 router.get("/current", async (req, res) => {
   try {
@@ -116,15 +132,28 @@ router.get("/current", async (req, res) => {
       where: { id: req.user.sub },
       include: { driverProfile: { include: { bus: true } } },
     });
-    if (!me?.driverProfile) return res.status(404).json({ message: "Not a driver" });
+
+    if (!me?.driverProfile)
+      return res.status(404).json({ message: "Not a driver" });
 
     const d = me.driverProfile;
+
+    const driverName =
+      d.driverName || d.fullName || d.name || "Unknown Driver";
+
     return res.json({
-      id: d.id, // DriverProfile.id
+      driverProfileId: d.id,
       userId: d.userId,
-      fullName: d.fullName,
+      fullName: driverName,
+
+      busId: d.busId,
       bus: d.bus
-        ? { id: d.bus.id, number: d.bus.number, plate: d.bus.plate, type: d.bus.busType }
+        ? {
+            id: d.bus.id,
+            number: d.bus.number,
+            plate: d.bus.plate,
+            type: d.bus.busType,
+          }
         : null,
     });
   } catch (e) {
