@@ -15,28 +15,6 @@ const API_URL =
   process.env.NEXT_PUBLIC_API ||
   "http://localhost:4000";
 
-/* Catalog (AC / Non-AC only) */
-const BUS_CATALOG = {
-  AIRCON: [
-    { id: "ac-3000", number: "3000", plate: "ABC 1234" },
-    { id: "ac-3001", number: "3001", plate: "ABC 5678" },
-    { id: "ac-3205", number: "3205", plate: "ACR 1205" },
-    { id: "ac-3308", number: "3308", plate: "ACX 3308" },
-    { id: "ac-3402", number: "3402", plate: "ACY 3402" },
-    { id: "ac-3507", number: "3507", plate: "ACT 3507" },
-    { id: "ac-3604", number: "3604", plate: "ACU 3604" },
-  ],
-  NON_AIRCON: [
-    { id: "nac-1000", number: "1000", plate: "DFG 4567" },
-    { id: "nac-1001", number: "1001", plate: "DFG 8910" },
-    { id: "nac-1103", number: "1103", plate: "NAX 1103" },
-    { id: "nac-1201", number: "1201", plate: "NAY 1201" },
-    { id: "nac-1255", number: "1255", plate: "NAQ 1255" },
-    { id: "nac-1304", number: "1304", plate: "NAP 1304" },
-    { id: "nac-1310", number: "1310", plate: "NAZ 1310" },
-  ],
-};
-
 /* ---------- utils ---------- */
 const byBusNumber = (a, b) => Number(a.number) - Number(b.number);
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : "—");
@@ -56,8 +34,36 @@ async function makeQrDataUrl(text) {
   }
 }
 
+/* ---------- NORMALIZE DRIVER (includes route info) ---------- */
 function normalizeDriver(p) {
   const bus = p.bus || {};
+  const statusRaw = (p.status || (p.active ? "ACTIVE" : "INACTIVE") || "")
+    .toString()
+    .toUpperCase();
+
+  // Try to read route side and route label from both BUS and DRIVER
+  const routeSide =
+    bus.corridor || // new column in Bus
+    bus.routeSide || // older naming just in case
+    p.routeSide ||
+    "";
+
+  // single route label (ex. "SBT → Oslob — Oslob → SBT" OR simple "SBT – Oslob")
+  const routeLabelFromBus =
+    bus.route || // if backend still sends `route`
+    bus.routeLabel || // or explicit label
+    "";
+
+  const forwardRoute = bus.forwardRoute || p.forwardRoute || "";
+  const returnRoute = bus.returnRoute || p.returnRoute || "";
+
+  const routeLabel =
+    p.routeLabel || // if stored in driver
+    routeLabelFromBus ||
+    (forwardRoute && returnRoute
+      ? `${forwardRoute} — ${returnRoute}`
+      : "");
+
   return {
     id: p.id,
     fullName: pick(p.fullName),
@@ -69,8 +75,15 @@ function normalizeDriver(p) {
     vehicleType: pick(bus.busType || p.vehicleType),
     busNo: pick(bus.number || p.busNo),
     plateNumber: pick(bus.plate || p.plateNumber),
-    active: Boolean(p.active ?? (p.status ? p.status === "ACTIVE" : true)),
+    status: statusRaw || "ACTIVE",
+    active: statusRaw === "ACTIVE",
     createdAt: p.createdAt,
+
+    // route-related (display)
+    routeSide,
+    forwardRoute,
+    returnRoute,
+    routeLabel,
   };
 }
 
@@ -87,7 +100,7 @@ function isAdult(dateStr) {
   return eighteen <= now;
 }
 
-/* ---------- NiceSelect (scrollable) ---------- */
+/* ---------- NiceSelect (scrollable, LIGHT THEME) ---------- */
 function NiceSelect({
   value,
   onChange,
@@ -145,18 +158,19 @@ function NiceSelect({
         style={{
           width: "100%",
           textAlign: "left",
-          border: "1px solid rgba(255,255,255,0.1)",
+          border: "1px solid #D4DBE7",
           borderRadius: 10,
           padding: "10px 12px",
-          background: "rgba(255,255,255,0.05)",
-          color: "#f5f5f5",
+          background: "#F9FBFF",
+          color: "var(--text)",
           cursor: disabled ? "not-allowed" : "pointer",
+          fontSize: 14,
         }}
       >
         <span style={{ opacity: selected ? 1 : 0.6 }}>
           {selected ? selected.label : placeholder || "Select…"}
         </span>
-        <span style={{ float: "right", opacity: 0.7 }}>▾</span>
+        <span style={{ float: "right", opacity: 0.5 }}>▾</span>
       </button>
 
       {open && !disabled && (
@@ -168,10 +182,10 @@ function NiceSelect({
             left: 0,
             right: 0,
             marginTop: 6,
-            background: "#0B132B",
-            border: "1px solid rgba(255,255,255,0.1)",
+            background: "#FFFFFF",
+            border: "1px solid #D4DBE7",
             borderRadius: 10,
-            boxShadow: "0 8px 20px rgba(0,0,0,.45)",
+            boxShadow: "0 16px 40px rgba(15,23,42,.14)",
             zIndex: 60,
             maxHeight: listMaxHeight,
             overflowY: "auto",
@@ -182,34 +196,49 @@ function NiceSelect({
               No options
             </div>
           ) : (
-            options.map((o) => (
-              <div
-                key={o.value}
-                role="option"
-                aria-selected={String(o.value) === String(value)}
-                onClick={() => {
-                  onChange(o.value);
-                  setOpen(false);
-                }}
-                style={{
-                  padding: "10px 12px",
-                  color: "#f5f5f5",
-                  background:
-                    String(o.value) === String(value)
-                      ? "rgba(255,255,255,0.08)"
-                      : "transparent",
-                  cursor: "pointer",
-                }}
-                onMouseDown={(e) => e.preventDefault()}
-              >
-                {o.label}
-              </div>
-            ))
+            options.map((o) => {
+              const active = String(o.value) === String(value);
+              return (
+                <div
+                  key={o.value}
+                  role="option"
+                  aria-selected={active}
+                  onClick={() => {
+                    onChange(o.value);
+                    setOpen(false);
+                  }}
+                  style={{
+                    padding: "10px 12px",
+                    color: "var(--text)",
+                    background: active ? "#E0F2FE" : "transparent",
+                    fontWeight: active ? 600 : 400,
+                    cursor: "pointer",
+                    fontSize: 14,
+                  }}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={(e) => {
+                    if (!active) e.currentTarget.style.background = "#EDF3FA";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!active) e.currentTarget.style.background = "transparent";
+                  }}
+                >
+                  {o.label}
+                </div>
+              );
+            })
           )}
         </div>
       )}
     </div>
   );
+}
+
+/* Helper for route side label */
+function routeSideLabel(side) {
+  if (side === "EAST") return "East route (via Oslob)";
+  if (side === "WEST") return "West route (via Barili)";
+  return "—";
 }
 
 /* ---------- MAIN ---------- */
@@ -223,6 +252,11 @@ export default function DriverManagementPage() {
   const [busId, setBusId] = useState("");
   const [busPlate, setBusPlate] = useState("");
   const [listRefreshing, setListRefreshing] = useState(false);
+
+  // route info (auto from selected bus)
+  const [routeSide, setRouteSide] = useState(""); // EAST / WEST
+  const [forwardRoute, setForwardRoute] = useState("");
+  const [returnRoute, setReturnRoute] = useState("");
 
   const [form, setForm] = useState({
     fullName: "",
@@ -303,16 +337,19 @@ export default function DriverManagementPage() {
     return filtered.map((b) => ({ value: b.id, label: b.number }));
   }, [busList, usedBusNumbers]);
 
-  /* Vehicle type load + remote merge */
+  /* Vehicle type change → fetch buses from backend ONLY */
   useEffect(() => {
     let aborter;
     setBusId("");
     setBusPlate("");
+    setRouteSide("");
+    setForwardRoute("");
+    setReturnRoute("");
+
     if (!vehicleType) {
       setBusList([]);
       return;
     }
-    setBusList(BUS_CATALOG[vehicleType] || []);
 
     (async () => {
       try {
@@ -324,16 +361,15 @@ export default function DriverManagementPage() {
           )}&active=true`,
           { headers: authHeaders(), signal: aborter.signal }
         ).catch(() => null);
+
         if (res && res.ok) {
           const data = await res.json();
-          if (Array.isArray(data) && data.length) {
-            const map = new Map();
-            [...data, ...BUS_CATALOG[vehicleType]].forEach((b) =>
-              map.set(String(b.id), b)
-            );
-            setBusList(Array.from(map.values()));
-          }
+          setBusList(Array.isArray(data) ? data : []);
+        } else {
+          setBusList([]);
         }
+      } catch {
+        setBusList([]);
       } finally {
         setListRefreshing(false);
       }
@@ -342,9 +378,21 @@ export default function DriverManagementPage() {
     return () => aborter?.abort();
   }, [vehicleType]);
 
+  // when bus changes → auto-fill plate & route
   useEffect(() => {
     const found = (busList || []).find((b) => String(b.id) === String(busId));
     setBusPlate(found ? found.plate : "");
+
+    const side =
+      found?.corridor || // new column
+      found?.routeSide || // older naming fallback
+      "";
+    setRouteSide(side);
+
+    const fwd = found?.forwardRoute || "";
+    const ret = found?.returnRoute || "";
+    setForwardRoute(fwd);
+    setReturnRoute(ret);
   }, [busId, busList]);
 
   /* Search filter */
@@ -409,10 +457,12 @@ export default function DriverManagementPage() {
     if (base) return base;
     if (!vehicleType || !busId)
       return "Please select vehicle type and bus number.";
-    const selected = (busList || []).find((b) => String(b.id) === String(busId));
-    if (!selected) return "Selected bus not found.";
-    if (usedBusNumbers.has(String(selected.number)))
-      return `Bus ${selected.number} is already assigned. Choose another.`;
+    const selectedBus = (busList || []).find(
+      (b) => String(b.id) === String(busId)
+    );
+    if (!selectedBus) return "Selected bus not found.";
+    if (usedBusNumbers.has(String(selectedBus.number)))
+      return `Bus ${selectedBus.number} is already assigned. Choose another.`;
     return "";
   }
 
@@ -428,15 +478,45 @@ export default function DriverManagementPage() {
       return;
     }
 
-    const selected = (busList || []).find((b) => String(b.id) === String(busId));
-    const payload = /^\d+$/.test(String(selected.id))
-      ? { ...form, busId: Number(selected.id) }
-      : {
-          ...form,
-          vehicleType,
-          busNo: selected.number,
-          plateNumber: selected.plate,
-        };
+    const selectedBus = (busList || []).find(
+      (b) => String(b.id) === String(busId)
+    );
+
+    const basePayload = { ...form };
+
+    const busPayload = {
+      busId: selectedBus.id,
+    };
+
+    // build route payload that matches your Bus schema (corridor + route / forward/return)
+    const routePayload = {};
+    if (selectedBus) {
+      // route side / corridor
+      routePayload.routeSide =
+        selectedBus.corridor || selectedBus.routeSide || null;
+
+      // optional code if you use it
+      routePayload.routeCode = selectedBus.routeId || null;
+
+      const fwd = selectedBus.forwardRoute || "";
+      const ret = selectedBus.returnRoute || "";
+      const single =
+        selectedBus.route || // if backend still uses `route`
+        selectedBus.routeLabel ||
+        "";
+
+      if (fwd && ret) {
+        routePayload.routeLabel = `${fwd} — ${ret}`;
+      } else if (single) {
+        routePayload.routeLabel = single;
+      }
+    }
+
+    const payload = {
+      ...basePayload,
+      ...busPayload,
+      ...routePayload,
+    };
 
     try {
       setLoading(true);
@@ -455,6 +535,9 @@ export default function DriverManagementPage() {
       setBusList([]);
       setBusId("");
       setBusPlate("");
+      setRouteSide("");
+      setForwardRoute("");
+      setReturnRoute("");
       await loadDrivers();
       setTab("info");
     } catch (e) {
@@ -518,9 +601,6 @@ export default function DriverManagementPage() {
       birthDate: drv.birthDate ? drv.birthDate.slice(0, 10) : "",
       licenseNo: drv.licenseNo || "",
       address: drv.address || "",
-      vehicleType: drv.vehicleType || "",
-      busId: "",
-      busPlate: "",
     });
     setEditError("");
     setEditOpen(true);
@@ -535,7 +615,7 @@ export default function DriverManagementPage() {
       return;
     }
 
-    let body = {
+    const body = {
       fullName: editForm.fullName,
       email: editForm.email,
       phone: editForm.phone,
@@ -543,22 +623,6 @@ export default function DriverManagementPage() {
       licenseNo: editForm.licenseNo,
       address: editForm.address,
     };
-
-    if (editForm.vehicleType && editForm.busId) {
-      const list = BUS_CATALOG[editForm.vehicleType] || [];
-      const found = (list || []).find((b) => String(b.id) === String(editForm.busId));
-      if (found) {
-        body =
-          /^\d+$/.test(String(found.id))
-            ? { ...body, busId: Number(found.id) }
-            : {
-                ...body,
-                vehicleType: editForm.vehicleType,
-                busNo: found.number,
-                plateNumber: found.plate,
-              };
-      }
-    }
 
     try {
       await updateDriver(editForm.id, body);
@@ -571,27 +635,31 @@ export default function DriverManagementPage() {
     }
   }
 
-  /* ---------- Styles ---------- */
+  /* ---------- Styles (LIGHT THEME) ---------- */
   const S = {
     page: { display: "grid", gap: 16 },
     tabs: {
       display: "flex",
-      gap: 20,
+      gap: 24,
       borderBottom: "1px solid var(--line)",
       marginBottom: 16,
     },
     tabBtn: (active) => ({
       padding: "10px 0",
-      borderBottom: `2px solid ${active ? "var(--text)" : "transparent"}`,
+      borderBottom: `2px solid ${
+        active ? "var(--accent)" : "transparent"
+      }`,
       fontWeight: 600,
-      color: active ? "var(--text)" : "var(--muted)",
+      fontSize: 14,
+      color: active ? "var(--accent)" : "var(--muted)",
       cursor: "pointer",
     }),
     card: {
       background: "var(--card)",
       border: "1px solid var(--line)",
-      borderRadius: 16,
+      borderRadius: 24,
       padding: 20,
+      boxShadow: "0 20px 45px rgba(15,23,42,0.06)",
     },
     label: {
       fontWeight: 600,
@@ -601,12 +669,12 @@ export default function DriverManagementPage() {
     },
     input: {
       width: "100%",
-      border: "1px solid rgba(255,255,255,0.1)",
+      border: "1px solid #D4DBE7",
       borderRadius: 10,
       padding: "10px 12px",
       fontSize: 14,
-      background: "rgba(255,255,255,0.05)",
-      color: "#f5f5f5",
+      background: "#F9FBFF",
+      color: "var(--text)",
       outline: "none",
     },
     field: { display: "grid", gap: 6 },
@@ -614,27 +682,28 @@ export default function DriverManagementPage() {
     grid3: { display: "grid", gap: 12, gridTemplateColumns: "repeat(3,1fr)" },
     btn: {
       width: "100%",
-      background: "#0E4371",
-      color: "white",
+      background: "#0D658B",
+      color: "#FFFFFF",
       border: "none",
-      borderRadius: 10,
+      borderRadius: 999,
       padding: "12px 0",
       fontWeight: 700,
-      letterSpacing: 0.2,
+      fontSize: 14,
+      letterSpacing: 0.3,
       cursor: "pointer",
-      transition: ".2s",
-      boxShadow: "0 0 0 rgba(19,94,161,0)",
+      transition: "background .15s ease, box-shadow .15s ease",
+      boxShadow: "0 0 0 rgba(13,101,139,0)",
     },
     btnHover: {
-      background: "#135ea1",
-      boxShadow: "0 0 12px rgba(19,94,161,.55)",
+      background: "#0B5878",
+      boxShadow: "0 0 14px rgba(13,101,139,.45)",
     },
     badge: {
       display: "inline-flex",
       alignItems: "center",
       gap: 6,
       fontSize: 12,
-      color: "#9CA3AF",
+      color: "#64748B",
     },
     dot: (on) => ({
       height: 6,
@@ -651,25 +720,28 @@ export default function DriverManagementPage() {
     search: {
       flex: 1,
       width: "100%",
-      border: "1px solid rgba(255,255,255,0.1)",
+      border: "1px solid #D4DBE7",
       borderRadius: 10,
       padding: "10px 12px",
-      background: "rgba(255,255,255,0.05)",
-      color: "#f5f5f5",
+      background: "#F9FBFF",
+      color: "var(--text)",
+      fontSize: 14,
     },
     refresh: {
-      padding: "10px 12px",
-      borderRadius: 10,
-      border: "1px solid rgba(255,255,255,0.15)",
-      background: "rgba(255,255,255,0.06)",
-      color: "#e5e7eb",
+      padding: "10px 14px",
+      borderRadius: 999,
+      border: "1px solid #D4DBE7",
+      background: "#FFFFFF",
+      color: "var(--accent)",
       cursor: "pointer",
+      fontSize: 13,
+      fontWeight: 500,
     },
     drvCard: {
-      border: "1px solid rgba(255,255,255,0.08)",
-      borderRadius: 14,
+      border: "1px solid #E2E8F0",
+      borderRadius: 20,
       padding: 16,
-      background: "rgba(255,255,255,0.03)",
+      background: "#FFFFFF",
     },
     drvHeader: {
       display: "flex",
@@ -677,73 +749,130 @@ export default function DriverManagementPage() {
       justifyContent: "space-between",
       gap: 10,
     },
-    drvName: { fontWeight: 800, fontSize: 18, display: "flex", gap: 10 },
+    drvName: {
+      fontWeight: 800,
+      fontSize: 18,
+      display: "flex",
+      gap: 10,
+      color: "var(--accent)",
+    },
     idPill: {
       padding: "4px 10px",
       borderRadius: 999,
-      background: "rgba(255,255,255,0.1)",
+      background: "#EEF2FF",
       fontSize: 12,
-      color: "#e5e7eb",
+      color: "#4B5563",
+      fontWeight: 600,
     },
-    drvGrid: {
+    drvRight: {
       display: "grid",
-      gap: 10,
-      gridTemplateColumns: "repeat(2,minmax(0,1fr))",
-      marginTop: 10,
+      gap: 8,
+      justifyItems: "end",
+    },
+    statusPill: (status) => {
+      const isActive = status === "ACTIVE";
+      return {
+        padding: "4px 12px",
+        borderRadius: 999,
+        fontSize: 12,
+        background: isActive ? "#E8F9F0" : "#E5E7EB",
+        color: isActive ? "#166534" : "#4B5563",
+        border: isActive ? "1px solid #86EFAC" : "1px solid #CBD5F5",
+        textTransform: "none",
+        fontWeight: 600,
+      };
+    },
+    editBtn: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6,
+      padding: "6px 10px",
+      borderRadius: 999,
+      border: "1px solid #CBD5F5",
+      background: "#FFFFFF",
+      color: "#0F172A",
+      fontSize: 12,
+      cursor: "pointer",
+    },
+    drvBody: {
+      display: "grid",
+      gap: 14,
+      gridTemplateColumns: "repeat(2, minmax(0,1fr))",
+      marginTop: 12,
+    },
+    drvCol: {
+      display: "grid",
+      gap: 6,
+    },
+    sectionTitle: {
+      fontSize: 12,
+      textTransform: "uppercase",
+      letterSpacing: 0.08,
+      color: "#9CA3AF",
+      marginBottom: 4,
+      fontWeight: 600,
     },
     drvRow: {
       display: "grid",
       gridTemplateColumns: "120px 1fr",
       gap: 8,
       fontSize: 14,
-      color: "#cbd5e1",
+      color: "#0F172A",
     },
-    drvActions: { display: "flex", gap: 10, marginTop: 12 },
+    drvActions: {
+      display: "flex",
+      gap: 10,
+      marginTop: 12,
+      justifyContent: "flex-end",
+    },
     btnGhost: {
       padding: "8px 10px",
-      borderRadius: 10,
-      border: "1px solid rgba(255,255,255,0.15)",
-      background: "rgba(255,255,255,0.06)",
-      color: "#e5e7eb",
+      borderRadius: 999,
+      border: "1px solid #D4DBE7",
+      background: "#FFFFFF",
+      color: "var(--accent)",
       cursor: "pointer",
       display: "inline-flex",
       alignItems: "center",
       gap: 8,
+      fontSize: 13,
+      fontWeight: 500,
     },
     btnGreen: {
       padding: "8px 10px",
-      borderRadius: 10,
-      border: "1px solid rgba(34,197,94,.35)",
-      background: "rgba(34,197,94,.18)",
-      color: "#bbf7d0",
+      borderRadius: 999,
+      border: "1px solid #22C55E",
+      background: "#E8F9F0",
+      color: "#166534",
       cursor: "pointer",
+      fontSize: 13,
+      fontWeight: 500,
     },
     btnRed: {
       padding: "8px 10px",
-      borderRadius: 10,
-      border: "1px solid rgba(239,68,68,.35)",
-      background: "rgba(239,68,68,.18)",
-      color: "#fecaca",
+      borderRadius: 999,
+      border: "1px solid #EF4444",
+      background: "#FEE2E2",
+      color: "#B91C1C",
       cursor: "pointer",
+      fontSize: 13,
+      fontWeight: 500,
     },
-    muted: { color: "#94a3b8", fontSize: 14 },
+    muted: { color: "#6B7280", fontSize: 14 },
     flash: (type) => ({
       padding: "10px 14px",
-      borderRadius: 8,
+      borderRadius: 10,
       fontSize: 14,
-      color: type === "error" ? "#fca5a5" : "#86efac",
-      background:
-        type === "error" ? "rgba(239,68,68,.15)" : "rgba(34,197,94,.12)",
+      color: type === "error" ? "#B91C1C" : "#166534",
+      background: type === "error" ? "#FEE2E2" : "#DCFCE7",
       border:
-        type === "error"
-          ? "1px solid rgba(239,68,68,.35)"
-          : "1px solid rgba(34,197,94,.35)",
+        type === "error" ? "1px solid #FCA5A5" : "1px solid #86EFAC",
       transition: "opacity .2s ease",
     }),
     overlay: {
       position: "fixed",
       inset: 0,
-      background: "rgba(0,0,0,.6)",
+      background: "rgba(15,23,42,.35)",
       display: "grid",
       placeItems: "center",
       zIndex: 80,
@@ -752,8 +881,9 @@ export default function DriverManagementPage() {
       width: "min(720px, 96vw)",
       background: "var(--card)",
       border: "1px solid var(--line)",
-      borderRadius: 16,
+      borderRadius: 20,
       padding: 16,
+      boxShadow: "0 24px 60px rgba(15,23,42,.18)",
     },
     modalHeader: {
       display: "flex",
@@ -766,10 +896,10 @@ export default function DriverManagementPage() {
       width: 36,
       display: "grid",
       placeItems: "center",
-      borderRadius: 10,
-      border: "1px solid rgba(255,255,255,0.15)",
-      background: "rgba(255,255,255,0.06)",
-      color: "#e5e7eb",
+      borderRadius: 999,
+      border: "1px solid #D4DBE7",
+      background: "#FFFFFF",
+      color: "#0F172A",
       cursor: "pointer",
     },
     danger: {
@@ -778,23 +908,21 @@ export default function DriverManagementPage() {
       gap: 10,
       padding: 12,
       borderRadius: 12,
-      border: "1px solid rgba(239,68,68,.35)",
-      background: "rgba(239,68,68,.12)",
-      color: "#fecaca",
+      border: "1px solid #FCA5A5",
+      background: "#FEE2E2",
+      color: "#B91C1C",
       marginBottom: 12,
+      fontSize: 14,
     },
     modalFlash: (type = "error") => ({
       marginBottom: 10,
       padding: "10px 12px",
       borderRadius: 10,
       fontSize: 14,
-      color: type === "error" ? "#fca5a5" : "#86efac",
-      background:
-        type === "error" ? "rgba(239,68,68,.15)" : "rgba(34,197,94,.12)",
+      color: type === "error" ? "#B91C1C" : "#166534",
+      background: type === "error" ? "#FEE2E2" : "#DCFCE7",
       border:
-        type === "error"
-          ? "1px solid rgba(239,68,68,.35)"
-          : "1px solid rgba(34,197,94,.35)",
+        type === "error" ? "1px solid #FCA5A5" : "1px solid #86EFAC",
     }),
   };
 
@@ -810,10 +938,7 @@ export default function DriverManagementPage() {
       </div>
 
       <div style={S.tabs}>
-        <div
-          style={S.tabBtn(tab === "info")}
-          onClick={() => setTab("info")}
-        >
+        <div style={S.tabBtn(tab === "info")} onClick={() => setTab("info")}>
           Informations
         </div>
         <div
@@ -848,11 +973,7 @@ export default function DriverManagementPage() {
             </span>
           </div>
 
-          <form
-            onSubmit={onSubmit}
-            style={{ display: "grid", gap: 12 }}
-            noValidate
-          >
+          <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }} noValidate>
             <div style={S.grid2}>
               <div style={S.field}>
                 <label style={S.label}>Full Name</label>
@@ -960,10 +1081,11 @@ export default function DriverManagementPage() {
                     style={{
                       marginTop: 6,
                       fontSize: 12,
-                      color: "#fca5a5",
+                      color: "#B91C1C",
                     }}
                   >
-                    All buses for this type are already assigned.
+                    No registered buses available for this type. Please register
+                    buses first.
                   </div>
                 )}
               </div>
@@ -973,10 +1095,43 @@ export default function DriverManagementPage() {
                 <input
                   style={{
                     ...S.input,
-                    background: "rgba(255,255,255,0.03)",
+                    background: "#F3F4F6",
                   }}
                   placeholder="Auto-filled"
                   value={busPlate}
+                  readOnly
+                />
+              </div>
+            </div>
+
+            {/* ROUTE DISPLAY (auto from bus) */}
+            <div style={S.grid2}>
+              <div style={S.field}>
+                <label style={S.label}>Route Side</label>
+                <input
+                  style={{
+                    ...S.input,
+                    background: "#F3F4F6",
+                  }}
+                  placeholder="Auto-filled from selected bus"
+                  value={routeSideLabel(routeSide)}
+                  readOnly
+                />
+              </div>
+
+              <div style={S.field}>
+                <label style={S.label}>Route</label>
+                <input
+                  style={{
+                    ...S.input,
+                    background: "#F3F4F6",
+                  }}
+                  placeholder="Auto-filled from selected bus"
+                  value={
+                    forwardRoute && returnRoute
+                      ? `${forwardRoute} — ${returnRoute}`
+                      : ""
+                  }
                   readOnly
                 />
               </div>
@@ -1001,9 +1156,7 @@ export default function DriverManagementPage() {
         </section>
       ) : (
         <section style={S.card}>
-          <div
-            style={{ fontWeight: 700, fontSize: 18, marginBottom: 10 }}
-          >
+          <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 10 }}>
             Driver Informations
           </div>
 
@@ -1014,11 +1167,7 @@ export default function DriverManagementPage() {
               placeholder="Search…"
               style={S.search}
             />
-            <button
-              style={S.refresh}
-              onClick={loadDrivers}
-              disabled={drvLoading}
-            >
+            <button style={S.refresh} onClick={loadDrivers} disabled={drvLoading}>
               {drvLoading ? "Loading…" : "Refresh"}
             </button>
           </div>
@@ -1028,7 +1177,7 @@ export default function DriverManagementPage() {
               style={{
                 ...S.muted,
                 marginBottom: 8,
-                color: "#fca5a5",
+                color: "#B91C1C",
               }}
             >
               Error: {drvError}
@@ -1042,11 +1191,14 @@ export default function DriverManagementPage() {
           ) : (
             <div style={{ display: "grid", gap: 12 }}>
               {filtered.map((d, idx) => {
-                const key =
-                  d.id ||
-                  d.email ||
-                  d.licenseNo ||
-                  `drv-${idx}`;
+                const key = d.id || d.email || d.licenseNo || `drv-${idx}`;
+
+                // prefer consolidated label if present, else build from forward/return
+                const routeLabel =
+                  d.routeLabel ||
+                  (d.forwardRoute && d.returnRoute
+                    ? `${d.forwardRoute} — ${d.returnRoute}`
+                    : "—");
 
                 return (
                   <div key={key} style={S.drvCard}>
@@ -1055,60 +1207,81 @@ export default function DriverManagementPage() {
                         <span>{d.fullName || "Unnamed Driver"}</span>
                         <span style={S.idPill}>{shortId(d.id)}</span>
                       </div>
-                      <button
-                        title="Edit driver"
-                        style={S.iconBtn}
-                        onClick={() => openEdit(d)}
-                      >
-                        <Pencil size={16} />
-                      </button>
+
+                      <div style={S.drvRight}>
+                        <div style={S.statusPill(d.status)}>
+                          {d.active ? "Active" : "Not active"}
+                        </div>
+                        <button
+                          type="button"
+                          style={S.editBtn}
+                          onClick={() => openEdit(d)}
+                        >
+                          <Pencil size={14} />
+                          <span>Edit</span>
+                        </button>
+                      </div>
                     </div>
 
-                    <div style={S.drvGrid}>
-                      <div style={S.drvRow}>
-                        <div>Email:</div>
-                        <div>{d.email}</div>
+                    <div style={S.drvBody}>
+                      {/* Personal information */}
+                      <div style={S.drvCol}>
+                        <div style={S.sectionTitle}>Personal information</div>
+                        <div style={S.drvRow}>
+                          <div>Email</div>
+                          <div>{d.email}</div>
+                        </div>
+                        <div style={S.drvRow}>
+                          <div>Phone</div>
+                          <div>{d.phone}</div>
+                        </div>
+                        <div style={S.drvRow}>
+                          <div>Birth date</div>
+                          <div>{fmtDate(d.birthDate)}</div>
+                        </div>
+                        <div style={S.drvRow}>
+                          <div>License</div>
+                          <div>{d.licenseNo}</div>
+                        </div>
+                        <div style={S.drvRow}>
+                          <div>Address</div>
+                          <div>{d.address}</div>
+                        </div>
+                        <div style={S.drvRow}>
+                          <div>Applied on</div>
+                          <div>{fmtDate(d.createdAt)}</div>
+                        </div>
                       </div>
-                      <div style={S.drvRow}>
-                        <div>Phone:</div>
-                        <div>{d.phone}</div>
-                      </div>
-                      <div style={S.drvRow}>
-                        <div>Birth Date:</div>
-                        <div>{fmtDate(d.birthDate)}</div>
-                      </div>
-                      <div style={S.drvRow}>
-                        <div>License:</div>
-                        <div>{d.licenseNo}</div>
-                      </div>
-                      <div style={S.drvRow}>
-                        <div>Address:</div>
-                        <div>{d.address}</div>
-                      </div>
-                      <div style={S.drvRow}>
-                        <div>Vehicle:</div>
-                        <div>{d.vehicleType}</div>
-                      </div>
-                      <div style={S.drvRow}>
-                        <div>Bus Number:</div>
-                        <div>{d.busNo}</div>
-                      </div>
-                      <div style={S.drvRow}>
-                        <div>Plate Number:</div>
-                        <div>{d.plateNumber}</div>
-                      </div>
-                      <div style={S.drvRow}>
-                        <div>Applied:</div>
-                        <div>{fmtDate(d.createdAt)}</div>
+
+                      {/* Bus & Route */}
+                      <div style={S.drvCol}>
+                        <div style={S.sectionTitle}>Bus & route</div>
+                        <div style={S.drvRow}>
+                          <div>Vehicle</div>
+                          <div>{d.vehicleType}</div>
+                        </div>
+                        <div style={S.drvRow}>
+                          <div>Bus number</div>
+                          <div>{d.busNo}</div>
+                        </div>
+                        <div style={S.drvRow}>
+                          <div>Plate number</div>
+                          <div>{d.plateNumber}</div>
+                        </div>
+                        <div style={S.drvRow}>
+                          <div>Route side</div>
+                          <div>{routeSideLabel(d.routeSide)}</div>
+                        </div>
+                        <div style={S.drvRow}>
+                          <div>Route</div>
+                          <div>{routeLabel}</div>
+                        </div>
                       </div>
                     </div>
 
                     <div style={S.drvActions}>
-                      <button
-                        style={S.btnGhost}
-                        onClick={() => openQr(d)}
-                      >
-                        <Eye size={16} /> View
+                      <button style={S.btnGhost} onClick={() => openQr(d)}>
+                        <Eye size={16} /> View QR
                       </button>
                       {d.active ? (
                         <button
@@ -1136,10 +1309,7 @@ export default function DriverManagementPage() {
 
       {/* QR MODAL */}
       {qrOpen && (
-        <div
-          style={S.overlay}
-          onMouseDown={() => setQrOpen(false)}
-        >
+        <div style={S.overlay} onMouseDown={() => setQrOpen(false)}>
           <div
             style={S.modal}
             onMouseDown={(e) => e.stopPropagation()}
@@ -1148,10 +1318,7 @@ export default function DriverManagementPage() {
           >
             <div style={S.modalHeader}>
               <strong>Driver QR Code</strong>
-              <button
-                style={S.iconBtn}
-                onClick={() => setQrOpen(false)}
-              >
+              <button style={S.iconBtn} onClick={() => setQrOpen(false)}>
                 <X size={16} />
               </button>
             </div>
@@ -1170,7 +1337,7 @@ export default function DriverManagementPage() {
                   width: 240,
                   height: 240,
                   borderRadius: 12,
-                  border: "1px solid rgba(255,255,255,0.1)",
+                  border: "1px solid #E2E8F0",
                 }}
               />
               <a
@@ -1182,6 +1349,8 @@ export default function DriverManagementPage() {
                   ...S.btn,
                   width: "auto",
                   padding: "10px 14px",
+                  textDecoration: "none",
+                  textAlign: "center",
                 }}
               >
                 <span
@@ -1199,7 +1368,7 @@ export default function DriverManagementPage() {
         </div>
       )}
 
-      {/* EDIT MODAL */}
+      {/* EDIT MODAL (no bus reassignment here) */}
       {editOpen && editForm && (
         <div
           style={S.overlay}
@@ -1221,23 +1390,16 @@ export default function DriverManagementPage() {
               </button>
             </div>
 
-            {editError && (
-              <div style={S.modalFlash("error")}>{editError}</div>
-            )}
+            {editError && <div style={S.modalFlash("error")}>{editError}</div>}
 
-            <form
-              onSubmit={saveEdit}
-              style={{ display: "grid", gap: 12 }}
-            >
+            <form onSubmit={saveEdit} style={{ display: "grid", gap: 12 }}>
               <div style={S.grid2}>
                 <div style={S.field}>
                   <label style={S.label}>Full Name</label>
                   <input
                     style={S.input}
                     value={editForm.fullName}
-                    onChange={(e) =>
-                      eupd("fullName", e.target.value)
-                    }
+                    onChange={(e) => eupd("fullName", e.target.value)}
                     required
                   />
                 </div>
@@ -1246,9 +1408,7 @@ export default function DriverManagementPage() {
                   <input
                     style={S.input}
                     value={editForm.phone}
-                    onChange={(e) =>
-                      eupd("phone", e.target.value)
-                    }
+                    onChange={(e) => eupd("phone", e.target.value)}
                     required
                     inputMode="tel"
                   />
@@ -1262,9 +1422,7 @@ export default function DriverManagementPage() {
                     style={S.input}
                     type="email"
                     value={editForm.email}
-                    onChange={(e) =>
-                      eupd("email", e.target.value)
-                    }
+                    onChange={(e) => eupd("email", e.target.value)}
                     required
                   />
                 </div>
@@ -1288,9 +1446,7 @@ export default function DriverManagementPage() {
                     style={S.input}
                     type="date"
                     value={editForm.birthDate}
-                    onChange={(e) =>
-                      eupd("birthDate", e.target.value)
-                    }
+                    onChange={(e) => eupd("birthDate", e.target.value)}
                     required
                   />
                 </div>
@@ -1299,87 +1455,8 @@ export default function DriverManagementPage() {
                   <input
                     style={S.input}
                     value={editForm.address}
-                    onChange={(e) =>
-                      eupd("address", e.target.value)
-                    }
+                    onChange={(e) => eupd("address", e.target.value)}
                     required
-                  />
-                </div>
-              </div>
-
-              <div style={S.grid3}>
-                <div style={S.field}>
-                  <label style={S.label}>Vehicle Type</label>
-                  <NiceSelect
-                    ariaLabel="Vehicle Type"
-                    value={editForm.vehicleType}
-                    onChange={(v) =>
-                      setEditForm((s) => ({
-                        ...s,
-                        vehicleType: v,
-                        busId: "",
-                        busPlate: "",
-                      }))
-                    }
-                    options={[
-                      { value: "AIRCON", label: "Ceres Bus (AC)" },
-                      {
-                        value: "NON_AIRCON",
-                        label: "Ceres Bus (Non-AC)",
-                      },
-                    ]}
-                    placeholder="Select vehicle type"
-                    listMaxHeight={300}
-                  />
-                </div>
-
-                <div style={S.field}>
-                  <label style={S.label}>Bus Number</label>
-                  <NiceSelect
-                    ariaLabel="Bus Number"
-                    value={editForm.busId}
-                    onChange={(v) => eupd("busId", v)}
-                    options={
-                      (editForm.vehicleType
-                        ? BUS_CATALOG[editForm.vehicleType] || []
-                        : []
-                      )
-                        .filter((b) =>
-                          usedBusNumbers.has(String(b.number))
-                            ? false
-                            : true
-                        )
-                        .sort(byBusNumber)
-                        .map((b) => ({ value: b.id, label: b.number }))
-
-                    }
-                    placeholder={
-                      editForm.vehicleType
-                        ? "Select bus number"
-                        : "Select vehicle first"
-                    }
-                    disabled={!editForm.vehicleType}
-                    listMaxHeight={300}
-                  />
-                </div>
-
-                <div style={S.field}>
-                  <label style={S.label}>Plate Number</label>
-                  <input
-                    style={{
-                      ...S.input,
-                      background: "rgba(255,255,255,0.03)",
-                    }}
-                    placeholder="Auto-filled"
-                    value={
-                      (editForm.vehicleType &&
-                        editForm.busId &&
-                        (BUS_CATALOG[editForm.vehicleType] || []).find(
-                          (b) =>
-                            String(b.id) === String(editForm.busId)
-                        )?.plate) || ""
-                    }
-                    readOnly
                   />
                 </div>
               </div>
@@ -1418,9 +1495,7 @@ export default function DriverManagementPage() {
       {confirm.open && confirm.driver && (
         <div
           style={S.overlay}
-          onMouseDown={() =>
-            setConfirm({ open: false, driver: null })
-          }
+          onMouseDown={() => setConfirm({ open: false, driver: null })}
         >
           <div
             style={S.modal}
@@ -1432,17 +1507,15 @@ export default function DriverManagementPage() {
               <strong>Deactivate Driver?</strong>
               <button
                 style={S.iconBtn}
-                onClick={() =>
-                  setConfirm({ open: false, driver: null })
-                }
+                onClick={() => setConfirm({ open: false, driver: null })}
               >
                 <X size={16} />
               </button>
             </div>
             <div style={S.danger}>
               <AlertTriangle size={18} />
-              This will disable the driver’s account. The assigned bus
-              number becomes available for new registrations.
+              This will disable the driver’s account. The assigned bus number
+              becomes available for new registrations.
             </div>
             <div
               style={{
@@ -1453,17 +1526,13 @@ export default function DriverManagementPage() {
             >
               <button
                 style={S.btnGhost}
-                onClick={() =>
-                  setConfirm({ open: false, driver: null })
-                }
+                onClick={() => setConfirm({ open: false, driver: null })}
               >
                 Cancel
               </button>
               <button
                 style={{ ...S.btnRed }}
-                onClick={() =>
-                  toggleDriverActive(confirm.driver, false)
-                }
+                onClick={() => toggleDriverActive(confirm.driver, false)}
               >
                 Yes, Deactivate
               </button>

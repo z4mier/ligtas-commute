@@ -1,17 +1,10 @@
-/** @type {import('tailwindcss').Config} */
-export default {
+// tailwind.config.js
+module.exports = {
+  darkMode: "class",
   content: [
-    "./src/app/**/*.{js,jsx,ts,tsx,mdx}",
-    "./src/components/**/*.{js,jsx,ts,tsx,mdx}",
-    "./src/**/*.{js,jsx,ts,tsx,mdx}",
+    "./src/**/*.{js,ts,jsx,tsx}",
+    "./app/**/*.{js,ts,jsx,tsx}",
   ],
-  theme: {
-    extend: {
-      colors: { page: "#0b1220" },
-      fontFamily: {
-        sans: ["var(--font-inter)", "Inter", "ui-sans-serif", "system-ui", "sans-serif"],
-      },
-    },
-  },
+  theme: { extend: {} },
   plugins: [],
 };

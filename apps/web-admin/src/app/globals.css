@@ -1,25 +1,40 @@
-/* ---------- Root Theme ---------- */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------- Root Theme (match login screen) ---------- */
 :root {
-  --bg: #0B1220;            /* page background */
-  --card: #0B132B;          /* panels/cards/topbar/sidebar */
-  --muted: rgba(255,255,255,0.65);
-  --line: rgba(14,107,143,0.20);
-  --line-strong: rgba(14,107,143,0.35);
-  --accent: #0E6B8F;        /* brand button/active */
-  --text: #fff;
-  --danger: #ff726e;
+  /* backgrounds */
+  --bg: #EDF3FA;          /* page background */
+  --card: #FFFFFF;        /* main cards / panels */
+  --surface-soft: #F5F7FC;/* soft strip / containers */
+
+  /* borders */
+  --line: #E5E7EB;        /* light gray border */
+  --line-strong: #CBD5E1; /* a bit stronger */
+
+  /* text */
+  --text: #0D658B;        /* main dark text (like login title) */
+  --muted: #6B7280;       /* helper / description */
+
+  /* brand */
+  --accent: #0D658B;      /* LigtasCommute blue */
+  --danger: #E53935;
+
   --radius: 12px;
 }
 
 /* ---------- Base Reset ---------- */
-html, body {
+html,
+body {
   height: 100%;
   margin: 0;
   padding: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  color-scheme: dark;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  color-scheme: light;
   scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
 }
@@ -35,7 +50,7 @@ a {
 }
 
 a:hover {
-  color: #19a4d1;
+  color: #075985;
 }
 
 /* ---------- Scrollbar Styling ---------- */
@@ -45,28 +60,29 @@ a:hover {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(148, 163, 184, 0.6);
   border-radius: 8px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(148, 163, 184, 0.9);
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(241, 245, 249, 1);
   border-radius: 8px;
 }
 
-/* ---------- Utility (Reusable) ---------- */
+/* ---------- Utility helpers (optional) ---------- */
 .card {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 1rem;
+  border-radius: 24px; /* same feel as login card */
+  padding: 1.75rem;
   color: var(--text);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.06);
 }
 
 .text-muted {
@@ -81,16 +97,16 @@ a:hover {
   outline: none;
   cursor: pointer;
   font-weight: 600;
-  border-radius: var(--radius);
+  border-radius: 999px; /* pill, like login button */
   background: var(--accent);
   color: #fff;
-  padding: 0.6rem 1.2rem;
-  transition: all 0.2s ease;
+  padding: 0.7rem 1.6rem;
+  transition: all 0.15s ease;
 }
 
 .btn:hover {
-  filter: brightness(1.08);
-  box-shadow: 0 0 12px rgba(14,107,143,0.45);
+  filter: brightness(1.02);
+  box-shadow: 0 10px 18px rgba(13, 101, 139, 0.35);
 }
 
 .btn:disabled {

@@ -39,6 +39,7 @@ model DriverProfile {
   ratings   RideRating[]
   incidents IncidentReport[]
   trips     Trip[]
+  qrUrl     String?
 }
 
 model CommuterProfile {
@@ -70,13 +71,21 @@ model EmergencyContact {
 }
 
 model Bus {
-  id       String          @id @default(cuid())
-  number   String
-  plate    String          @unique
-  busType  String          @default("AIRCON")
-  isActive Boolean         @default(true)
-  drivers  DriverProfile[] @relation("BusDrivers")
-  trips    Trip[]
+  id           String          @id @default(cuid())
+  number       String
+  plate        String          @unique
+  busType      String          @default("AIRCON") 
+  status       String          @default("ACTIVE") 
+  corridor     String          @default("EAST")   
+  isActive     Boolean         @default(true)
+
+  // NEW FIELDS FOR ROUTE DISPLAY
+  routeId      String?        
+  forwardRoute String?        
+  returnRoute  String?       
+
+  drivers      DriverProfile[] @relation("BusDrivers")
+  trips        Trip[]
 }
 
 model Trip {

@@ -14,7 +14,7 @@ const r = Router();
 function toDriverDto(d) {
   // d = DriverProfile with { user, bus }
   return {
-    id: d.driverId,            // 👈 front-end expects "id"
+    id: d.driverId,
     userId: d.userId,
     fullName: d.fullName,
     licenseNo: d.licenseNo,
@@ -30,6 +30,10 @@ function toDriverDto(d) {
           plate: d.bus.plate,
           busType: d.bus.busType,
           isActive: d.bus.isActive,
+          corridor: d.bus.corridor,
+          routeId: d.bus.routeId,
+          forwardRoute: d.bus.forwardRoute,
+          returnRoute: d.bus.returnRoute,
         }
       : null,
     isActive: d.isActive,

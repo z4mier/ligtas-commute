@@ -1,47 +1,497 @@
 "use client";
-import { Bell } from "lucide-react";
 
-export default function Topbar(){
+import { Bell, LogOut } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { listFeedback, listIncidents } from "@/lib/api";
+
+/* small helper: relative time like "5 mins ago" */
+function formatRelativeTime(dateInput) {
+  if (!dateInput) return "";
+  const d = new Date(dateInput);
+  if (Number.isNaN(d.getTime())) return "";
+
+  const diffMs = Date.now() - d.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return "Just now";
+  if (diffMin < 60) return `${diffMin} min${diffMin === 1 ? "" : "s"} ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} hour${diffHr === 1 ? "" : "s"} ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  return `${diffDay} day${diffDay === 1 ? "" : "s"} ago`;
+}
+
+export default function Topbar() {
+  const r = useRouter();
+
+  const [userOpen, setUserOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+
+  const [notifications, setNotifications] = useState([]);
+  const [notifLoading, setNotifLoading] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const menuRef = useRef(null);
+
+  function handleLogout() {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("lc_token");
+      localStorage.removeItem("lc_user");
+    }
+    setUserOpen(false);
+    setNotifOpen(false);
+    r.replace("/login");
+  }
+
+  // close dropdowns when clicking outside
+  useEffect(() => {
+    function onClick(e) {
+      if (!menuRef.current) return;
+      if (!menuRef.current.contains(e.target)) {
+        setUserOpen(false);
+        setNotifOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
+
+  async function loadNotifications() {
+    // avoid re-loading while already fetching
+    if (notifLoading) return;
+
+    setNotifLoading(true);
+
+    try {
+      let fbItems = [];
+      let incidentItems = [];
+
+      // 1) Feedback (safe even if endpoint missing)
+      try {
+        const fb = await listFeedback({ limit: 10 });
+        fbItems = Array.isArray(fb?.items)
+          ? fb.items
+          : Array.isArray(fb)
+          ? fb
+          : [];
+      } catch (err) {
+        // if feedback endpoint is not ready yet, just ignore 404
+        if (err.status !== 404) {
+          console.warn("Feedback notifications error:", err);
+        }
+      }
+
+      // 2) Incidents (already 404-safe in api.js but double-safe here)
+      try {
+        const inc = await listIncidents({ limit: 10 });
+        incidentItems = Array.isArray(inc?.items)
+          ? inc.items
+          : Array.isArray(inc)
+          ? inc
+          : [];
+      } catch (err) {
+        if (err.status !== 404) {
+          console.warn("Incident notifications error:", err);
+        }
+      }
+
+      // Map to a unified notification list
+      const fbNotifs = fbItems.map((f) => ({
+        id: `fb-${f.id}`,
+        type: "feedback",
+        title: "Feedback received",
+        body: "New commuter feedback submitted",
+        createdAt: f.createdAt,
+        read: false,
+      }));
+
+      const incidentNotifs = incidentItems.map((i) => ({
+        id: `ir-${i.id}`,
+        type: "incident",
+        title: "Report received",
+        body: "New commuter report submitted",
+        createdAt: i.createdAt,
+        read: false,
+      }));
+
+      const combined = [...fbNotifs, ...incidentNotifs].sort((a, b) => {
+        const ad = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bd = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bd - ad;
+      });
+
+      setNotifications(combined);
+      setUnreadCount(combined.filter((n) => !n.read).length);
+    } finally {
+      setNotifLoading(false);
+    }
+  }
+
+  function handleBellClick() {
+    const willOpen = !notifOpen;
+    setNotifOpen(willOpen);
+    setUserOpen(false);
+
+    if (willOpen) {
+      // load/reload notifications whenever we open the panel
+      loadNotifications();
+    }
+  }
+
+  function handleNotificationClick(n) {
+    // mark as read locally
+    setNotifications((prev) =>
+      prev.map((item) =>
+        item.id === n.id ? { ...item, read: true } : item
+      )
+    );
+    setUnreadCount((prev) => Math.max(0, prev - (n.read ? 0 : 1)));
+
+    // navigate to the correct page
+    if (n.type === "feedback") {
+      r.push("/feedback");
+    } else if (n.type === "incident") {
+      r.push("/incidents");
+    }
+    setNotifOpen(false);
+  }
+
+  function markAllRead() {
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    setUnreadCount(0);
+  }
+
+  function clearAll() {
+    setNotifications([]);
+    setUnreadCount(0);
+  }
+
+  const hasNotifs = notifications.length > 0;
+
   return (
     <header style={S.bar}>
       {/* Left brand */}
-      <div style={S.brand}>ADMIN</div>
+      <div style={S.left}>
+        <div style={S.logoMark} />
+        <div>
+          <div style={S.brandText}>LigtasCommute</div>
+          <div style={S.brandSub}>Admin Portal</div>
+        </div>
+      </div>
 
       {/* Right actions */}
-      <div style={S.right}>
-        <button aria-label="Notifications" style={S.iconBtn}>
-          <Bell size={18}/>
+      <div style={S.right} ref={menuRef}>
+        {/* Notification bell */}
+        <button
+          aria-label="Notifications"
+          style={S.iconBtn}
+          type="button"
+          onClick={handleBellClick}
+        >
+          <Bell size={18} />
+          {unreadCount > 0 && (
+            <span style={S.badge}>
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          )}
         </button>
+
+        {/* Notifications dropdown */}
+        {notifOpen && (
+          <div style={S.notifMenu}>
+            <div style={S.notifHeader}>
+              <span style={S.notifTitle}>Notifications</span>
+              {hasNotifs && (
+                <button
+                  type="button"
+                  style={S.markAllBtn}
+                  onClick={markAllRead}
+                >
+                  Mark all read
+                </button>
+              )}
+            </div>
+
+            <div style={S.notifList}>
+              {notifLoading && !hasNotifs ? (
+                <div style={S.notifEmpty}>Loading…</div>
+              ) : !hasNotifs ? (
+                <div style={S.notifEmpty}>No notifications</div>
+              ) : (
+                notifications.map((n) => (
+                  <button
+                    key={n.id}
+                    type="button"
+                    style={S.notifItem(!n.read)}
+                    onClick={() => handleNotificationClick(n)}
+                  >
+                    <div style={S.notifItemTop}>
+                      <span style={S.notifItemTitle}>{n.title}</span>
+                      {!n.read && <span style={S.unreadDot} />}
+                    </div>
+                    <div style={S.notifItemBody}>
+                      {n.body}
+                    </div>
+                    <div style={S.notifItemTime}>
+                      {formatRelativeTime(n.createdAt)}
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+
+            <button
+              type="button"
+              style={S.clearBtn}
+              onClick={clearAll}
+              disabled={!hasNotifs}
+            >
+              Clear all notifications
+            </button>
+          </div>
+        )}
+
+        {/* User chip with initials + dropdown */}
+        <button
+          type="button"
+          onClick={() => {
+            setUserOpen((v) => !v);
+            setNotifOpen(false);
+          }}
+          style={S.userChip}
+        >
+          <div style={S.userText}>
+            <span style={S.userName}>Admin User</span>
+            <span style={S.userRole}>Administrator</span>
+          </div>
+          <div style={S.initialCircle}>AU</div>
+        </button>
+
+        {userOpen && (
+          <div style={S.menu}>
+            <button type="button" onClick={handleLogout} style={S.menuItem}>
+              <LogOut size={16} />
+              <span>Logout</span>
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );
 }
 
 const S = {
-  bar:{
-    height:64,
-    display:"flex",
-    alignItems:"center",
-    justifyContent:"space-between",
-    background:"var(--card)",
-    borderBottom:"1px solid var(--line)",
-    padding:"0 20px",
-    position:"sticky",
-    top:0,
-    zIndex:10
+  bar: {
+    height: 64,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    background: "#FFFFFF",
+    borderBottom: "1px solid #E5E7EB",
+    padding: "0 24px",
+    position: "sticky",
+    top: 0,
+    zIndex: 30,
   },
-  brand:{
-    fontWeight:800,
-    letterSpacing:.6,
-    fontSize:18
+  left: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
   },
-  right:{display:"flex",gap:10,alignItems:"center"},
-  iconBtn:{
-    height:36,width:36,display:"grid",placeItems:"center",
-    background:"rgba(14,107,143,.08)",
-    border:"1px solid var(--line)",
-    borderRadius:10,
-    color:"var(--text)",
-    cursor:"pointer"
-  }
+  logoMark: {
+    height: 32,
+    width: 32,
+    borderRadius: "999px",
+    border: "2px solid #0D658B",
+    background: "#FFFFFF",
+  },
+  brandText: {
+    fontWeight: 700,
+    fontSize: 18,
+    color: "#0D658B",
+  },
+  brandSub: {
+    fontSize: 12,
+    color: "#6B7280",
+  },
+  right: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    position: "relative",
+  },
+  iconBtn: {
+    position: "relative",
+    height: 36,
+    width: 36,
+    display: "grid",
+    placeItems: "center",
+    background: "#F3F4F6",
+    border: "1px solid #E5E7EB",
+    borderRadius: "999px",
+    color: "#4B5563",
+    cursor: "pointer",
+  },
+  badge: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 999,
+    background: "#EF4444",
+    color: "#FFF",
+    fontSize: 10,
+    display: "grid",
+    placeItems: "center",
+    padding: "0 4px",
+    fontWeight: 700,
+  },
+  userChip: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "6px 10px 6px 12px",
+    background: "#FFFFFF",
+    borderRadius: 999,
+    border: "1px solid #E5E7EB",
+    cursor: "pointer",
+  },
+  userText: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+  },
+  userName: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: "#111827",
+  },
+  userRole: {
+    fontSize: 11,
+    color: "#6B7280",
+  },
+  initialCircle: {
+    height: 28,
+    width: 28,
+    borderRadius: "999px",
+    background: "#0D658B",
+    color: "#FFFFFF",
+    display: "grid",
+    placeItems: "center",
+    fontSize: 12,
+    fontWeight: 700,
+  },
+  menu: {
+    position: "absolute",
+    right: 0,
+    top: 52,
+    background: "#FFFFFF",
+    borderRadius: 12,
+    border: "1px solid #E5E7EB",
+    boxShadow: "0 12px 30px rgba(15,23,42,0.12)",
+    padding: 6,
+    minWidth: 140,
+  },
+  menuItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "8px 10px",
+    width: "100%",
+    borderRadius: 8,
+    border: "none",
+    background: "transparent",
+    fontSize: 13,
+    color: "#DC2626",
+    cursor: "pointer",
+  },
+
+  /* notif dropdown */
+  notifMenu: {
+    position: "absolute",
+    right: 64,
+    top: 52,
+    width: 260,
+    background: "#FFFFFF",
+    borderRadius: 12,
+    border: "1px solid #E5E7EB",
+    boxShadow: "0 16px 40px rgba(15,23,42,0.15)",
+    display: "flex",
+    flexDirection: "column",
+    maxHeight: 360,
+  },
+  notifHeader: {
+    padding: "8px 10px 4px",
+    borderBottom: "1px solid #E5E7EB",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  notifTitle: {
+    fontSize: 13,
+    fontWeight: 600,
+  },
+  markAllBtn: {
+    border: "none",
+    background: "transparent",
+    fontSize: 11,
+    color: "#0D658B",
+    cursor: "pointer",
+  },
+  notifList: {
+    padding: "4px 0",
+    overflowY: "auto",
+    flex: 1,
+  },
+  notifEmpty: {
+    padding: "12px 10px",
+    fontSize: 12,
+    color: "#9CA3AF",
+    textAlign: "center",
+  },
+  notifItem: (unread) => ({
+    width: "100%",
+    textAlign: "left",
+    border: "none",
+    background: unread ? "rgba(219, 234, 254, 0.6)" : "#FFFFFF",
+    padding: "8px 10px",
+    cursor: "pointer",
+    borderBottom: "1px solid #E5E7EB",
+  }),
+  notifItemTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 2,
+  },
+  notifItemTitle: {
+    fontSize: 12,
+    fontWeight: 600,
+  },
+  notifItemBody: {
+    fontSize: 12,
+    color: "#4B5563",
+  },
+  notifItemTime: {
+    marginTop: 2,
+    fontSize: 11,
+    color: "#9CA3AF",
+  },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    background: "#0EA5E9",
+  },
+  clearBtn: {
+    borderTop: "1px solid #E5E7EB",
+    padding: "6px 10px",
+    fontSize: 12,
+    background: "#F9FAFB",
+    borderRadius: "0 0 12px 12px",
+    border: "none",
+    cursor: "pointer",
+    color: "#4B5563",
+  },
 };

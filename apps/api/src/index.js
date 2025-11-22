@@ -34,8 +34,9 @@ import driversRouter from "../routes/drivers.js";
 import driverProfileRouter from "../routes/driver.profile.js";
 import commuterTripsRouter from "../routes/commuter.trips.js";
 import driverRatingsRouter from "../routes/driver.ratings.js";
-
-
+import driverReportsRouter from "../routes/driver.reports.js"; // commuter reports for driver
+import adminFeedbackRouter from "../routes/admin.feedback.js";
+import adminIncidentsRouter from "./routes/admin.incidents.js";
 
 const app = express();
 const prisma = new PrismaClient();
@@ -122,6 +123,12 @@ app.get("/health", async (_req, res) => {
 
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
+/* ---------- QR images (driver QR codes) ---------- */
+app.use(
+  "/driver-qr",
+  express.static(path.join(process.cwd(), "public", "driver-qr"))
+);
+
 /* ---------- routers ---------- */
 app.use("/maps", mapsRouter);
 app.use("/api/trips", tripsRouter);
@@ -130,7 +137,10 @@ app.use("/drivers", requireAuth, driversRouter);
 app.use("/driver", requireAuth, driverProfileRouter);
 app.use("/admin", requireAuth, requireAdmin, adminDriversRouter);
 app.use("/commuter", requireUserAuth, commuterTripsRouter);
-app.use("/driver", driverRatingsRouter);
+app.use("/driver", requireAuth, driverRatingsRouter);
+app.use("/driver", requireAuth, driverReportsRouter);
+app.use("/admin", adminFeedbackRouter);
+app.use("/admin/incidents", adminIncidentsRouter);
 
 /* ---------- auth endpoints ---------- */
 app.post("/auth/login", async (req, res) => {
@@ -160,6 +170,11 @@ app.post("/auth/login", async (req, res) => {
       token: sign(user),
       role: user.role,
       mustChangePassword: user.mustChangePassword || false,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+      },
     });
   } catch (e) {
     if (e instanceof z.ZodError)
@@ -212,7 +227,8 @@ app.post("/auth/register", async (req, res) => {
                   commuterProfile: {
                     update: {
                       fullName,
-                      address: address ?? existing.commuterProfile.address ?? null,
+                      address:
+                        address ?? existing.commuterProfile.address ?? null,
                       language:
                         language ?? existing.commuterProfile.language ?? "en",
                     },
@@ -344,7 +360,9 @@ app.post("/auth/verify-otp", async (req, res) => {
 
     const record = otpStore.get(key);
     if (!record)
-      return res.status(400).json({ message: "No OTP found. Please request again." });
+      return res
+        .status(400)
+        .json({ message: "No OTP found. Please request again." });
     if (Date.now() > record.expiresAt) {
       otpStore.delete(key);
       return res.status(400).json({ message: "OTP expired. Request again." });
@@ -371,17 +389,14 @@ app.post("/auth/verify-otp", async (req, res) => {
 
 /* ---------- buses (admin) ---------- */
 app.get("/buses", requireAuth, requireAdmin, async (req, res) => {
-  // accept busType, type, or vehicleType as query param
-  const { busType, type, vehicleType, active } = req.query;
+  const { busType, type, vehicleType, active, status, corridor } = req.query;
   const typeParam = busType || type || vehicleType;
 
   const where = {
-    ...(typeParam
-      ? { busType: String(typeParam).toUpperCase() }
-      : {}),
-    ...(active != null
-      ? { isActive: String(active) === "true" }
-      : {}),
+    ...(typeParam ? { busType: String(typeParam).toUpperCase() } : {}),
+    ...(active != null ? { isActive: String(active) === "true" } : {}),
+    ...(status ? { status: String(status).toUpperCase() } : {}),
+    ...(corridor ? { corridor: String(corridor).toUpperCase() } : {}),
   };
 
   const buses = await prisma.bus.findMany({
@@ -390,7 +405,6 @@ app.get("/buses", requireAuth, requireAdmin, async (req, res) => {
   });
   res.json(buses);
 });
-
 
 app.get("/buses/:id", requireAuth, requireAdmin, async (req, res) => {
   const bus = await prisma.bus.findUnique({ where: { id: req.params.id } });
@@ -417,10 +431,41 @@ app.post("/buses", requireAuth, requireAdmin, async (req, res) => {
       number: z.string().min(1),
       plate: z.string().min(1),
       busType: z.enum(["AIRCON", "NON_AIRCON"]),
+      status: z.enum(["ACTIVE", "IN_MAINTENANCE", "INACTIVE"]).optional(),
+      corridor: z.enum(["EAST", "WEST"]).optional(),
       isActive: z.boolean().optional(),
+
+      // NEW: route details
+      routeId: z.string().optional(),
+      forwardRoute: z.string().optional(),
+      returnRoute: z.string().optional(),
     });
+
     const input = schema.parse(req.body);
-    const bus = await prisma.bus.create({ data: input });
+
+    const finalStatus = (input.status || "ACTIVE").toUpperCase();
+    const finalCorridor = (input.corridor || "EAST").toUpperCase();
+
+    const bus = await prisma.bus.create({
+      data: {
+        number: input.number,
+        plate: input.plate,
+        busType: input.busType,
+        status: finalStatus,
+        corridor: finalCorridor,
+        isActive:
+          typeof input.isActive === "boolean"
+            ? input.isActive
+            : finalStatus === "ACTIVE",
+
+        // save to DB
+        routeId: input.routeId || null,
+        forwardRoute: input.forwardRoute || null,
+        returnRoute: input.returnRoute || null,
+      },
+    });
+
+    console.log("CREATE BUS:", bus.id, bus.number, bus.plate);
     res.status(201).json(bus);
   } catch (e) {
     if (e?.code === "P2002")
@@ -440,13 +485,36 @@ app.put("/buses/:id", requireAuth, requireAdmin, async (req, res) => {
       number: z.string().min(1).optional(),
       plate: z.string().min(1).optional(),
       busType: z.enum(["AIRCON", "NON_AIRCON"]).optional(),
+      status: z.enum(["ACTIVE", "IN_MAINTENANCE", "INACTIVE"]).optional(),
+      corridor: z.enum(["EAST", "WEST"]).optional(),
       isActive: z.boolean().optional(),
+
+      // NEW: route details
+      routeId: z.string().optional(),
+      forwardRoute: z.string().optional(),
+      returnRoute: z.string().optional(),
     });
+
     const input = schema.parse(req.body);
+
+    const data = {
+      ...input,
+      ...(input.status
+        ? {
+            status: input.status,
+            ...(input.isActive === undefined
+              ? { isActive: input.status === "ACTIVE" }
+              : {}),
+          }
+        : {}),
+      ...(input.corridor ? { corridor: input.corridor } : {}),
+    };
+
     const bus = await prisma.bus.update({
       where: { id: req.params.id },
-      data: input,
+      data,
     });
+
     res.json(bus);
   } catch (e) {
     if (e?.code === "P2025")
@@ -468,7 +536,7 @@ app.delete("/buses/:id", requireAuth, requireAdmin, async (req, res) => {
     if (soft) {
       const bus = await prisma.bus.update({
         where: { id: req.params.id },
-        data: { isActive: false },
+        data: { isActive: false, status: "INACTIVE" },
       });
       return res.json({ message: "Bus deactivated", bus });
     }
@@ -501,26 +569,36 @@ app.get("/users/me", requireAuth, async (req, res) => {
     });
 
     const commuter = me.commuterProfile;
+    const driverProfile = me.driverProfile;
+
+    const driverQrRel = driverProfile?.qrUrl || null;
+    const driverQrAbs = driverQrRel ? abs(req, driverQrRel) : null;
+
     res.json({
       id: me.id,
       email: me.email,
       phone: me.phone,
       role: me.role,
       status: me.status,
-      fullName: me.driverProfile?.fullName ?? commuter?.fullName ?? null,
-      address: me.driverProfile?.address ?? commuter?.address ?? null,
+      fullName: driverProfile?.fullName ?? commuter?.fullName ?? null,
+      address: driverProfile?.address ?? commuter?.address ?? null,
       language: commuter?.language ?? "en",
       profileUrl: commuter?.profileUrl ? abs(req, commuter.profileUrl) : null,
       emergencyContacts: contacts,
-      driver: me.driverProfile
+
+      qrUrl: driverQrAbs,
+      driverQrUrl: driverQrAbs,
+
+      driver: driverProfile
         ? {
-            bus: me.driverProfile.bus
+            qrUrl: driverQrAbs,
+            bus: driverProfile.bus
               ? {
-                  id: me.driverProfile.bus.id,
-                  number: me.driverProfile.bus.number,
-                  plate: me.driverProfile.bus.plate,
-                  type: me.driverProfile.bus.busType,
-                  isActive: me.driverProfile.bus.isActive,
+                  id: driverProfile.bus.id,
+                  number: driverProfile.bus.number,
+                  plate: driverProfile.bus.plate,
+                  type: driverProfile.bus.busType,
+                  isActive: driverProfile.bus.isActive,
                 }
               : null,
           }

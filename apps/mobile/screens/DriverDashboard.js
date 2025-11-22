@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   Image,
   RefreshControl,
+  Alert,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -21,6 +23,7 @@ import {
 import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL } from "../constants/config";
+import DriverQR from "./DriverQR";
 
 /* ---------- Colors ---------- */
 const C = {
@@ -29,7 +32,6 @@ const C = {
   border: "#E5E7EB",
   text: "#111827",
   sub: "#6B7280",
-  hint: "#9CA3AF",
   brand: "#0B132B",
   star: "#F59E0B",
   danger: "#B91C1C",
@@ -37,43 +39,52 @@ const C = {
 };
 
 /* ---------- Tiny helpers ---------- */
-const StarRow = ({ rating = 0, size = 16 }) => {
-  const n = Math.max(0, Math.min(5, Math.round(Number(rating) || 0)));
+const QuickBox = ({ icon, title, subtitle, variant = "default", onPress }) => {
+  let bg = "#F9FAFB";
+  let border = C.border;
+  let iconColor = C.sub;
+  let titleColor = C.text;
+
+  if (variant === "primary") {
+    bg = C.brand;
+    border = C.brand;
+    iconColor = "#E5E7EB";
+    titleColor = "#FFFFFF";
+  } else if (variant === "danger") {
+    bg = "#FEE2E2";
+    border = "#FCA5A5";
+    iconColor = C.danger;
+    titleColor = C.danger;
+  } else if (variant === "accent") {
+    bg = "#DBEAFE";
+    border = "#93C5FD";
+    iconColor = "#1D4ED8";
+    titleColor = "#1D4ED8";
+  }
+
   return (
-    <View style={{ flexDirection: "row", gap: 2 }}>
-      {Array.from({ length: 5 }).map((_, i) => (
-        <MaterialCommunityIcons
-          key={i}
-          name={i < n ? "star" : "star-outline"}
-          size={size}
-          color={C.star}
-        />
-      ))}
-    </View>
+    <TouchableOpacity
+      style={[styles.quickBox, { backgroundColor: bg, borderColor: border }]}
+      activeOpacity={0.85}
+      onPress={onPress}
+    >
+      <View style={styles.quickBoxIconWrap}>
+        <MaterialCommunityIcons name={icon} size={20} color={iconColor} />
+      </View>
+      <Text
+        style={[styles.quickBoxTitle, { color: titleColor }]}
+        numberOfLines={1}
+      >
+        {title}
+      </Text>
+      {!!subtitle && (
+        <Text style={styles.quickBoxSubtitle} numberOfLines={2}>
+          {subtitle}
+        </Text>
+      )}
+    </TouchableOpacity>
   );
 };
-
-const EmptyState = ({ title, subtitle, icon = "comment-off-outline" }) => (
-  <View style={styles.emptyWrap}>
-    <MaterialCommunityIcons name={icon} size={32} color={C.hint} />
-    <Text style={styles.emptyTitle}>{title}</Text>
-    {!!subtitle && <Text style={styles.emptySub}>{subtitle}</Text>}
-  </View>
-);
-
-function timeAgo(dateLike) {
-  try {
-    const dt = dateLike ? new Date(dateLike) : null;
-    if (!dt || isNaN(dt.getTime())) return "";
-    const diff = (Date.now() - dt.getTime()) / 1000;
-    if (diff < 60) return "just now";
-    if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`;
-    return `${Math.floor(diff / 86400)} day(s) ago`;
-  } catch {
-    return "";
-  }
-}
 
 export default function DriverDashboard({ navigation }) {
   const [fontsLoaded] = useFonts({
@@ -82,48 +93,107 @@ export default function DriverDashboard({ navigation }) {
     Poppins_700Bold,
   });
 
-  // TODO: replace with data from /driver/me later
-  const [driver] = useState({ fullName: "Driver", avatar: null });
+  const [driver, setDriver] = useState({ fullName: "Driver", avatar: null });
 
   const [loading, setLoading] = useState(true);
-  const [feedbacks, setFeedbacks] = useState([]); // list of RideRating
   const [avgRating, setAvgRating] = useState(0);
   const [totalRatings, setTotalRatings] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
+  const [tripsToday] = useState(0);
+  const [reportsToday] = useState(0);
+
+  const [isOnDuty, setIsOnDuty] = useState(false);
+
+  // 🔹 QR modal state
+  const [showQrModal, setShowQrModal] = useState(false);
+
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      // Try driverToken first, then fallback to token
       const token =
         (await AsyncStorage.getItem("driverToken")) ||
         (await AsyncStorage.getItem("token"));
 
-      console.log("[DriverDashboard] using token =", !!token);
+      const headers = {
+        "Content-Type": "application/json",
+        Authorization: token ? `Bearer ${token}` : "",
+      };
 
-      const res = await fetch(`${API_URL}/driver/ratings`, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: token ? `Bearer ${token}` : "",
-        },
-      });
+      /* -------- ratings -------- */
+      try {
+        const res = await fetch(`${API_URL}/driver/ratings`, { headers });
+        const data = await res.json().catch(() => ({}));
 
-      const data = await res.json().catch(() => ({}));
-      console.log("[DriverDashboard] /driver/ratings response =", data);
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to load ratings");
+        }
 
-      if (!res.ok) {
-        console.log("[DriverDashboard] ratings error =", data);
-        throw new Error(data.error || "Failed to load ratings");
+        setAvgRating(data.averageScore || 0);
+        setTotalRatings(data.totalRatings || 0);
+      } catch (e) {
+        console.log("[DriverDashboard] load ratings error", e);
+        setAvgRating(0);
+        setTotalRatings(0);
       }
 
-      setAvgRating(data.averageScore || 0);
-      setTotalRatings(data.totalRatings || 0);
-      setFeedbacks(Array.isArray(data.items) ? data.items : []);
+      /* -------- profile / name for header -------- */
+      try {
+        let profileData = null;
+
+        // try /driver/me
+        try {
+          const r1 = await fetch(`${API_URL}/driver/me`, { headers });
+          if (r1.ok) {
+            const j1 = await r1.json().catch(() => ({}));
+            profileData = j1?.data ?? j1;
+          }
+        } catch {}
+
+        // fallback /driver/profile
+        if (!profileData) {
+          try {
+            const r2 = await fetch(`${API_URL}/driver/profile`, { headers });
+            if (r2.ok) {
+              const j2 = await r2.json().catch(() => ({}));
+              profileData = j2?.data ?? j2;
+            }
+          } catch {}
+        }
+
+        // fallback /users/me
+        if (!profileData) {
+          try {
+            const r3 = await fetch(`${API_URL}/users/me`, { headers });
+            if (r3.ok) {
+              const j3 = await r3.json().catch(() => ({}));
+              profileData = j3?.data ?? j3;
+            }
+          } catch {}
+        }
+
+        if (profileData) {
+          const driverProfile = profileData.driverProfile ?? {};
+          const fullName =
+            profileData.fullName ||
+            driverProfile.fullName ||
+            profileData.name ||
+            "Driver";
+
+          const avatar =
+            profileData.profileUrl ||
+            profileData.avatarUrl ||
+            driverProfile.profileUrl ||
+            driverProfile.avatarUrl ||
+            null;
+
+          setDriver({ fullName, avatar });
+        }
+      } catch (e) {
+        console.log("[DriverDashboard] load driver profile error", e);
+      }
     } catch (e) {
-      console.log("[DriverDashboard] load ratings error", e);
-      setAvgRating(0);
-      setTotalRatings(0);
-      setFeedbacks([]);
+      console.log("[DriverDashboard] reload error", e);
     } finally {
       setLoading(false);
     }
@@ -145,6 +215,31 @@ export default function DriverDashboard({ navigation }) {
     setRefreshing(false);
   }, [reload]);
 
+  const handleToggleDuty = () => {
+    setIsOnDuty((prev) => !prev);
+  };
+
+  const handleStartTrip = () => {
+    if (!isOnDuty) {
+      Alert.alert("Off duty", "Switch ON duty first to start a trip.");
+      return;
+    }
+    navigation?.navigate?.("DriverTracking");
+  };
+
+  const hasRatings = totalRatings > 0 && (avgRating || 0) > 0;
+
+  let avgDisplay = "No ratings yet";
+
+  if (hasRatings) {
+    const rounded = Math.round((avgRating || 0) * 10) / 10;
+    const isWhole = Math.abs(rounded - Math.round(rounded)) < 0.001;
+    const scoreStr = isWhole
+      ? `${Math.round(rounded)}`
+      : rounded.toFixed(1);
+    avgDisplay = `${scoreStr} / 5`;
+  }
+
   if (!fontsLoaded) {
     return (
       <SafeAreaView
@@ -155,195 +250,233 @@ export default function DriverDashboard({ navigation }) {
     );
   }
 
+  const avgMiniNumber = hasRatings ? avgDisplay.replace(" / 5", "") : "—";
+  const tripsNumber = typeof tripsToday === "number" ? tripsToday : "—";
+  const reportsNumber = typeof reportsToday === "number" ? reportsToday : "—";
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: C.bg }]}>
       <StatusBar style="dark" />
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: 24 }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-      >
-        {/* Header Card */}
-        <TouchableOpacity
-          activeOpacity={0.8}
-          style={styles.headerCard}
-          onPress={() => navigation?.navigate?.("Profile")}
+
+      <View style={{ flex: 1 }}>
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: 32 }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
         >
-          <View style={styles.headerLeft}>
-            <View style={styles.avatar}>
-              {driver?.avatar ? (
-                <Image source={{ uri: driver.avatar }} style={styles.avatarImg} />
-              ) : (
-                <Text style={styles.avatarLetter}>
-                  {(driver?.fullName?.[0] || "D").toUpperCase()}
-                </Text>
-              )}
-            </View>
-            <View style={{ flex: 1 }}>
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  marginBottom: 4,
-                }}
-              >
-                <MaterialCommunityIcons
-                  name="bus"
-                  size={16}
-                  color="#fff"
-                  style={{ marginRight: 6 }}
-                />
-                <Text style={styles.brandText}>LigtasCommute</Text>
-              </View>
-
-              <Text style={styles.driverName} numberOfLines={1}>
-                {driver?.fullName || "—"}
-              </Text>
-
-              <Text style={styles.driverRole}>Professional Driver</Text>
-
-              {/* Rating summary */}
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  marginTop: 8,
-                  gap: 6,
-                }}
-              >
-                <StarRow rating={avgRating || 0} size={14} />
-                <Text
-                  style={{
-                    color: "#FBBF24",
-                    fontFamily: "Poppins_600SemiBold",
-                    fontSize: 12,
-                  }}
-                >
-                  {totalRatings > 0
-                    ? `${(avgRating || 0).toFixed(1)} / 5`
-                    : "No ratings yet"}
-                </Text>
-                {totalRatings > 0 && (
-                  <Text
-                    style={{
-                      color: "#E5E7EB",
-                      fontFamily: "Poppins_400Regular",
-                      fontSize: 11,
-                    }}
-                  >
-                    ({totalRatings} ratings)
-                  </Text>
-                )}
-              </View>
-            </View>
-          </View>
-        </TouchableOpacity>
-
-        {/* Tabs Row */}
-        <View style={styles.tabs}>
-          <Tab icon="home" label="Home" active />
-          <Tab
-            icon="map-marker-path"
-            label="Tracking"
-            onPress={() => navigation?.navigate?.("DriverTracking")}
-          />
-          <Tab
-            icon="cog"
-            label="Settings"
-            onPress={() => navigation?.navigate?.("DriverSettings")}
-          />
-        </View>
-
-        {/* Feedback Section – real ratings now */}
-        <View style={styles.section}>
-          <View style={styles.sectionHead}>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <MaterialCommunityIcons
-                name="message-text-outline"
-                size={18}
-                color={C.text}
-              />
-              <Text style={styles.sectionTitle}>  Feedback</Text>
-            </View>
-            <TouchableOpacity onPress={onRefresh}>
-              <Text style={styles.markAll}>Refresh</Text>
-            </TouchableOpacity>
-          </View>
-
-          {loading ? (
-            <View style={styles.loadingArea}>
-              <ActivityIndicator />
-              <Text style={styles.loadingText}>Loading feedback…</Text>
-            </View>
-          ) : feedbacks.length === 0 ? (
-            <EmptyState
-              title="No feedback yet"
-              subtitle="You’ll see passenger ratings and comments here once they start reviewing trips."
-            />
-          ) : (
-            feedbacks.map((f) => {
-              const score = Number(f.score) || 0;
-              const hasComment = !!(f.comment && f.comment.trim());
-              return (
-                <View key={String(f.id)} style={styles.feedbackCard}>
-                  <View style={styles.feedRowTop}>
-                    <Text style={styles.feedAuthor}>Anonymous passenger</Text>
-                    <StarRow rating={score} size={14} />
-                  </View>
-
-                  {hasComment ? (
-                    <Text style={styles.feedMsg} numberOfLines={4}>
-                      {f.comment}
-                    </Text>
+          {/* Header Card – profile + ON/OFF toggle */}
+          <View style={styles.headerCard}>
+            <View style={styles.headerRow}>
+              <View style={styles.headerLeft}>
+                <View style={styles.avatar}>
+                  {driver?.avatar ? (
+                    <Image
+                      source={{ uri: driver.avatar }}
+                      style={styles.avatarImg}
+                    />
                   ) : (
-                    <View style={{ marginTop: 4 }}>
-                      <Text style={styles.noCommentLabel}>
-                        No written comment
-                      </Text>
-                      <Text style={styles.noCommentHint}>
-                        Passenger chose to rate this trip without a message.
-                      </Text>
-                    </View>
+                    <Text style={styles.avatarLetter}>
+                      {(driver?.fullName?.[0] || "D").toUpperCase()}
+                    </Text>
                   )}
-
-                  <Text style={styles.feedTime}>{timeAgo(f.createdAt)}</Text>
                 </View>
-              );
-            })
-          )}
-        </View>
-      </ScrollView>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.driverName} numberOfLines={1}>
+                    {driver?.fullName || "—"}
+                  </Text>
+
+                  <Text style={styles.driverRole}>LigtasCommute Driver</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                onPress={handleToggleDuty}
+                activeOpacity={0.8}
+                style={[
+                  styles.dutyToggle,
+                  {
+                    backgroundColor: isOnDuty
+                      ? "rgba(16,185,129,0.12)"
+                      : "rgba(31,41,55,0.45)",
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.dutyDot,
+                    { backgroundColor: isOnDuty ? C.success : "#9CA3AF" },
+                  ]}
+                />
+                <Text
+                  style={[
+                    styles.dutyText,
+                    { color: isOnDuty ? "#A7F3D0" : "#E5E7EB" },
+                  ]}
+                >
+                  {isOnDuty ? "On duty" : "Off duty"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Today overview mini cards */}
+          <View style={styles.todayRow}>
+            <View style={styles.todayCard}>
+              <Text style={styles.todayLabel}>Trips today</Text>
+              <View style={styles.todayValueRow}>
+                <MaterialCommunityIcons
+                  name="bus-clock"
+                  size={16}
+                  color={C.text}
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={styles.todayValue}>{tripsNumber}</Text>
+              </View>
+            </View>
+
+            <View style={styles.todayCard}>
+              <Text style={styles.todayLabel}>Avg rating</Text>
+              <View style={styles.todayValueRow}>
+                <MaterialCommunityIcons
+                  name="star"
+                  size={16}
+                  color={C.star}
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={styles.todayValue}>{avgMiniNumber}</Text>
+              </View>
+            </View>
+
+            <View style={styles.todayCard}>
+              <Text style={styles.todayLabel}>Avg reports</Text>
+              <View style={styles.todayValueRow}>
+                <MaterialCommunityIcons
+                  name="file-document-outline"
+                  size={16}
+                  color={C.text}
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={styles.todayValue}>{reportsNumber}</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Quick Actions Grid */}
+          <View style={styles.section}>
+            <View style={styles.sectionHead}>
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <MaterialCommunityIcons
+                  name="lightning-bolt"
+                  size={18}
+                  color={C.text}
+                />
+                <Text style={styles.sectionTitle}>  Quick actions</Text>
+              </View>
+              {loading ? (
+                <ActivityIndicator size="small" color={C.sub} />
+              ) : null}
+            </View>
+
+            <View style={styles.quickGrid}>
+              <QuickBox
+                icon="play-circle-outline"
+                title="Start Trip"
+                subtitle={
+                  isOnDuty ? "Begin live tracking" : "Go ON duty first"
+                }
+                variant="primary"
+                onPress={handleStartTrip}
+              />
+
+              {/* QR Code – now opens modal */}
+              <QuickBox
+                icon="qrcode"
+                title="My QR Code"
+                subtitle={
+                  isOnDuty ? "QR ready to scan" : "QR disabled while off duty"
+                }
+                variant="accent"
+                onPress={() => {
+                  if (!isOnDuty) {
+                    Alert.alert(
+                      "QR disabled",
+                      "Turn ON duty first to show your QR code."
+                    );
+                    return;
+                  }
+                  setShowQrModal(true);
+                }}
+              />
+
+              <QuickBox
+                icon="history"
+                title="Trip History"
+                subtitle="View completed trips"
+                onPress={() => navigation?.navigate?.("DriverTripHistory")}
+              />
+
+              <QuickBox
+                icon="file-document-alert-outline"
+                title="Reports"
+                subtitle="View commuter reports"
+                onPress={() => navigation?.navigate?.("DriverReports")}
+              />
+
+              <QuickBox
+                icon="star-circle-outline"
+                title="Ratings"
+                subtitle="View commuter ratings"
+                onPress={() => {
+                  navigation?.navigate?.("DriverRatings");
+                }}
+              />
+
+              <QuickBox
+                icon="account-circle-outline"
+                title="Profile"
+                subtitle="View & edit profile"
+                onPress={() => navigation?.navigate?.("DriverSettings")}
+              />
+            </View>
+          </View>
+        </ScrollView>
+      </View>
+
+      {/* 🔹 QR Modal */}
+      <Modal
+        visible={showQrModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowQrModal(false)}
+      >
+        <DriverQR onClose={() => setShowQrModal(false)} />
+      </Modal>
     </SafeAreaView>
   );
 }
 
-/* ---------- Small components ---------- */
-const Tab = ({ icon, label, active, onPress }) => (
-  <TouchableOpacity
-    style={[styles.tabBtn, active && styles.tabActive]}
-    activeOpacity={0.8}
-    onPress={onPress}
-  >
-    <MaterialCommunityIcons
-      name={icon}
-      size={20}
-      color={active ? "#fff" : C.sub}
-    />
-    <Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text>
-  </TouchableOpacity>
-);
-
 /* ---------- Styles ---------- */
 const styles = StyleSheet.create({
   safe: { flex: 1 },
+
   headerCard: {
     margin: 16,
     padding: 16,
     backgroundColor: C.brand,
-    borderRadius: 14,
+    borderRadius: 18,
   },
-  headerLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
   avatar: {
     width: 48,
     height: 48,
@@ -358,134 +491,109 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_700Bold",
     fontSize: 16,
   },
-  brandText: { color: "#fff", fontFamily: "Poppins_600SemiBold", fontSize: 12 },
   driverName: {
     color: "#fff",
     fontFamily: "Poppins_700Bold",
     fontSize: 18,
-    marginTop: 2,
   },
   driverRole: {
     color: "#E5E7EB",
     fontFamily: "Poppins_400Regular",
     fontSize: 12,
+    marginTop: 2,
+  },
+  dutyToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  dutyDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  dutyText: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 11,
   },
 
-  tabs: {
-    marginHorizontal: 16,
-    backgroundColor: "#fff",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: C.border,
+  todayRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    padding: 10,
+    marginHorizontal: 16,
+    marginTop: 4,
     gap: 8,
   },
-  tabBtn: {
+  todayCard: {
     flex: 1,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: "center",
+    backgroundColor: C.card,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
     borderWidth: 1,
     borderColor: C.border,
-    backgroundColor: "#F9FAFB",
-    flexDirection: "column",
-    gap: 6,
   },
-  tabActive: { backgroundColor: C.brand, borderColor: C.brand },
-  tabText: {
-    fontFamily: "Poppins_600SemiBold",
+  todayLabel: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 11,
     color: C.sub,
-    fontSize: 12,
+    marginBottom: 4,
   },
-  tabTextActive: { color: "#fff" },
+  todayValueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  todayValue: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 14,
+    color: C.text,
+  },
 
-  section: { marginHorizontal: 16, marginTop: 16 },
+  section: { marginHorizontal: 16, marginTop: 18 },
   sectionHead: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 10,
+    marginBottom: 12,
   },
   sectionTitle: {
     fontFamily: "Poppins_700Bold",
     color: C.text,
     fontSize: 16,
   },
-  markAll: {
-    fontFamily: "Poppins_600SemiBold",
-    color: C.brand,
-    fontSize: 12,
-  },
 
-  loadingArea: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 12,
-    paddingVertical: 24,
-    alignItems: "center",
-    gap: 8,
-  },
-  loadingText: { color: C.sub, fontFamily: "Poppins_400Regular" },
-
-  feedbackCard: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-  },
-  feedRowTop: {
+  quickGrid: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 6,
+    flexWrap: "wrap",
+    gap: 10,
   },
-  feedAuthor: {
-    fontFamily: "Poppins_700Bold",
-    color: C.text,
-    fontSize: 13,
-  },
-  feedMsg: { color: C.text, fontFamily: "Poppins_400Regular", fontSize: 12 },
-  noCommentLabel: {
-    fontFamily: "Poppins_500Medium",
-    fontSize: 12,
-    color: C.sub,
-  },
-  noCommentHint: {
-    fontFamily: "Poppins_400Regular",
-    fontSize: 11,
-    color: C.hint,
-    marginTop: 2,
-  },
-  feedTime: {
-    color: C.hint,
-    fontFamily: "Poppins_400Regular",
-    fontSize: 11,
-    marginTop: 8,
-  },
-
-  emptyWrap: {
-    backgroundColor: "#fff",
+  quickBox: {
+    width: "48%",
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 12,
-    paddingVertical: 28,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  quickBoxIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 999,
+    justifyContent: "center",
     alignItems: "center",
-    gap: 6,
+    marginBottom: 6,
+    backgroundColor: "rgba(255,255,255,0.55)",
   },
-  emptyTitle: {
-    fontFamily: "Poppins_600SemiBold",
-    color: C.sub,
+  quickBoxTitle: {
+    fontFamily: "Poppins_700Bold",
     fontSize: 13,
+    marginBottom: 2,
   },
-  emptySub: {
+  quickBoxSubtitle: {
     fontFamily: "Poppins_400Regular",
-    color: C.hint,
-    fontSize: 12,
-    textAlign: "center",
-    paddingHorizontal: 16,
+    fontSize: 11,
+    color: C.sub,
   },
 });

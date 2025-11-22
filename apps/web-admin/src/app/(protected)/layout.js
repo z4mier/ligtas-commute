@@ -14,7 +14,9 @@ export default function ProtectedLayout({ children }) {
   useEffect(() => {
     if (once.current) return;
     once.current = true;
-    const token = typeof window !== "undefined" && localStorage.getItem("lc_token");
+
+    const token =
+      typeof window !== "undefined" && localStorage.getItem("lc_token");
     if (!token) {
       const next = encodeURIComponent(path || "/dashboard");
       r.replace(`/login?next=${next}`);
@@ -26,15 +28,21 @@ export default function ProtectedLayout({ children }) {
   if (!ready) return null;
 
   return (
-    // Topbar spans full width; sidebar/content are below it
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)", color: "var(--text)" }}>
-      <Topbar />  {/* 👈 always at the very top */}
+    // Topbar full width; sidebar + content below
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        background: "var(--bg)",
+        color: "var(--text)",
+      }}
+    >
+      <Topbar />
 
       <div style={{ display: "flex", flex: 1 }}>
-        <Sidebar /> {/* left rail */}
-        <main style={{ flex: 1, padding: "20px 24px" }}>
-          {children}
-        </main>
+        <Sidebar />
+        <main style={{ flex: 1, padding: "20px 24px" }}>{children}</main>
       </div>
     </div>
   );

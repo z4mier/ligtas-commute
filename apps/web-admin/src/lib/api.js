@@ -1,4 +1,4 @@
-// src/lib/api.js
+// apps/web-admin/src/lib/api.js
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   process.env.NEXT_PUBLIC_API ||
@@ -65,7 +65,7 @@ async function request(path, { method = "GET", headers, body } = {}) {
   if (!res.ok) {
     if (res.status === 401) apiLogout();
     const err = new Error(data.error || data.message || `Error ${res.status}`);
-    err.status = res.status; // 👈 keep HTTP status so callers can branch
+    err.status = res.status;
     throw err;
   }
 
@@ -76,21 +76,46 @@ export async function API(path, options = {}) {
   return request(path, options);
 }
 
+/* ---------- BUSES (ADMIN) ---------- */
+
+export async function listBuses(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  return request(`/buses${qs ? `?${qs}` : ""}`);
+}
+
+export async function getBus(id) {
+  return request(`/buses/${id}`);
+}
+
+export async function createBus(payload) {
+  // payload: { number, plate, busType, status?, corridor?, isActive?, routeId?, forwardRoute?, returnRoute? }
+  return request("/buses", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function updateBus(id, payload) {
+  return request(`/buses/${id}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export async function setBusStatus(id, status) {
+  // convenience: only update status
+  return updateBus(id, { status });
+}
+
 /* ---------- DRIVERS ---------- */
 
-/**
- * List drivers.
- * Tries /admin/driver-profiles then falls back to /admin/drivers if 404.
- */
 export async function listDrivers() {
   try {
     const data = await request("/admin/driver-profiles");
     return data?.items ?? [];
   } catch (err) {
     if (err.status === 404) {
-      // maybe older route name
       const data = await request("/admin/drivers");
-      // some backends return { items: [...] }, some return [...];
       return Array.isArray(data?.items) ? data.items : data ?? [];
     }
     throw err;
@@ -108,14 +133,7 @@ export async function getDriver(id) {
   }
 }
 
-/**
- * Create a driver.
- * 1) POST /admin/driver-profiles
- * 2) if 404, POST /admin/create-driver
- * 3) if still 404, POST /admin/drivers
- */
 export async function createDriver(payload) {
-  // prefer RESTful route
   try {
     return await request("/admin/driver-profiles", {
       method: "POST",
@@ -124,7 +142,6 @@ export async function createDriver(payload) {
   } catch (err) {
     if (err.status !== 404) throw err;
 
-    // legacy path 1
     try {
       return await request("/admin/create-driver", {
         method: "POST",
@@ -133,7 +150,6 @@ export async function createDriver(payload) {
     } catch (err2) {
       if (err2.status !== 404) throw err2;
 
-      // legacy path 2
       return request("/admin/drivers", {
         method: "POST",
         body: payload,
@@ -149,10 +165,6 @@ export async function previewIdentifiers({ busNumber, plateNumber }) {
   });
 }
 
-/**
- * Update driver active / inactive status.
- * Try /admin/driver-status, fall back if needed.
- */
 export async function setDriverStatus({ driverId, status }) {
   try {
     return await request("/admin/driver-status", {
@@ -161,11 +173,72 @@ export async function setDriverStatus({ driverId, status }) {
     });
   } catch (err) {
     if (err.status === 404) {
-      // maybe older route like /admin/drivers/status
       return request("/admin/drivers/status", {
         method: "PATCH",
         body: { driverId, status },
       });
+    }
+    throw err;
+  }
+}
+
+/* ---------- FEEDBACK (ADMIN) ---------- */
+
+export async function listFeedback(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  return request(`/admin/feedback${qs ? `?${qs}` : ""}`);
+}
+
+export async function getFeedback(id) {
+  return request(`/admin/feedback/${id}`);
+}
+
+/* ---------- INCIDENTS (ADMIN) ---------- */
+
+export async function listIncidents(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+
+  try {
+    // primary admin incidents endpoint
+    return await request(`/admin/incidents${qs ? `?${qs}` : ""}`);
+  } catch (err) {
+    if (err.status === 404) {
+      // fallback to generic emergency-incidents
+      try {
+        return await request(
+          `/emergency-incidents${qs ? `?${qs}` : ""}`
+        );
+      } catch (err2) {
+        // if this also doesn't exist, just return empty list
+        if (err2.status === 404) {
+          return [];
+        }
+        throw err2;
+      }
+    }
+    throw err;
+  }
+}
+
+/* ---------- NOTIFICATIONS (ADMIN) ---------- */
+
+export async function listNotifications(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+
+  try {
+    // admin notifications (for bell)
+    return await request(`/admin/notifications${qs ? `?${qs}` : ""}`);
+  } catch (err) {
+    if (err.status === 404) {
+      // fallback to generic /notifications
+      try {
+        return await request(`/notifications${qs ? `?${qs}` : ""}`);
+      } catch (err2) {
+        if (err2.status === 404) {
+          return [];
+        }
+        throw err2;
+      }
     }
     throw err;
   }
