@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { listIncidents } from "@/lib/api";
+import { listIncidents, authHeaders } from "@/lib/api";
 import { X as XIcon } from "lucide-react";
 
 /* small date helpers */
@@ -35,6 +35,11 @@ function inRange(createdAt, from, to) {
   return true;
 }
 
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API ||
+  "http://localhost:4000";
+
 export default function IncidentReportsPage() {
   const [loading, setLoading] = useState(false);
   const [flash, setFlash] = useState({ type: "", text: "" });
@@ -50,6 +55,9 @@ export default function IncidentReportsPage() {
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
 
+  const [statusDraft, setStatusDraft] = useState("PENDING");
+  const [savingStatus, setSavingStatus] = useState(false);
+
   const maxDate = todayInput();
 
   function showFlash(type, text) {
@@ -60,7 +68,7 @@ export default function IncidentReportsPage() {
   async function loadIncidents() {
     try {
       setLoading(true);
-      const res = await listIncidents(); // you can wire this to /admin/incidents
+      const res = await listIncidents(); // wire to /admin/incidents or fallback
       const items = Array.isArray(res?.items)
         ? res.items
         : Array.isArray(res)
@@ -85,6 +93,13 @@ export default function IncidentReportsPage() {
     setPage(1);
   }, [fromDate, toDate, search]);
 
+  // whenever selected changes, sync statusDraft
+  useEffect(() => {
+    if (selected) {
+      setStatusDraft((selected.status || "PENDING").toUpperCase());
+    }
+  }, [selected]);
+
   // clamp dates so user cannot select future
   function onFromChange(value) {
     if (value && value > maxDate) return; // ignore future
@@ -105,23 +120,26 @@ export default function IncidentReportsPage() {
 
     // date range filter (only previous + today because of max)
     if (fromObj || toObj) {
-      list = list.filter((item) =>
-        inRange(item.createdAt, fromObj, toObj)
-      );
+      list = list.filter((item) => inRange(item.createdAt, fromObj, toObj));
     }
 
     // search filter
     if (normalizedSearch) {
       list = list.filter((i) => {
+        const categoriesText = Array.isArray(i.categories)
+          ? i.categories
+              .map((c) => (c && (c.name || c)) || "")
+              .filter(Boolean)
+              .join(" ")
+          : "";
+
         const target = [
           i.driverName,
           i.busNumber,
           i.status,
           i.note,
           i.reporterName,
-          Array.isArray(i.categories)
-            ? i.categories.map((c) => c.name || c).join(" ")
-            : "",
+          categoriesText,
         ]
           .filter(Boolean)
           .join(" ")
@@ -130,7 +148,7 @@ export default function IncidentReportsPage() {
       });
     }
 
-    // default sort: newest first (like reports page)
+    // default sort: newest first
     return [...list].sort((a, b) => {
       const ad = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const bd = b.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -173,9 +191,7 @@ export default function IncidentReportsPage() {
       i.busNumber || "",
       i.reporterName || "",
       i.status || "",
-      i.createdAt
-        ? new Date(i.createdAt).toLocaleString()
-        : "",
+      i.createdAt ? new Date(i.createdAt).toLocaleString() : "",
       (i.note || "").replace(/\r?\n/g, " "),
       i.lat ?? "",
       i.lng ?? "",
@@ -204,6 +220,87 @@ export default function IncidentReportsPage() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+
+  // 🔧 HANDLE STATUS (with fallback URL)
+  async function handleStatusChange(nextStatus) {
+    if (!selected) return;
+
+    const newStatus = (nextStatus || "").toUpperCase();
+    const prevStatus = (selected.status || "PENDING").toUpperCase();
+
+    setStatusDraft(newStatus);
+
+    // if walay actual change, ayaw na tawag API
+    if (!newStatus || newStatus === prevStatus) return;
+
+    try {
+      setSavingStatus(true);
+
+      const id = encodeURIComponent(selected.id);
+      const body = JSON.stringify({ status: newStatus });
+      const headers = {
+        "Content-Type": "application/json",
+        ...(await authHeaders()),
+      };
+
+      // try /:id/status first
+      let res = await fetch(`${API_URL}/admin/incidents/${id}/status`, {
+        method: "PATCH",
+        headers,
+        body,
+      });
+
+      // if 404, try plain /:id (maybe mao ni imo route)
+      if (res.status === 404) {
+        console.warn(
+          "[incidents] /:id/status returned 404, trying /:id instead"
+        );
+        res = await fetch(`${API_URL}/admin/incidents/${id}`, {
+          method: "PATCH",
+          headers,
+          body,
+        });
+      }
+
+      const text = await res.text();
+      if (!res.ok) {
+        console.warn(
+          "UPDATE INCIDENT STATUS ERROR:",
+          res.status,
+          text || "no body"
+        );
+        throw new Error(`Failed to update status (code ${res.status})`);
+      }
+
+      let payload = null;
+      try {
+        payload = text ? JSON.parse(text) : null;
+      } catch {
+        payload = null;
+      }
+
+      const updated =
+        (payload && (payload.incident || payload)) || {
+          ...selected,
+          status: newStatus,
+        };
+
+      // update list + selected
+      setIncidents((prev) =>
+        prev.map((i) => (i.id === updated.id ? updated : i))
+      );
+      setSelected(updated);
+      setStatusDraft((updated.status || "PENDING").toUpperCase());
+      showFlash("success", "Status updated.");
+    } catch (err) {
+      console.warn("UPDATE INCIDENT STATUS ERROR (catch):", err?.message || err);
+      showFlash("error", err?.message || "Failed to update status.");
+      // balik sa previous value
+      setStatusDraft(prevStatus);
+    } finally {
+      setSavingStatus(false);
+    }
   }
 
   const S = styles;
@@ -243,22 +340,8 @@ export default function IncidentReportsPage() {
             />
           </div>
 
-          {/* Refresh */}
-          <button
-            type="button"
-            onClick={loadIncidents}
-            disabled={loading}
-            style={S.refreshBtn}
-          >
-            {loading ? "Refreshing…" : "Refresh"}
-          </button>
-
           {/* Reset */}
-          <button
-            type="button"
-            onClick={resetFilters}
-            style={S.resetBtn}
-          >
+          <button type="button" onClick={resetFilters} style={S.resetBtn}>
             Reset
           </button>
 
@@ -273,11 +356,7 @@ export default function IncidentReportsPage() {
           </div>
 
           {/* Export CSV */}
-          <button
-            type="button"
-            style={S.exportBtn}
-            onClick={exportCsv}
-          >
+          <button type="button" style={S.exportBtn} onClick={exportCsv}>
             Export CSV
           </button>
         </div>
@@ -286,11 +365,7 @@ export default function IncidentReportsPage() {
       {/* Reports list card */}
       <section style={S.listCard}>
         {flash.text && (
-          <div
-            aria-live="polite"
-            role="status"
-            style={S.flash(flash.type)}
-          >
+          <div aria-live="polite" role="status" style={S.flash(flash.type)}>
             {flash.text}
           </div>
         )}
@@ -319,15 +394,9 @@ export default function IncidentReportsPage() {
                         {r.driverName || "Unknown driver"}
                       </div>
                       <div style={S.itemMeta}>
-                        Bus{" "}
-                        <strong>
-                          {r.busNumber || "—"}
-                        </strong>{" "}
-                        •{" "}
+                        Bus <strong>{r.busNumber || "—"}</strong> •{" "}
                         <span style={{ textTransform: "capitalize" }}>
-                          {r.status
-                            ? r.status.toLowerCase()
-                            : "pending"}
+                          {r.status ? r.status.toLowerCase() : "pending"}
                         </span>
                       </div>
                     </div>
@@ -339,21 +408,13 @@ export default function IncidentReportsPage() {
                     </p>
 
                     <div style={S.itemFooter}>
-                      <span style={S.smallLabel}>
-                        Reporter:
-                      </span>{" "}
-                      <span>
-                        {r.reporterName || "System / anonymous"}
-                      </span>
+                      <span style={S.smallLabel}>Reporter:</span>{" "}
+                      <span>{r.reporterName || "—"}</span>
                       <span style={S.dot}>•</span>
-                      <span style={S.smallLabel}>
-                        Date:
-                      </span>{" "}
+                      <span style={S.smallLabel}>Date:</span>{" "}
                       <span>
                         {r.createdAt
-                          ? new Date(
-                              r.createdAt
-                            ).toLocaleString()
+                          ? new Date(r.createdAt).toLocaleString()
                           : "—"}
                       </span>
                     </div>
@@ -383,9 +444,7 @@ export default function IncidentReportsPage() {
                   type="button"
                   style={S.pageBtn}
                   disabled={currentPage === 1}
-                  onClick={() =>
-                    setPage((p) => Math.max(1, p - 1))
-                  }
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
                 >
                   Previous
                 </button>
@@ -396,11 +455,7 @@ export default function IncidentReportsPage() {
                   type="button"
                   style={S.pageBtn}
                   disabled={currentPage === totalPages}
-                  onClick={() =>
-                    setPage((p) =>
-                      Math.min(totalPages, p + 1)
-                    )
-                  }
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 >
                   Next
                 </button>
@@ -428,32 +483,33 @@ export default function IncidentReportsPage() {
             <div style={S.modalBody}>
               <ModalRow
                 label="Driver"
-                value={
-                  selected.driverName || "Unknown driver"
-                }
+                value={selected.driverName || "Unknown driver"}
               />
-              <ModalRow
-                label="Bus"
-                value={selected.busNumber || "—"}
-              />
+              <ModalRow label="Bus" value={selected.busNumber || "—"} />
               <ModalRow
                 label="Reporter"
-                value={
-                  selected.reporterName ||
-                  "System / anonymous"
-                }
+                value={selected.reporterName || "—"}
               />
-              <ModalRow
-                label="Status"
-                value={selected.status || "PENDING"}
-              />
+
+              {/* Status dropdown */}
+              <div style={S.modalRow}>
+                <div style={S.modalLabel}>Status:</div>
+                <select
+                  value={statusDraft}
+                  onChange={(e) => handleStatusChange(e.target.value)}
+                  disabled={savingStatus}
+                  style={S.statusSelect}
+                >
+                  <option value="PENDING">Pending</option>
+                  <option value="RESOLVED">Resolved</option>
+                </select>
+              </div>
+
               <ModalRow
                 label="Date"
                 value={
                   selected.createdAt
-                    ? new Date(
-                        selected.createdAt
-                      ).toLocaleString()
+                    ? new Date(selected.createdAt).toLocaleString()
                     : "—"
                 }
               />
@@ -461,9 +517,7 @@ export default function IncidentReportsPage() {
                 label="Location"
                 value={
                   selected.lat && selected.lng
-                    ? `${selected.lat.toFixed(
-                        5
-                      )}, ${selected.lng.toFixed(5)}`
+                    ? `${selected.lat.toFixed(5)}, ${selected.lng.toFixed(5)}`
                     : "Not available"
                 }
               />
@@ -473,7 +527,8 @@ export default function IncidentReportsPage() {
                   Array.isArray(selected.categories) &&
                   selected.categories.length > 0
                     ? selected.categories
-                        .map((c) => c.name || c)
+                        .map((c) => (c && (c.name || c)) || "")
+                        .filter(Boolean)
                         .join(", ")
                     : "None"
                 }
@@ -507,23 +562,20 @@ function ModalRow({ label, value }) {
 }
 
 /* styles */
-
 const styles = {
   page: { display: "grid", gap: 16 },
   title: { fontSize: 22, fontWeight: 800, margin: 0 },
   sub: { margin: "6px 0 0", color: "var(--muted)" },
-
   card: {
     background: "var(--card)",
     borderRadius: 16,
-    border: "1px solid var(--line)",
+    border: "1px solid #9CA3AF",
     padding: 16,
   },
-
   filterRow: {
     display: "grid",
     gridTemplateColumns:
-      "repeat(2, minmax(140px, 1fr)) 90px 80px minmax(180px, 1.5fr) 110px",
+      "repeat(2, minmax(140px, 1fr)) 80px minmax(200px, 1.5fr) 110px",
     gap: 10,
     alignItems: "center",
   },
@@ -537,15 +589,6 @@ const styles = {
     background: "#F9FBFF",
     color: "var(--text)",
     outline: "none",
-  },
-  refreshBtn: {
-    marginTop: 18,
-    borderRadius: 8,
-    border: "1px solid #D4DBE7",
-    padding: "8px 12px",
-    fontSize: 13,
-    background: "#FFFFFF",
-    cursor: "pointer",
   },
   resetBtn: {
     marginTop: 18,
@@ -581,7 +624,7 @@ const styles = {
   listCard: {
     background: "var(--card)",
     borderRadius: 16,
-    border: "1px solid var(--line)",
+    border: "1px solid #9CA3AF",
     padding: 20,
     minHeight: 260,
   },
@@ -610,13 +653,21 @@ const styles = {
   emptyTitle: { fontWeight: 600 },
   emptySub: { marginTop: 4 },
 
-  list: { display: "grid", gap: 10 },
+  // 🔽 scrollable list
+  list: {
+    display: "grid",
+    gap: 10,
+    maxHeight: 360, // adjust if you want taller/shorter
+    overflowY: "auto",
+    paddingRight: 4,
+  },
+
   item: {
     display: "flex",
     justifyContent: "space-between",
     padding: 14,
     borderRadius: 14,
-    border: "1px solid rgba(203,213,225,.8)",
+    border: "1px solid #9CA3AF",
     background: "#FFFFFF",
     cursor: "pointer",
   },
@@ -650,10 +701,6 @@ const styles = {
       bg = "#E8F9F0";
       border = "#86EFAC";
       color = "#166534";
-    } else if (s === "ESCALATED") {
-      bg = "#FEE2E2";
-      border = "#FCA5A5";
-      color = "#B91C1C";
     }
     return {
       alignSelf: "center",
@@ -755,5 +802,15 @@ const styles = {
     background: "#f9fafb",
     fontSize: 13,
     color: "#374151",
+  },
+
+  statusSelect: {
+    borderRadius: 8,
+    border: "1px solid #D4DBE7",
+    padding: "6px 10px",
+    fontSize: 13,
+    background: "#FFFFFF",
+    color: "#111827",
+    outline: "none",
   },
 };

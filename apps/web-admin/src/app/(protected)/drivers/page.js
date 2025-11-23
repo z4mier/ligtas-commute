@@ -41,28 +41,17 @@ function normalizeDriver(p) {
     .toString()
     .toUpperCase();
 
-  // Try to read route side and route label from both BUS and DRIVER
-  const routeSide =
-    bus.corridor || // new column in Bus
-    bus.routeSide || // older naming just in case
-    p.routeSide ||
-    "";
+  const routeSide = bus.corridor || bus.routeSide || p.routeSide || "";
 
-  // single route label (ex. "SBT → Oslob — Oslob → SBT" OR simple "SBT – Oslob")
-  const routeLabelFromBus =
-    bus.route || // if backend still sends `route`
-    bus.routeLabel || // or explicit label
-    "";
+  const routeLabelFromBus = bus.route || bus.routeLabel || "";
 
   const forwardRoute = bus.forwardRoute || p.forwardRoute || "";
   const returnRoute = bus.returnRoute || p.returnRoute || "";
 
   const routeLabel =
-    p.routeLabel || // if stored in driver
+    p.routeLabel ||
     routeLabelFromBus ||
-    (forwardRoute && returnRoute
-      ? `${forwardRoute} — ${returnRoute}`
-      : "");
+    (forwardRoute && returnRoute ? `${forwardRoute} — ${returnRoute}` : "");
 
   return {
     id: p.id,
@@ -79,7 +68,6 @@ function normalizeDriver(p) {
     active: statusRaw === "ACTIVE",
     createdAt: p.createdAt,
 
-    // route-related (display)
     routeSide,
     forwardRoute,
     returnRoute,
@@ -89,7 +77,9 @@ function normalizeDriver(p) {
 
 /* ---------- Validation (PH rules) ---------- */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
-const PHONE_RE = /^(09\d{9}|\+639\d{9})$/;
+// 11-digit PH mobile only: 09 + 9 digits
+const PHONE_RE = /^09\d{9}$/;
+// Example: T43-54-983252
 const LTO_LICENSE_RE = /^[A-Z]\d{2}-\d{2}-\d{6}$/;
 
 function isAdult(dateStr) {
@@ -98,6 +88,13 @@ function isAdult(dateStr) {
   const now = new Date();
   const eighteen = new Date(d.getFullYear() + 18, d.getMonth(), d.getDate());
   return eighteen <= now;
+}
+
+/* Helper: max birthdate = today - 18 years (for date input max) */
+function getMaxBirthDate() {
+  const now = new Date();
+  now.setFullYear(now.getFullYear() - 18);
+  return now.toISOString().slice(0, 10);
 }
 
 /* ---------- NiceSelect (scrollable, LIGHT THEME) ---------- */
@@ -220,7 +217,8 @@ function NiceSelect({
                     if (!active) e.currentTarget.style.background = "#EDF3FA";
                   }}
                   onMouseLeave={(e) => {
-                    if (!active) e.currentTarget.style.background = "transparent";
+                    if (!active) e.currentTarget.style.background =
+                      "transparent";
                   }}
                 >
                   {o.label}
@@ -253,8 +251,7 @@ export default function DriverManagementPage() {
   const [busPlate, setBusPlate] = useState("");
   const [listRefreshing, setListRefreshing] = useState(false);
 
-  // route info (auto from selected bus)
-  const [routeSide, setRouteSide] = useState(""); // EAST / WEST
+  const [routeSide, setRouteSide] = useState("");
   const [forwardRoute, setForwardRoute] = useState("");
   const [returnRoute, setReturnRoute] = useState("");
 
@@ -273,6 +270,10 @@ export default function DriverManagementPage() {
   const [drvLoading, setDrvLoading] = useState(false);
   const [drvError, setDrvError] = useState("");
   const [query, setQuery] = useState("");
+
+  // pagination for drivers list (minimum 5 per page)
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 5;
 
   // QR modal
   const [qrOpen, setQrOpen] = useState(false);
@@ -294,7 +295,6 @@ export default function DriverManagementPage() {
   // Confirm modal
   const [confirm, setConfirm] = useState({ open: false, driver: null });
 
-  // only exclude buses that are taken by ACTIVE drivers
   const usedBusNumbers = useMemo(() => {
     const set = new Set();
     for (const d of drivers) if (d.active && d.busNo) set.add(String(d.busNo));
@@ -306,7 +306,9 @@ export default function DriverManagementPage() {
     setDrvLoading(true);
     try {
       const items = await listDrivers();
-      setDrivers((items || []).map(normalizeDriver));
+      const norm = (items || []).map(normalizeDriver);
+      setDrivers(norm);
+      setPage(1); // reset page when reloading
     } catch (e) {
       setDrvError(e.message || "Failed to load");
       setDrivers([]);
@@ -323,21 +325,18 @@ export default function DriverManagementPage() {
     if (tab === "info") loadDrivers();
   }, [tab]);
 
-  /* Auto-dismiss flash after 1s */
   useEffect(() => {
     if (!flash.text) return;
     const t = setTimeout(() => setFlash({ type: "", text: "" }), 1000);
     return () => clearTimeout(t);
   }, [flash.text]);
 
-  /* Build bus options with filtering (exclude used) */
   const busOptions = useMemo(() => {
     const raw = (busList || []).slice().sort(byBusNumber);
     const filtered = raw.filter((b) => !usedBusNumbers.has(String(b.number)));
     return filtered.map((b) => ({ value: b.id, label: b.number }));
   }, [busList, usedBusNumbers]);
 
-  /* Vehicle type change → fetch buses from backend ONLY */
   useEffect(() => {
     let aborter;
     setBusId("");
@@ -378,15 +377,11 @@ export default function DriverManagementPage() {
     return () => aborter?.abort();
   }, [vehicleType]);
 
-  // when bus changes → auto-fill plate & route
   useEffect(() => {
     const found = (busList || []).find((b) => String(b.id) === String(busId));
     setBusPlate(found ? found.plate : "");
 
-    const side =
-      found?.corridor || // new column
-      found?.routeSide || // older naming fallback
-      "";
+    const side = found?.corridor || found?.routeSide || "";
     setRouteSide(side);
 
     const fwd = found?.forwardRoute || "";
@@ -395,7 +390,6 @@ export default function DriverManagementPage() {
     setReturnRoute(ret);
   }, [busId, busList]);
 
-  /* Search filter */
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return drivers;
@@ -418,7 +412,16 @@ export default function DriverManagementPage() {
     });
   }, [drivers, query]);
 
-  /* Toggle Active with confirm */
+  // derived pagination
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const startIndex = (currentPage - 1) * PAGE_SIZE;
+  const pageItems = filtered.slice(startIndex, startIndex + PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query]);
+
   function askDeactivate(drv) {
     setConfirm({ open: true, driver: drv });
   }
@@ -440,14 +443,13 @@ export default function DriverManagementPage() {
     }
   }
 
-  /* Client-side validation */
   function validateFormBase(f) {
     if (!f.fullName?.trim()) return "Full name is required.";
-    if (!EMAIL_RE.test((f.email || "").trim())) return "Invalid email.";
+    if (!EMAIL_RE.test((f.email || "").trim())) return "Invalid email address.";
     if (!PHONE_RE.test((f.phone || "").trim()))
-      return "Invalid phone number. Use 09XXXXXXXXX or +639XXXXXXXXX.";
+      return "Invalid phone number. Use 11-digit format 09XXXXXXXXX.";
     if (!LTO_LICENSE_RE.test((f.licenseNo || "").trim().toUpperCase()))
-      return "Invalid driver’s license number (use format: X00-00-000000).";
+      return "Invalid driver’s license number (use format: T43-54-983252).";
     if (!isAdult(f.birthDate)) return "Driver must be at least 18 years old.";
     if (!f.address?.trim()) return "Address is required.";
     return "";
@@ -466,7 +468,6 @@ export default function DriverManagementPage() {
     return "";
   }
 
-  /* Submit (create) */
   const [submitting, setSubmitting] = useState(false);
   async function onSubmit(e) {
     e.preventDefault();
@@ -488,22 +489,15 @@ export default function DriverManagementPage() {
       busId: selectedBus.id,
     };
 
-    // build route payload that matches your Bus schema (corridor + route / forward/return)
     const routePayload = {};
     if (selectedBus) {
-      // route side / corridor
       routePayload.routeSide =
         selectedBus.corridor || selectedBus.routeSide || null;
-
-      // optional code if you use it
       routePayload.routeCode = selectedBus.routeId || null;
 
       const fwd = selectedBus.forwardRoute || "";
       const ret = selectedBus.returnRoute || "";
-      const single =
-        selectedBus.route || // if backend still uses `route`
-        selectedBus.routeLabel ||
-        "";
+      const single = selectedBus.route || selectedBus.routeLabel || "";
 
       if (fwd && ret) {
         routePayload.routeLabel = `${fwd} — ${ret}`;
@@ -563,7 +557,6 @@ export default function DriverManagementPage() {
     }
   }
 
-  /* Update (edit) */
   async function updateDriver(id, body) {
     const res = await fetch(`${API_URL}/admin/driver-profiles/${id}`, {
       method: "PATCH",
@@ -635,20 +628,20 @@ export default function DriverManagementPage() {
     }
   }
 
+  const maxBirth = getMaxBirthDate();
+
   /* ---------- Styles (LIGHT THEME) ---------- */
   const S = {
     page: { display: "grid", gap: 16 },
     tabs: {
       display: "flex",
       gap: 24,
-      borderBottom: "1px solid var(--line)",
+      borderBottom: "1px solid #9CA3AF",
       marginBottom: 16,
     },
     tabBtn: (active) => ({
       padding: "10px 0",
-      borderBottom: `2px solid ${
-        active ? "var(--accent)" : "transparent"
-      }`,
+      borderBottom: `2px solid ${active ? "var(--accent)" : "transparent"}`,
       fontWeight: 600,
       fontSize: 14,
       color: active ? "var(--accent)" : "var(--muted)",
@@ -656,7 +649,7 @@ export default function DriverManagementPage() {
     }),
     card: {
       background: "var(--card)",
-      border: "1px solid var(--line)",
+      border: "1px solid #9CA3AF",
       borderRadius: 24,
       padding: 20,
       boxShadow: "0 20px 45px rgba(15,23,42,0.06)",
@@ -711,37 +704,36 @@ export default function DriverManagementPage() {
       borderRadius: 999,
       background: on ? "#22c55e" : "#ef4444",
     }),
+
+    /* search row + inline pagination */
     searchRow: {
       display: "flex",
-      gap: 10,
+      gap: 12,
       alignItems: "center",
+      justifyContent: "space-between",
       marginBottom: 12,
     },
     search: {
-      flex: 1,
-      width: "100%",
-      border: "1px solid #D4DBE7",
+      width: 260, // smaller width
+      border: "1px solid #9CA3AF",
       borderRadius: 10,
-      padding: "10px 12px",
+      padding: "8px 10px",
       background: "#F9FBFF",
       color: "var(--text)",
       fontSize: 14,
     },
-    refresh: {
-      padding: "10px 14px",
-      borderRadius: 999,
-      border: "1px solid #D4DBE7",
-      background: "#FFFFFF",
-      color: "var(--accent)",
-      cursor: "pointer",
-      fontSize: 13,
-      fontWeight: 500,
+    paginationInline: {
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
     },
+
     drvCard: {
-      border: "1px solid #E2E8F0",
-      borderRadius: 20,
-      padding: 16,
+      border: "1px solid #9CA3AF",
+      borderRadius: 18,
+      padding: 14,
       background: "#FFFFFF",
+      maxWidth: "100%",
     },
     drvHeader: {
       display: "flex",
@@ -924,6 +916,31 @@ export default function DriverManagementPage() {
       border:
         type === "error" ? "1px solid #FCA5A5" : "1px solid #86EFAC",
     }),
+    paginationText: {
+      fontSize: 13,
+      color: "#6B7280",
+    },
+    paginationBtns: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+    },
+    pageBtn: {
+      borderRadius: 999,
+      border: "1px solid #D4DBE7",
+      padding: "6px 10px",
+      background: "#FFFFFF",
+      color: "#0F172A",
+      cursor: "pointer",
+      fontSize: 13,
+    },
+
+    /* NEW: scroll area for Driver Informations list */
+    scrollArea: {
+      maxHeight: 420,   // adjust height if needed
+      overflowY: "auto",
+      paddingRight: 4,
+    },
   };
 
   return (
@@ -956,6 +973,7 @@ export default function DriverManagementPage() {
       )}
 
       {tab === "register" ? (
+        /* ---------- REGISTER TAB ---------- */
         <section style={S.card}>
           <div
             style={{
@@ -989,9 +1007,14 @@ export default function DriverManagementPage() {
                 <label style={S.label}>Phone Number</label>
                 <input
                   style={S.input}
-                  placeholder="09XXXXXXXXX or +639XXXXXXXXX"
+                  placeholder="09XXXXXXXXX"
                   value={form.phone}
-                  onChange={(e) => upd("phone", e.target.value)}
+                  onChange={(e) =>
+                    upd(
+                      "phone",
+                      e.target.value.replace(/\D/g, "").slice(0, 11)
+                    )
+                  }
                   required
                   inputMode="tel"
                 />
@@ -1006,7 +1029,7 @@ export default function DriverManagementPage() {
                   type="email"
                   placeholder="driver@example.com"
                   value={form.email}
-                  onChange={(e) => upd("email", e.target.value)}
+                  onChange={(e) => upd("email", e.target.value.trim())}
                   required
                 />
               </div>
@@ -1014,10 +1037,16 @@ export default function DriverManagementPage() {
                 <label style={S.label}>Driver’s License Number</label>
                 <input
                   style={S.input}
-                  placeholder="X00-00-000000"
+                  placeholder="T43-54-983252"
                   value={form.licenseNo}
                   onChange={(e) =>
-                    upd("licenseNo", e.target.value.toUpperCase())
+                    upd(
+                      "licenseNo",
+                      e.target.value
+                        .toUpperCase()
+                        .replace(/[^A-Z0-9-]/g, "")
+                        .slice(0, 13)
+                    )
                   }
                   required
                 />
@@ -1030,6 +1059,7 @@ export default function DriverManagementPage() {
                 <input
                   style={S.input}
                   type="date"
+                  max={maxBirth}
                   value={form.birthDate}
                   onChange={(e) => upd("birthDate", e.target.value)}
                   required
@@ -1104,7 +1134,6 @@ export default function DriverManagementPage() {
               </div>
             </div>
 
-            {/* ROUTE DISPLAY (auto from bus) */}
             <div style={S.grid2}>
               <div style={S.field}>
                 <label style={S.label}>Route Side</label>
@@ -1155,11 +1184,13 @@ export default function DriverManagementPage() {
           </form>
         </section>
       ) : (
+        /* ---------- INFO TAB ---------- */
         <section style={S.card}>
           <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 10 }}>
             Driver Informations
           </div>
 
+          {/* search + inline pagination */}
           <div style={S.searchRow}>
             <input
               value={query}
@@ -1167,9 +1198,37 @@ export default function DriverManagementPage() {
               placeholder="Search…"
               style={S.search}
             />
-            <button style={S.refresh} onClick={loadDrivers} disabled={drvLoading}>
-              {drvLoading ? "Loading…" : "Refresh"}
-            </button>
+
+            <div style={S.paginationInline}>
+              <span style={S.paginationText}>
+                {filtered.length === 0
+                  ? "Showing 0 of 0"
+                  : `Showing ${startIndex + 1}-${Math.min(
+                      startIndex + PAGE_SIZE,
+                      filtered.length
+                    )} of ${filtered.length}`}
+              </span>
+              <div style={S.paginationBtns}>
+                <button
+                  type="button"
+                  style={S.pageBtn}
+                  disabled={currentPage === 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Prev
+                </button>
+                <button
+                  type="button"
+                  style={S.pageBtn}
+                  disabled={currentPage === totalPages}
+                  onClick={() =>
+                    setPage((p) => Math.min(totalPages, p + 1))
+                  }
+                >
+                  Next
+                </button>
+              </div>
+            </div>
           </div>
 
           {drvError && (
@@ -1186,123 +1245,127 @@ export default function DriverManagementPage() {
 
           {drvLoading ? (
             <div style={S.muted}>Loading drivers…</div>
-          ) : filtered.length === 0 ? (
+          ) : pageItems.length === 0 ? (
             <div style={S.muted}>No drivers found.</div>
           ) : (
-            <div style={{ display: "grid", gap: 12 }}>
-              {filtered.map((d, idx) => {
-                const key = d.id || d.email || d.licenseNo || `drv-${idx}`;
+            <>
+              {/* SCROLLABLE DRIVER LIST */}
+              <div style={S.scrollArea}>
+                <div style={{ display: "grid", gap: 12 }}>
+                  {pageItems.map((d, idx) => {
+                    const key = d.id || d.email || d.licenseNo || `drv-${idx}`;
 
-                // prefer consolidated label if present, else build from forward/return
-                const routeLabel =
-                  d.routeLabel ||
-                  (d.forwardRoute && d.returnRoute
-                    ? `${d.forwardRoute} — ${d.returnRoute}`
-                    : "—");
+                    const routeLabel =
+                      d.routeLabel ||
+                      (d.forwardRoute && d.returnRoute
+                        ? `${d.forwardRoute} — ${d.returnRoute}`
+                        : "—");
 
-                return (
-                  <div key={key} style={S.drvCard}>
-                    <div style={S.drvHeader}>
-                      <div style={S.drvName}>
-                        <span>{d.fullName || "Unnamed Driver"}</span>
-                        <span style={S.idPill}>{shortId(d.id)}</span>
+                    return (
+                      <div key={key} style={S.drvCard}>
+                        <div style={S.drvHeader}>
+                          <div style={S.drvName}>
+                            <span>{d.fullName || "Unnamed Driver"}</span>
+                            <span style={S.idPill}>{shortId(d.id)}</span>
+                          </div>
+
+                          <div style={S.drvRight}>
+                            <div style={S.statusPill(d.status)}>
+                              {d.active ? "Active" : "Not active"}
+                            </div>
+                            <button
+                              type="button"
+                              style={S.editBtn}
+                              onClick={() => openEdit(d)}
+                            >
+                              <Pencil size={14} />
+                              <span>Edit</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        <div style={S.drvBody}>
+                          <div style={S.drvCol}>
+                            <div style={S.sectionTitle}>
+                              Personal information
+                            </div>
+                            <div style={S.drvRow}>
+                              <div>Email</div>
+                              <div>{d.email}</div>
+                            </div>
+                            <div style={S.drvRow}>
+                              <div>Phone</div>
+                              <div>{d.phone}</div>
+                            </div>
+                            <div style={S.drvRow}>
+                              <div>Birth date</div>
+                              <div>{fmtDate(d.birthDate)}</div>
+                            </div>
+                            <div style={S.drvRow}>
+                              <div>License</div>
+                              <div>{d.licenseNo}</div>
+                            </div>
+                            <div style={S.drvRow}>
+                              <div>Address</div>
+                              <div>{d.address}</div>
+                            </div>
+                            <div style={S.drvRow}>
+                              <div>Applied on</div>
+                              <div>{fmtDate(d.createdAt)}</div>
+                            </div>
+                          </div>
+
+                          <div style={S.drvCol}>
+                            <div style={S.sectionTitle}>Bus & route</div>
+                            <div style={S.drvRow}>
+                              <div>Vehicle</div>
+                              <div>{d.vehicleType}</div>
+                            </div>
+                            <div style={S.drvRow}>
+                              <div>Bus number</div>
+                              <div>{d.busNo}</div>
+                            </div>
+                            <div style={S.drvRow}>
+                              <div>Plate number</div>
+                              <div>{d.plateNumber}</div>
+                            </div>
+                            <div style={S.drvRow}>
+                              <div>Route side</div>
+                              <div>{routeSideLabel(d.routeSide)}</div>
+                            </div>
+                            <div style={S.drvRow}>
+                              <div>Route</div>
+                              <div>{routeLabel}</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={S.drvActions}>
+                          <button style={S.btnGhost} onClick={() => openQr(d)}>
+                            <Eye size={16} /> View QR
+                          </button>
+                          {d.active ? (
+                            <button
+                              style={S.btnRed}
+                              onClick={() => askDeactivate(d)}
+                            >
+                              Deactivate
+                            </button>
+                          ) : (
+                            <button
+                              style={S.btnGreen}
+                              onClick={() => toggleDriverActive(d, true)}
+                            >
+                              Reactivate
+                            </button>
+                          )}
+                        </div>
                       </div>
-
-                      <div style={S.drvRight}>
-                        <div style={S.statusPill(d.status)}>
-                          {d.active ? "Active" : "Not active"}
-                        </div>
-                        <button
-                          type="button"
-                          style={S.editBtn}
-                          onClick={() => openEdit(d)}
-                        >
-                          <Pencil size={14} />
-                          <span>Edit</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div style={S.drvBody}>
-                      {/* Personal information */}
-                      <div style={S.drvCol}>
-                        <div style={S.sectionTitle}>Personal information</div>
-                        <div style={S.drvRow}>
-                          <div>Email</div>
-                          <div>{d.email}</div>
-                        </div>
-                        <div style={S.drvRow}>
-                          <div>Phone</div>
-                          <div>{d.phone}</div>
-                        </div>
-                        <div style={S.drvRow}>
-                          <div>Birth date</div>
-                          <div>{fmtDate(d.birthDate)}</div>
-                        </div>
-                        <div style={S.drvRow}>
-                          <div>License</div>
-                          <div>{d.licenseNo}</div>
-                        </div>
-                        <div style={S.drvRow}>
-                          <div>Address</div>
-                          <div>{d.address}</div>
-                        </div>
-                        <div style={S.drvRow}>
-                          <div>Applied on</div>
-                          <div>{fmtDate(d.createdAt)}</div>
-                        </div>
-                      </div>
-
-                      {/* Bus & Route */}
-                      <div style={S.drvCol}>
-                        <div style={S.sectionTitle}>Bus & route</div>
-                        <div style={S.drvRow}>
-                          <div>Vehicle</div>
-                          <div>{d.vehicleType}</div>
-                        </div>
-                        <div style={S.drvRow}>
-                          <div>Bus number</div>
-                          <div>{d.busNo}</div>
-                        </div>
-                        <div style={S.drvRow}>
-                          <div>Plate number</div>
-                          <div>{d.plateNumber}</div>
-                        </div>
-                        <div style={S.drvRow}>
-                          <div>Route side</div>
-                          <div>{routeSideLabel(d.routeSide)}</div>
-                        </div>
-                        <div style={S.drvRow}>
-                          <div>Route</div>
-                          <div>{routeLabel}</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={S.drvActions}>
-                      <button style={S.btnGhost} onClick={() => openQr(d)}>
-                        <Eye size={16} /> View QR
-                      </button>
-                      {d.active ? (
-                        <button
-                          style={S.btnRed}
-                          onClick={() => askDeactivate(d)}
-                        >
-                          Deactivate
-                        </button>
-                      ) : (
-                        <button
-                          style={S.btnGreen}
-                          onClick={() => toggleDriverActive(d, true)}
-                        >
-                          Reactivate
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
           )}
         </section>
       )}
@@ -1368,12 +1431,9 @@ export default function DriverManagementPage() {
         </div>
       )}
 
-      {/* EDIT MODAL (no bus reassignment here) */}
+      {/* EDIT MODAL */}
       {editOpen && editForm && (
-        <div
-          style={S.overlay}
-          onMouseDown={() => setEditOpen(false)}
-        >
+        <div style={S.overlay} onMouseDown={() => setEditOpen(false)}>
           <div
             style={S.modal}
             onMouseDown={(e) => e.stopPropagation()}
@@ -1382,10 +1442,7 @@ export default function DriverManagementPage() {
           >
             <div style={S.modalHeader}>
               <strong>Edit Driver</strong>
-              <button
-                style={S.iconBtn}
-                onClick={() => setEditOpen(false)}
-              >
+              <button style={S.iconBtn} onClick={() => setEditOpen(false)}>
                 <X size={16} />
               </button>
             </div>
@@ -1408,7 +1465,12 @@ export default function DriverManagementPage() {
                   <input
                     style={S.input}
                     value={editForm.phone}
-                    onChange={(e) => eupd("phone", e.target.value)}
+                    onChange={(e) =>
+                      eupd(
+                        "phone",
+                        e.target.value.replace(/\D/g, "").slice(0, 11)
+                      )
+                    }
                     required
                     inputMode="tel"
                   />
@@ -1422,7 +1484,7 @@ export default function DriverManagementPage() {
                     style={S.input}
                     type="email"
                     value={editForm.email}
-                    onChange={(e) => eupd("email", e.target.value)}
+                    onChange={(e) => eupd("email", e.target.value.trim())}
                     required
                   />
                 </div>
@@ -1432,7 +1494,13 @@ export default function DriverManagementPage() {
                     style={S.input}
                     value={editForm.licenseNo}
                     onChange={(e) =>
-                      eupd("licenseNo", e.target.value.toUpperCase())
+                      eupd(
+                        "licenseNo",
+                        e.target.value
+                          .toUpperCase()
+                          .replace(/[^A-Z0-9-]/g, "")
+                          .slice(0, 13)
+                      )
                     }
                     required
                   />
@@ -1445,6 +1513,7 @@ export default function DriverManagementPage() {
                   <input
                     style={S.input}
                     type="date"
+                    max={maxBirth}
                     value={editForm.birthDate}
                     onChange={(e) => eupd("birthDate", e.target.value)}
                     required
@@ -1491,7 +1560,7 @@ export default function DriverManagementPage() {
         </div>
       )}
 
-      {/* CONFIRM DEACTIVATE */}
+      {/* CONFIRM DEACTIVATE MODAL */}
       {confirm.open && confirm.driver && (
         <div
           style={S.overlay}

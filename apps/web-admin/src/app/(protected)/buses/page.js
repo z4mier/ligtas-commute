@@ -8,10 +8,7 @@ import { Pencil, X as XIcon } from "lucide-react";
 /* ---------- ROUTES (GROUPED) ---------- */
 const ROUTE_GROUPS = {
   EAST: [
-    {
-      id: "EAST_SBT_OSLOB",
-      label: "SBT → Oslob — Oslob → SBT",
-    },
+    { id: "EAST_SBT_OSLOB", label: "SBT → Oslob — Oslob → SBT" },
     {
       id: "EAST_SBT_BATO_OSLOB",
       label: "SBT → Bato (via Oslob) — Bato (via Oslob) → SBT",
@@ -20,30 +17,12 @@ const ROUTE_GROUPS = {
       id: "EAST_SBT_SANTANDER_LILOAN",
       label: "SBT → Santander / Lilo-an Port — Santander / Lilo-an Port → SBT",
     },
-    {
-      id: "EAST_SBT_SAMBOAN",
-      label: "SBT → Samboan — Samboan → SBT",
-    },
-    {
-      id: "EAST_SBT_GINATILAN",
-      label: "SBT → Ginatilan — Ginatilan → SBT",
-    },
-    {
-      id: "EAST_SBT_MALABUYOC",
-      label: "SBT → Malabuyoc — Malabuyoc → SBT",
-    },
-    {
-      id: "EAST_SBT_ALEGRIA",
-      label: "SBT → Alegria — Alegria → SBT",
-    },
-    {
-      id: "EAST_SBT_BADIAN",
-      label: "SBT → Badian — Badian → SBT",
-    },
-    {
-      id: "EAST_SBT_MOALBOAL",
-      label: "SBT → Moalboal — Moalboal → SBT",
-    },
+    { id: "EAST_SBT_SAMBOAN", label: "SBT → Samboan — Samboan → SBT" },
+    { id: "EAST_SBT_GINATILAN", label: "SBT → Ginatilan — Ginatilan → SBT" },
+    { id: "EAST_SBT_MALABUYOC", label: "SBT → Malabuyoc — Malabuyoc → SBT" },
+    { id: "EAST_SBT_ALEGRIA", label: "SBT → Alegria — Alegria → SBT" },
+    { id: "EAST_SBT_BADIAN", label: "SBT → Badian — Badian → SBT" },
+    { id: "EAST_SBT_MOALBOAL", label: "SBT → Moalboal — Moalboal → SBT" },
   ],
   WEST: [
     {
@@ -54,26 +33,11 @@ const ROUTE_GROUPS = {
       id: "WEST_SBT_MOALBOAL_BARILI",
       label: "SBT → Moalboal (via Barili) — Moalboal (via Barili) → SBT",
     },
-    {
-      id: "WEST_SBT_BADIAN",
-      label: "SBT → Badian — Badian → SBT",
-    },
-    {
-      id: "WEST_SBT_ALEGRIA",
-      label: "SBT → Alegria — Alegria → SBT",
-    },
-    {
-      id: "WEST_SBT_GINATILAN",
-      label: "SBT → Ginatilan — Ginatilan → SBT",
-    },
-    {
-      id: "WEST_SBT_SAMBOAN",
-      label: "SBT → Samboan — Samboan → SBT",
-    },
-    {
-      id: "WEST_SBT_SANTANDER",
-      label: "SBT → Santander — Santander → SBT",
-    },
+    { id: "WEST_SBT_BADIAN", label: "SBT → Badian — Badian → SBT" },
+    { id: "WEST_SBT_ALEGRIA", label: "SBT → Alegria — Alegria → SBT" },
+    { id: "WEST_SBT_GINATILAN", label: "SBT → Ginatilan — Ginatilan → SBT" },
+    { id: "WEST_SBT_SAMBOAN", label: "SBT → Samboan — Samboan → SBT" },
+    { id: "WEST_SBT_SANTANDER", label: "SBT → Santander — Santander → SBT" },
   ],
 };
 
@@ -99,7 +63,7 @@ export default function BusManagementPage() {
   const [search, setSearch] = useState("");
   const [sortOrder, setSortOrder] = useState("newest"); // "newest" | "oldest"
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 10;
+  const PAGE_SIZE = 5;
 
   // for edit modal
   const [editingBus, setEditingBus] = useState(null);
@@ -177,7 +141,7 @@ export default function BusManagementPage() {
       setLoading(true);
       const data = await listBuses(); // GET /buses
       setBuses(Array.isArray(data) ? data : []);
-      setPage(1); // reset page on fresh load
+      setPage(1);
     } catch (err) {
       console.error("LOAD BUSES ERROR:", err);
       showFlash("error", err.message || "Failed to load buses.");
@@ -214,20 +178,16 @@ export default function BusManagementPage() {
     return target.includes(normalizedSearch);
   });
 
+  // base only on createdAt, not bus number
   const sorted = [...filtered].sort((a, b) => {
-    // prefer createdAt if backend has it; fallback to number
-    const aDate = a.createdAt ? new Date(a.createdAt).getTime() : null;
-    const bDate = b.createdAt ? new Date(b.createdAt).getTime() : null;
+    const aDate = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bDate = b.createdAt ? new Date(b.createdAt).getTime() : 0;
 
-    if (aDate && bDate) {
-      return sortOrder === "newest" ? bDate - aDate : aDate - bDate;
+    if (sortOrder === "newest") {
+      return bDate - aDate;
+    } else {
+      return aDate - bDate;
     }
-
-    const aNum = String(a.number || "");
-    const bNum = String(b.number || "");
-    return sortOrder === "newest"
-      ? bNum.localeCompare(aNum)
-      : aNum.localeCompare(bNum);
   });
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
@@ -254,8 +214,8 @@ export default function BusManagementPage() {
     const payload = {
       number: form.busNumber.trim(),
       plate: form.plateNumber.trim(),
-      busType: form.busType, // AIRCON / NON_AIRCON
-      corridor: form.corridor, // EAST / WEST
+      busType: form.busType,
+      corridor: form.corridor,
       status: "ACTIVE",
       isActive: true,
       routeId: form.routeId,
@@ -267,6 +227,7 @@ export default function BusManagementPage() {
       setSaving(true);
       const created = await createBus(payload); // POST /buses
 
+      // in-memory list: new bus at top
       setBuses((prev) => [created, ...prev]);
 
       setForm({
@@ -339,10 +300,7 @@ export default function BusManagementPage() {
 
       if (editingBus.status !== editForm.status) {
         try {
-          const fromApi = await updateBusStatus(
-            editingBus.id,
-            editForm.status
-          );
+          const fromApi = await updateBusStatus(editingBus.id, editForm.status);
           updatedBus = { ...updatedBus, ...fromApi };
         } catch (err) {
           console.error("UPDATE BUS STATUS ERROR:", err);
@@ -536,7 +494,7 @@ export default function BusManagementPage() {
             <span>Bus Informations</span>
           </div>
 
-          {/* search + sort + refresh */}
+          {/* search + sort + inline pagination (no refresh) */}
           <div style={S.toolbar}>
             <div style={S.searchWrapper}>
               <input
@@ -557,14 +515,36 @@ export default function BusManagementPage() {
                 <option value="oldest">Oldest to newest</option>
               </select>
 
-              <button
-                type="button"
-                onClick={loadBuses}
-                disabled={loading}
-                style={S.refreshBtn}
-              >
-                {loading ? "Refreshing…" : "Refresh"}
-              </button>
+              <div style={S.paginationInline}>
+                <span style={S.paginationText}>
+                  {sorted.length === 0
+                    ? "Showing 0 of 0 buses"
+                    : `Showing ${startIndex + 1}-${Math.min(
+                        startIndex + PAGE_SIZE,
+                        sorted.length
+                      )} of ${sorted.length} buses`}
+                </span>
+                <div style={S.paginationBtns}>
+                  <button
+                    type="button"
+                    style={S.pageBtn}
+                    disabled={currentPage === 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    Prev
+                  </button>
+                  <button
+                    type="button"
+                    style={S.pageBtn}
+                    disabled={currentPage === totalPages}
+                    onClick={() =>
+                      setPage((p) => Math.min(totalPages, p + 1))
+                    }
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -574,7 +554,7 @@ export default function BusManagementPage() {
             <p style={S.muted}>No buses found.</p>
           ) : (
             <>
-              <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+              <div style={S.busList}>
                 {pageItems.map((b) => (
                   <div key={b.id} style={S.busCard}>
                     <div style={S.busHeader}>
@@ -613,43 +593,6 @@ export default function BusManagementPage() {
                     </div>
                   </div>
                 ))}
-              </div>
-
-              {/* pagination */}
-              <div style={S.paginationRow}>
-                <span style={S.paginationText}>
-                  Showing{" "}
-                  {sorted.length === 0
-                    ? 0
-                    : `${startIndex + 1}-${Math.min(
-                        startIndex + PAGE_SIZE,
-                        sorted.length
-                      )}`}{" "}
-                  of {sorted.length} buses
-                </span>
-                <div style={S.paginationBtns}>
-                  <button
-                    type="button"
-                    style={S.pageBtn}
-                    disabled={currentPage === 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  >
-                    Previous
-                  </button>
-                  <span style={S.paginationText}>
-                    Page {currentPage} of {totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    style={S.pageBtn}
-                    disabled={currentPage === totalPages}
-                    onClick={() =>
-                      setPage((p) => Math.min(totalPages, p + 1))
-                    }
-                  >
-                    Next
-                  </button>
-                </div>
               </div>
             </>
           )}
@@ -781,7 +724,7 @@ const styles = {
   tabs: {
     display: "flex",
     gap: 24,
-    borderBottom: "1px solid var(--line)",
+    borderBottom: "1px solid #9CA3AF",
     marginBottom: 16,
   },
   tabBtn: (active) => ({
@@ -794,7 +737,7 @@ const styles = {
   }),
   card: {
     background: "var(--card)",
-    border: "1px solid var(--line)",
+    border: "1px solid #9CA3AF",
     borderRadius: 24,
     padding: 20,
     boxShadow: "0 20px 45px rgba(15,23,42,0.06)",
@@ -839,12 +782,10 @@ const styles = {
     fontSize: 14,
     color: type === "error" ? "#B91C1C" : "#166534",
     background: type === "error" ? "#FEE2E2" : "#DCFCE7",
-    border:
-      type === "error" ? "1px solid #FCA5A5" : "1px solid #86EFAC",
+    border: type === "error" ? "1px solid #FCA5A5" : "1px solid #86EFAC",
     transition: "opacity .2s ease",
   }),
 
-  /* toolbar (search, sort, refresh) */
   toolbar: {
     display: "flex",
     alignItems: "center",
@@ -858,7 +799,7 @@ const styles = {
   searchInput: {
     width: "100%",
     borderRadius: 999,
-    border: "1px solid #D4DBE7",
+    border: "1px solid #9CA3AF",
     padding: "10px 14px",
     fontSize: 14,
     background: "#F9FBFF",
@@ -872,26 +813,31 @@ const styles = {
   },
   sortSelect: {
     borderRadius: 999,
-    border: "1px solid #D4DBE7",
+    border: "1px solid #9CA3AF",
     padding: "8px 12px",
     fontSize: 13,
     background: "#FFFFFF",
     color: "var(--text)",
     outline: "none",
   },
-  refreshBtn: {
-    borderRadius: 999,
-    border: "1px solid #D4DBE7",
-    padding: "8px 14px",
-    fontSize: 13,
-    background: "#FFFFFF",
-    color: "var(--accent)",
-    cursor: "pointer",
-    whiteSpace: "nowrap",
+
+  paginationInline: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+  },
+
+  busList: {
+    display: "grid",
+    gap: 10,
+    marginTop: 10,
+    maxHeight: 360, // adjust height as needed
+    overflowY: "auto",
+    paddingRight: 4,
   },
 
   busCard: {
-    border: "1px solid #E2E8F0",
+    border: "1px solid #9CA3AF",
     borderRadius: 20,
     padding: 16,
     background: "#FFFFFF",
@@ -963,17 +909,6 @@ const styles = {
     cursor: "pointer",
   },
 
-  /* pagination */
-  paginationRow: {
-    marginTop: 14,
-    paddingTop: 10,
-    borderTop: "1px solid var(--line)",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    fontSize: 13,
-    color: "#6B7280",
-  },
   paginationText: {
     fontSize: 13,
     color: "#6B7280",
@@ -981,19 +916,18 @@ const styles = {
   paginationBtns: {
     display: "flex",
     alignItems: "center",
-    gap: 10,
+    gap: 8,
   },
   pageBtn: {
     borderRadius: 999,
     border: "1px solid #D4DBE7",
-    padding: "6px 12px",
+    padding: "6px 10px",
     background: "#FFFFFF",
     color: "#0F172A",
     cursor: "pointer",
     fontSize: 13,
   },
 
-  /* modal styles */
   modalBackdrop: {
     position: "fixed",
     inset: 0,

@@ -26,6 +26,10 @@ router.post("/", async (req, res) => {
 
     const trip = await prisma.trip.findUnique({
       where: { id: String(tripId) },
+      // 👇 add this so we know which user (commuter) owns the trip
+      include: {
+        commuterProfile: true,
+      },
     });
 
     if (!trip) {
@@ -40,6 +44,9 @@ router.post("/", async (req, res) => {
 
     const driverId = trip.driverProfileId;
 
+    // 👇 take the commuter’s userId as the reporterId
+    const reporterId = trip.commuterProfile?.userId || null;
+
     const catArray = Array.isArray(categories)
       ? categories.filter((c) => typeof c === "string" && c.trim() !== "")
       : [];
@@ -48,6 +55,8 @@ router.post("/", async (req, res) => {
       data: {
         driverId,
         tripId: trip.id,
+        // only set reporterId if we actually have one
+        ...(reporterId && { reporterId }),
         note: note || null,
         categories: catArray.length
           ? {

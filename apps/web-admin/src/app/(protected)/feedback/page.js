@@ -332,7 +332,7 @@ const styles = {
   card: {
     background: "var(--card)",
     borderRadius: 16,
-    border: "1px solid var(--line)",
+    border: "1px solid #9CA3AF",
     padding: 20,
   },
   cardHeader: {
@@ -359,7 +359,7 @@ const styles = {
   searchInput: {
     width: "100%",
     borderRadius: 999,
-    border: "1px solid rgba(148,163,184,.45)",
+    border: "1px solid #9CA3AF",
     padding: "10px 14px",
     fontSize: 14,
     outline: "none",
@@ -372,22 +372,12 @@ const styles = {
   },
   sortSelect: {
     borderRadius: 999,
-    border: "1px solid #D4DBE7",
+    border: "1px solid #9CA3AF",
     padding: "8px 12px",
     fontSize: 13,
     background: "#FFFFFF",
     color: "var(--text)",
     outline: "none",
-  },
-  // refreshBtn style left here unused; you can remove if you want super-clean
-  refreshBtn: {
-    whiteSpace: "nowrap",
-    borderRadius: 999,
-    border: "1px solid rgba(148,163,184,.5)",
-    padding: "8px 16px",
-    background: "white",
-    fontSize: 13,
-    cursor: "pointer",
   },
 
   flash: (type) => ({
@@ -408,18 +398,24 @@ const styles = {
     fontSize: 14,
     marginTop: 4,
   },
+
+  // 🔽 scrollable feedback list
   list: {
     display: "grid",
     gap: 10,
     marginTop: 4,
+    maxHeight: 360,      // adjust if you want taller/shorter
+    overflowY: "auto",
+    paddingRight: 4,     // small space so scrollbar doesn't cover content
   },
+
   item: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "stretch",
     padding: 14,
     borderRadius: 14,
-    border: "1px solid rgba(203,213,225,.8)",
+    border: "1px solid #9CA3AF",
     background: "#ffffff",
   },
   itemMain: {

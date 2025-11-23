@@ -1,18 +1,58 @@
 // apps/api/src/routes/admin.incidents.js
 import { Router } from "express";
-import { prisma } from "../prismaClient.js"; // adjust path if different
+import { prisma } from "../prismaClient.js";
 
 const router = Router();
 
+/* ---------- helper to shape incident for frontend ---------- */
+function mapIncident(it) {
+  if (!it) return null;
+
+  const drv = it.driver || {};
+  const bus = drv.bus || {};
+  const trip = it.trip || null;
+  const reporter = it.reporter || null;
+
+  // Build a nice reporter name:
+  let reporterName = null;
+  if (reporter) {
+    if (reporter.commuterProfile && reporter.commuterProfile.fullName) {
+      reporterName = reporter.commuterProfile.fullName;
+    } else if (reporter.email) {
+      reporterName = reporter.email;
+    }
+  }
+
+  return {
+    id: it.id,
+    status: it.status,
+    note: it.note,
+    lat: it.lat,
+    lng: it.lng,
+    evidenceUrl: it.evidenceUrl,
+    createdAt: it.createdAt,
+    updatedAt: it.updatedAt,
+
+    driverId: it.driverId,
+    driverName: drv.fullName || drv.driverId || "Unknown driver",
+    busNumber: bus.number || null,
+    plateNumber: bus.plate || null,
+
+    tripId: it.tripId,
+    tripCode: trip?.id ? `TRIP-${String(trip.id).slice(-6)}` : null,
+    tripOrigin: trip?.origin || null,
+    tripDestination: trip?.destination || null,
+
+    // send plain strings for categories
+    categories: (it.categories || []).map((c) => c.category),
+
+    // reporter display name (may be null if system-generated)
+    reporterName,
+  };
+}
+
 /**
  * GET /admin/incidents
- * Query params:
- *  - from: "YYYY-MM-DD"
- *  - to:   "YYYY-MM-DD"
- *  - status: PENDING / RESOLVED / ESCALATED... (optional)
- *  - search: text search (driver name, note, bus number, etc.)
- *  - page:   1-based page (default 1)
- *  - pageSize: default 10
  */
 router.get("/", async (req, res) => {
   try {
@@ -28,29 +68,22 @@ router.get("/", async (req, res) => {
     const now = new Date();
     const todayStr = now.toISOString().slice(0, 10); // "YYYY-MM-DD"
 
-    // --- Date range (clamped to today for "to") ---
     const where = {};
 
+    // --- Date range filter ---
     if (from || to) {
       where.createdAt = {};
 
       if (from) {
         const dFrom = new Date(from);
-        if (!isNaN(dFrom)) {
-          where.createdAt.gte = dFrom;
-        }
+        if (!isNaN(dFrom)) where.createdAt.gte = dFrom;
       }
 
       if (to) {
         let dTo = new Date(to);
-        if (isNaN(dTo)) {
-          dTo = now;
-        }
-        // clamp to today (no future date)
+        if (isNaN(dTo)) dTo = now;
         const today = new Date(todayStr);
         if (dTo > today) dTo = today;
-
-        // include whole day
         dTo.setHours(23, 59, 59, 999);
         where.createdAt.lte = dTo;
       }
@@ -61,13 +94,12 @@ router.get("/", async (req, res) => {
       where.status = status.toUpperCase();
     }
 
-    // --- text search (driver name, note, bus, reporter) ---
     const searchText = search.trim();
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const take = Math.max(1, parseInt(pageSize, 10) || 10);
     const skip = (pageNum - 1) * take;
 
-    // Build OR search only if naa gyud text
+    // --- text search ---
     if (searchText) {
       where.OR = [
         { note: { contains: searchText, mode: "insensitive" } },
@@ -99,6 +131,27 @@ router.get("/", async (req, res) => {
             },
           },
         },
+        // search reporter email / commuter full name
+        {
+          reporter: {
+            OR: [
+              {
+                email: {
+                  contains: searchText,
+                  mode: "insensitive",
+                },
+              },
+              {
+                commuterProfile: {
+                  fullName: {
+                    contains: searchText,
+                    mode: "insensitive",
+                  },
+                },
+              },
+            ],
+          },
+        },
       ];
     }
 
@@ -112,44 +165,22 @@ router.get("/", async (req, res) => {
         include: {
           driver: {
             include: {
-              bus: true, // assumes DriverProfile has relation to Bus
+              bus: true,
             },
           },
           trip: true,
           categories: true,
+          // ✅ correct relation name
+          reporter: {
+            include: {
+              commuterProfile: true,
+            },
+          },
         },
       }),
     ]);
 
-    // shape data a bit for the frontend
-    const mapped = items.map((it) => {
-      const drv = it.driver || {};
-      const bus = drv.bus || {};
-      const trip = it.trip || null;
-
-      return {
-        id: it.id,
-        status: it.status,
-        note: it.note,
-        lat: it.lat,
-        lng: it.lng,
-        evidenceUrl: it.evidenceUrl,
-        createdAt: it.createdAt,
-        updatedAt: it.updatedAt,
-
-        driverId: it.driverId,
-        driverName: drv.fullName || drv.driverId || "Unknown driver",
-        busNumber: bus.number || null,
-        plateNumber: bus.plate || null,
-
-        tripId: it.tripId,
-        tripCode: trip?.id ? `TRIP-${String(trip.id).slice(-6)}` : null,
-        tripOrigin: trip?.origin || null,
-        tripDestination: trip?.destination || null,
-
-        categories: (it.categories || []).map((c) => c.name),
-      };
-    });
+    const mapped = items.map(mapIncident);
 
     res.json({
       items: mapped,
@@ -162,6 +193,59 @@ router.get("/", async (req, res) => {
     res.status(500).json({
       message: "Failed to fetch incident reports.",
     });
+  }
+});
+
+/**
+ * PATCH /admin/incidents/:id
+ * Body: { status: "PENDING" | "RESOLVED" | "ESCALATED" }
+ */
+router.patch("/:id", async (req, res) => {
+  const { id } = req.params;
+  const rawStatus = req.body?.status;
+
+  if (!rawStatus) {
+    return res.status(400).json({ message: "Status is required" });
+  }
+
+  const status = String(rawStatus).toUpperCase();
+  const ALLOWED = ["PENDING", "RESOLVED", "ESCALATED"];
+
+  if (!ALLOWED.includes(status)) {
+    return res.status(400).json({
+      message: "Invalid status. Use PENDING, RESOLVED, ESCALATED.",
+    });
+  }
+
+  try {
+    const incident = await prisma.incidentReport.update({
+      where: { id }, // id is String in your schema
+      data: { status },
+      include: {
+        driver: {
+          include: {
+            bus: true,
+          },
+        },
+        trip: true,
+        categories: true,
+        reporter: {
+          include: {
+            commuterProfile: true,
+          },
+        },
+      },
+    });
+
+    return res.json(mapIncident(incident));
+  } catch (e) {
+    console.error("PATCH /admin/incidents/:id ERROR:", e);
+
+    if (e.code === "P2025") {
+      return res.status(404).json({ message: "Incident not found" });
+    }
+
+    return res.status(500).json({ message: "Failed to update status" });
   }
 });
 

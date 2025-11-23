@@ -34,9 +34,10 @@ import driversRouter from "../routes/drivers.js";
 import driverProfileRouter from "../routes/driver.profile.js";
 import commuterTripsRouter from "../routes/commuter.trips.js";
 import driverRatingsRouter from "../routes/driver.ratings.js";
-import driverReportsRouter from "../routes/driver.reports.js"; // commuter reports for driver
+import driverReportsRouter from "../routes/driver.reports.js";
 import adminFeedbackRouter from "../routes/admin.feedback.js";
-import adminIncidentsRouter from "./routes/admin.incidents.js";
+import adminIncidentsRouter from "../routes/admin.incidents.js";
+import adminSettingsRoutes from "../routes/admin.settings.js";
 
 const app = express();
 const prisma = new PrismaClient();
@@ -133,14 +134,24 @@ app.use(
 app.use("/maps", mapsRouter);
 app.use("/api/trips", tripsRouter);
 app.use("/api/incidents", incidentsRouter);
+
 app.use("/drivers", requireAuth, driversRouter);
 app.use("/driver", requireAuth, driverProfileRouter);
-app.use("/admin", requireAuth, requireAdmin, adminDriversRouter);
-app.use("/commuter", requireUserAuth, commuterTripsRouter);
 app.use("/driver", requireAuth, driverRatingsRouter);
 app.use("/driver", requireAuth, driverReportsRouter);
-app.use("/admin", adminFeedbackRouter);
-app.use("/admin/incidents", adminIncidentsRouter);
+
+app.use("/commuter", requireUserAuth, commuterTripsRouter);
+
+/* ----- ADMIN AREA (ALL PROTECTED) ----- */
+app.use("/admin", requireAuth, requireAdmin, adminDriversRouter);
+app.use("/admin", requireAuth, requireAdmin, adminSettingsRoutes);
+app.use("/admin", requireAuth, requireAdmin, adminFeedbackRouter);
+app.use(
+  "/admin/incidents",
+  requireAuth,
+  requireAdmin,
+  adminIncidentsRouter
+);
 
 /* ---------- auth endpoints ---------- */
 app.post("/auth/login", async (req, res) => {

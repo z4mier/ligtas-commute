@@ -1,8 +1,9 @@
+// apps/web-admin/src/app/login/page.jsx (or wherever your LoginView lives)
 "use client";
 import React, { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Eye, EyeOff, Mail, Lock } from "lucide-react";
-import { apiLogin } from "@/lib/api"; // ✅ make sure you have the updated api.js from earlier
+import { Eye, EyeOff } from "lucide-react";
+import { apiLogin } from "@/lib/api";
 
 export default function LoginView() {
   const r = useRouter();
@@ -21,16 +22,13 @@ export default function LoginView() {
     try {
       if (!email || !password) throw new Error("Please fill in all fields.");
 
-      // ✅ call API login (fetches real JWT and stores it)
       const data = await apiLogin({ email, password });
 
-      // optional: store admin info for display
       localStorage.setItem(
         "lc_admin",
         JSON.stringify({ email, role: data.role || "ADMIN" })
       );
 
-      // redirect to dashboard
       r.replace(next);
     } catch (ex) {
       console.error("Login failed:", ex);
@@ -44,58 +42,71 @@ export default function LoginView() {
     <main style={S.page}>
       <style>{css}</style>
       <div style={S.card}>
-        <h1 style={S.title}>ADMIN</h1>
+        {/* Brand line */}
+        <div style={S.brandRow}>
+          <span style={S.brandMain}>Ligtas</span>
+          <span style={S.brandAccent}>Commute</span>
+          <span style={S.brandSub}>Admin</span>
+        </div>
 
-        <form onSubmit={onSubmit} style={S.form}>
-          {/* Email Field */}
-          <div style={S.fieldWrap}>
-            <div style={S.leftIcon}>
-              <Mail size={16} />
-            </div>
+        {/* Heading */}
+        <h1 style={S.heading}>Welcome back</h1>
+        <p style={S.sub}>
+          Sign in with your admin account to manage drivers &amp; reports.
+        </p>
+
+        <form onSubmit={onSubmit} style={S.form} noValidate>
+          {/* Email / Phone */}
+          <div style={S.field}>
+            <label style={S.label}>Email or Phone</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="Email"
+              placeholder="admin@ligtascommute.com"
               autoComplete="username"
-              style={{ ...S.input, paddingLeft: 44 }}
+              style={S.input}
             />
           </div>
 
-          {/* Password Field */}
-          <div style={S.fieldWrap}>
-            <div style={S.leftIcon}>
-              <Lock size={16} />
+          {/* Password */}
+          <div style={S.field}>
+            <label style={S.label}>Password</label>
+            <div style={S.passwordWrap}>
+              <input
+                type={show ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                autoComplete="current-password"
+                style={{ ...S.input, paddingRight: 44 }}
+              />
+              <button
+                type="button"
+                onClick={() => setShow((v) => !v)}
+                aria-label="Toggle password visibility"
+                style={S.eyeBtn}
+              >
+                {show ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
             </div>
-            <input
-              type={show ? "text" : "password"}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
-              autoComplete="current-password"
-              style={{ ...S.input, paddingLeft: 44, paddingRight: 48 }}
-            />
-            <button
-              type="button"
-              onClick={() => setShow((v) => !v)}
-              aria-label="Toggle password visibility"
-              style={S.eyeBtn}
-            >
-              {show ? <EyeOff size={18} /> : <Eye size={18} />}
-            </button>
           </div>
 
-          {/* Forgot password */}
-          <a href="/forgot" style={S.forgot}>
-            Forgot password?
-          </a>
-
-          {/* Error message */}
+          {/* Error */}
           {err && <div style={S.error}>{err}</div>}
 
-          {/* Submit button */}
+          {/* Login button */}
           <button type="submit" disabled={loading} style={S.btn}>
             {loading ? "Logging in…" : "Login"}
+          </button>
+
+          {/* Forgot password */}
+          <button
+            type="button"
+            onClick={() => r.push("/forgot")}
+            style={S.forgot}
+          >
+            Forgot password?
           </button>
         </form>
       </div>
@@ -103,131 +114,154 @@ export default function LoginView() {
   );
 }
 
-/* ---------- Inline Styles ---------- */
+/* ---- Styles to match the light card layout ---- */
+
 const S = {
   page: {
     minHeight: "100vh",
     display: "grid",
     placeItems: "center",
-    background: "#0B1220",
-    color: "#fff",
+    background: "#EDF3FA",
     fontFamily:
       'Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-    padding: 16,
+    padding: 24,
   },
   card: {
     width: "100%",
-    maxWidth: 440,
-    background: "#0B132B",
-    border: "1px solid rgba(14,107,143,0.2)",
-    borderRadius: 16,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.45)",
+    maxWidth: 460,
+    background: "#FFFFFF",
+    borderRadius: 24,
+    border: "1px solid #E2E8F0",
+    boxShadow: "0 24px 60px rgba(15,23,42,0.08)",
     padding: 32,
   },
-  title: {
-    textAlign: "center",
+  brandRow: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: 4,
+    fontSize: 14,
+    fontWeight: 700,
+    marginBottom: 18,
+  },
+  brandMain: {
+    color: "#0D658B",
+  },
+  brandAccent: {
+    color: "#0D658B",
+  },
+  brandSub: {
+    fontWeight: 500,
+    color: "#6B7280",
+    marginLeft: 4,
+  },
+  heading: {
+    fontSize: 26,
     fontWeight: 800,
-    fontSize: 40,
-    letterSpacing: 0.5,
-    margin: "0 0 24px",
+    margin: "0 0 4px",
+    color: "#111827",
   },
-  form: { display: "grid", gap: 16 },
-  fieldWrap: { position: "relative" },
+  sub: {
+    margin: "0 0 20px",
+    fontSize: 13,
+    color: "#6B7280",
+  },
+  form: {
+    display: "grid",
+    gap: 16,
+  },
+  field: {
+    display: "grid",
+    gap: 6,
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: "#4B5563",
+  },
   input: {
-    height: 52,
+    height: 44,
     width: "100%",
-    borderRadius: 12,
-    border: "1px solid rgba(14,107,143,0.25)",
-    background: "rgba(11,19,43,0.85)",
-    color: "#fff",
+    borderRadius: 10,
+    border: "1px solid #D4DCEB",
+    background: "#F3F6FD",
+    padding: "0 12px",
+    fontSize: 14,
+    color: "#111827",
     outline: "none",
-    padding: "0 16px",
-    fontSize: 15,
-    transition: "border-color .2s ease, background .2s ease, box-shadow .2s",
   },
-  leftIcon: {
-    position: "absolute",
-    left: 14,
-    top: "50%",
-    transform: "translateY(-50%)",
-    opacity: 0.8,
-    pointerEvents: "none",
+  passwordWrap: {
+    position: "relative",
   },
   eyeBtn: {
     position: "absolute",
     right: 8,
     top: "50%",
     transform: "translateY(-50%)",
-    width: 36,
-    height: 36,
+    width: 32,
+    height: 32,
     display: "grid",
     placeItems: "center",
-    borderRadius: 8,
-    border: "1px solid rgba(14,107,143,0.2)",
-    background: "rgba(14,107,143,0.05)",
-    color: "rgba(255,255,255,0.9)",
+    borderRadius: 999,
+    border: "none",
+    background: "transparent",
+    color: "#6B7280",
     cursor: "pointer",
-    transition: "background .15s ease, border-color .15s ease",
-  },
-  forgot: {
-    marginTop: -6,
-    textAlign: "right",
-    color: "rgba(255,255,255,0.75)",
-    fontSize: 12,
-    textDecoration: "underline",
   },
   error: {
-    background: "rgba(239,68,68,0.12)",
-    border: "1px solid rgba(239,68,68,0.35)",
-    color: "#fecaca",
+    background: "#FEF2F2",
+    border: "1px solid #FCA5A5",
+    color: "#B91C1C",
     fontSize: 13,
-    padding: "10px 12px",
+    padding: "8px 10px",
     borderRadius: 10,
     textAlign: "center",
   },
   btn: {
-    height: 50,
+    marginTop: 4,
+    height: 44,
     width: "100%",
-    borderRadius: 12,
+    borderRadius: 999,
     border: "none",
     cursor: "pointer",
-    background: "#0E6B8F",
-    color: "#fff",
+    background: "#0D658B",
+    color: "#FFFFFF",
     fontWeight: 700,
-    fontSize: 15,
+    fontSize: 14,
     letterSpacing: 0.2,
-    boxShadow: "0 6px 18px rgba(14,107,143,0.35)",
-    transition: "transform .06s ease, filter .15s ease, box-shadow .15s ease",
+  },
+  forgot: {
+    marginTop: 4,
+    border: "none",
+    background: "transparent",
+    padding: 0,
+    fontSize: 12,
+    color: "#6B7280",
+    cursor: "pointer",
+    textDecoration: "underline",
+    alignSelf: "flex-start",
   },
 };
 
 const css = `
-input::placeholder { 
-  color: rgba(255,255,255,0.68); 
-  font-size: 15px; 
-  letter-spacing: .2px; 
+input::placeholder {
+  color: #9CA3AF;
 }
 input:hover {
-  border-color: rgba(14,107,143,0.45);
-  background: rgba(17,24,39,0.75);
+  border-color: #C2CBE2;
 }
 input:focus {
-  border-color: #0E6B8F;
-  background: rgba(14,107,143,0.10);
-  box-shadow: 0 0 0 3px rgba(14,107,143,0.35);
+  border-color: #0D658B;
+  background: #FFFFFF;
+  box-shadow: 0 0 0 1px rgba(13,101,139,0.15);
 }
-button[aria-label="Toggle password visibility"]:hover {
-  background: rgba(14,107,143,0.15);
-  border-color: rgba(14,107,143,0.4);
+button[type="submit"]:hover:not(:disabled) {
+  filter: brightness(1.03);
 }
-button[type="submit"]:hover { 
-  filter: brightness(1.04); 
-  box-shadow: 0 8px 24px rgba(14,107,143,0.45); 
+button[type="submit"]:active:not(:disabled) {
+  transform: translateY(1px);
 }
-button[type="submit"]:active { transform: translateY(1px); }
-button[type="submit"]:disabled { 
-  opacity: .65; 
-  cursor: not-allowed; 
-  box-shadow: none; 
+button[type="submit"]:disabled {
+  opacity: .7;
+  cursor: not-allowed;
 }
 `;

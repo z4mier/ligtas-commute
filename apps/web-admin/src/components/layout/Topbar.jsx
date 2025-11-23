@@ -21,6 +21,42 @@ function formatRelativeTime(dateInput) {
   return `${diffDay} day${diffDay === 1 ? "" : "s"} ago`;
 }
 
+/* helper: get initials from email (before @) */
+function getInitialsFromEmail(email) {
+  if (!email) return "AU";
+  const [namePart = ""] = email.split("@");
+  const clean = namePart.replace(/[^a-zA-Z0-9]/g, "");
+  if (!clean) return "AU";
+  if (clean.length === 1) return clean[0].toUpperCase();
+  return (clean[0] + clean[1]).toUpperCase();
+}
+
+/* helpers: cleared notifications persisted in localStorage */
+function getClearedNotifIds() {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = localStorage.getItem("lc_cleared_notifs");
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return new Set();
+    return new Set(arr);
+  } catch (e) {
+    console.warn("Failed to read lc_cleared_notifs:", e);
+    return new Set();
+  }
+}
+
+function saveClearedNotifIds(ids) {
+  if (typeof window === "undefined") return;
+  try {
+    const current = getClearedNotifIds();
+    ids.forEach((id) => current.add(id));
+    localStorage.setItem("lc_cleared_notifs", JSON.stringify([...current]));
+  } catch (e) {
+    console.warn("Failed to write lc_cleared_notifs:", e);
+  }
+}
+
 export default function Topbar() {
   const r = useRouter();
 
@@ -30,6 +66,9 @@ export default function Topbar() {
   const [notifications, setNotifications] = useState([]);
   const [notifLoading, setNotifLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+
+  // new: store logged in user
+  const [user, setUser] = useState({ email: "", role: "" });
 
   const menuRef = useRef(null);
 
@@ -42,6 +81,23 @@ export default function Topbar() {
     setNotifOpen(false);
     r.replace("/login");
   }
+
+  // load user from localStorage
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = localStorage.getItem("lc_user");
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      // expecting { id, email, role }
+      setUser({
+        email: parsed?.email || "",
+        role: parsed?.role || "",
+      });
+    } catch (err) {
+      console.warn("Failed to read lc_user:", err);
+    }
+  }, []);
 
   // close dropdowns when clicking outside
   useEffect(() => {
@@ -66,7 +122,7 @@ export default function Topbar() {
       let fbItems = [];
       let incidentItems = [];
 
-      // 1) Feedback (safe even if endpoint missing)
+      // 1) Feedback
       try {
         const fb = await listFeedback({ limit: 10 });
         fbItems = Array.isArray(fb?.items)
@@ -75,13 +131,12 @@ export default function Topbar() {
           ? fb
           : [];
       } catch (err) {
-        // if feedback endpoint is not ready yet, just ignore 404
         if (err.status !== 404) {
           console.warn("Feedback notifications error:", err);
         }
       }
 
-      // 2) Incidents (already 404-safe in api.js but double-safe here)
+      // 2) Incidents
       try {
         const inc = await listIncidents({ limit: 10 });
         incidentItems = Array.isArray(inc?.items)
@@ -95,7 +150,6 @@ export default function Topbar() {
         }
       }
 
-      // Map to a unified notification list
       const fbNotifs = fbItems.map((f) => ({
         id: `fb-${f.id}`,
         type: "feedback",
@@ -114,11 +168,15 @@ export default function Topbar() {
         read: false,
       }));
 
-      const combined = [...fbNotifs, ...incidentNotifs].sort((a, b) => {
+      let combined = [...fbNotifs, ...incidentNotifs].sort((a, b) => {
         const ad = a.createdAt ? new Date(a.createdAt).getTime() : 0;
         const bd = b.createdAt ? new Date(b.createdAt).getTime() : 0;
         return bd - ad;
       });
+
+      // 🔒 filter out cleared notifications (persisted)
+      const cleared = getClearedNotifIds();
+      combined = combined.filter((n) => !cleared.has(n.id));
 
       setNotifications(combined);
       setUnreadCount(combined.filter((n) => !n.read).length);
@@ -127,27 +185,29 @@ export default function Topbar() {
     }
   }
 
+  // 🔔 Load notifications on mount so badge/count is ready even without clicking
+  useEffect(() => {
+    loadNotifications();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function handleBellClick() {
     const willOpen = !notifOpen;
     setNotifOpen(willOpen);
     setUserOpen(false);
 
     if (willOpen) {
-      // load/reload notifications whenever we open the panel
+      // optional: re-sync from server when opening
       loadNotifications();
     }
   }
 
   function handleNotificationClick(n) {
-    // mark as read locally
     setNotifications((prev) =>
-      prev.map((item) =>
-        item.id === n.id ? { ...item, read: true } : item
-      )
+      prev.map((item) => (item.id === n.id ? { ...item, read: true } : item))
     );
     setUnreadCount((prev) => Math.max(0, prev - (n.read ? 0 : 1)));
 
-    // navigate to the correct page
     if (n.type === "feedback") {
       r.push("/feedback");
     } else if (n.type === "incident") {
@@ -162,17 +222,32 @@ export default function Topbar() {
   }
 
   function clearAll() {
+    if (!notifications.length) return;
+    // persist cleared IDs so dili na mubalik after refresh
+    const ids = notifications.map((n) => n.id);
+    saveClearedNotifIds(ids);
+
     setNotifications([]);
     setUnreadCount(0);
   }
 
   const hasNotifs = notifications.length > 0;
 
+  // values for display
+  const displayEmail = user.email || "admin@example.com";
+  const displayRole =
+    user.role && user.role.toUpperCase() === "ADMIN"
+      ? "Administrator"
+      : user.role
+      ? user.role.charAt(0) + user.role.slice(1).toLowerCase()
+      : "Administrator";
+  const initials = getInitialsFromEmail(displayEmail);
+
   return (
     <header style={S.bar}>
       {/* Left brand */}
       <div style={S.left}>
-        <div style={S.logoMark} />
+        <img src="/logo.png" alt="LigtasCommute logo" style={S.logoImg} />
         <div>
           <div style={S.brandText}>LigtasCommute</div>
           <div style={S.brandSub}>Admin Portal</div>
@@ -190,9 +265,7 @@ export default function Topbar() {
         >
           <Bell size={18} />
           {unreadCount > 0 && (
-            <span style={S.badge}>
-              {unreadCount > 9 ? "9+" : unreadCount}
-            </span>
+            <span style={S.badge}>{unreadCount > 9 ? "9+" : unreadCount}</span>
           )}
         </button>
 
@@ -229,9 +302,7 @@ export default function Topbar() {
                       <span style={S.notifItemTitle}>{n.title}</span>
                       {!n.read && <span style={S.unreadDot} />}
                     </div>
-                    <div style={S.notifItemBody}>
-                      {n.body}
-                    </div>
+                    <div style={S.notifItemBody}>{n.body}</div>
                     <div style={S.notifItemTime}>
                       {formatRelativeTime(n.createdAt)}
                     </div>
@@ -251,7 +322,7 @@ export default function Topbar() {
           </div>
         )}
 
-        {/* User chip with initials + dropdown */}
+        {/* User chip with email + initials */}
         <button
           type="button"
           onClick={() => {
@@ -261,10 +332,10 @@ export default function Topbar() {
           style={S.userChip}
         >
           <div style={S.userText}>
-            <span style={S.userName}>Admin User</span>
-            <span style={S.userRole}>Administrator</span>
+            <span style={S.userName}>{displayEmail}</span>
+            <span style={S.userRole}>{displayRole}</span>
           </div>
-          <div style={S.initialCircle}>AU</div>
+          <div style={S.initialCircle}>{initials}</div>
         </button>
 
         {userOpen && (
@@ -298,12 +369,10 @@ const S = {
     alignItems: "center",
     gap: 10,
   },
-  logoMark: {
-    height: 32,
-    width: 32,
-    borderRadius: "999px",
-    border: "2px solid #0D658B",
-    background: "#FFFFFF",
+  logoImg: {
+    height: 48,
+    width: 48,
+    objectFit: "cover",
   },
   brandText: {
     fontWeight: 700,
