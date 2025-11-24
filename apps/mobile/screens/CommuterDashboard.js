@@ -42,6 +42,66 @@ const HEADER_ICON_SIZE = 22;
 const LOGO_SIZE = 28;
 const HEADER_H = 48;
 
+/* ---------- Safety tips (for daily random tip) ---------- */
+
+const SAFETY_TIPS = [
+  "Always check the driver's ID and bus number before boarding.",
+  "Share your trip details with a trusted contact when traveling at night.",
+  "Avoid displaying valuables like phones and wallets near the bus doors.",
+  "Stay seated or hold onto the handrails when the bus is moving.",
+  "Know the location of the emergency button and exits in case of incidents.",
+  "Report unsafe driving or suspicious behavior through the app.",
+];
+
+/* ---------- Shared auth helpers (same idea as BusScanner) ---------- */
+
+const TOKEN_KEYS = [
+  "authToken", // main commuter key (most likely)
+  "AUTH_TOKEN",
+  "LC_COMMUTER_TOKEN",
+  "lc_user",
+  "lc_token",
+  "token", // legacy
+  "driverToken",
+  "LC_DRIVER_TOKEN",
+  "lc_admin",
+];
+
+async function getAuthToken() {
+  for (const key of TOKEN_KEYS) {
+    try {
+      const raw = await AsyncStorage.getItem(key);
+      if (!raw) continue;
+
+      const trimmed = String(raw).trim();
+
+      // JSON? e.g. { token: "...", role: "COMMUTER" }
+      if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+        try {
+          const obj = JSON.parse(trimmed);
+          const candidate =
+            obj.token || obj.jwt || obj.accessToken || obj.authToken;
+          if (candidate) return candidate;
+        } catch {
+          // ignore parse error, try next key
+        }
+      } else {
+        // plain token string
+        return trimmed;
+      }
+    } catch {
+      // ignore and try next key
+    }
+  }
+  return null;
+}
+
+async function clearAuthToken() {
+  await Promise.all(TOKEN_KEYS.map((k) => AsyncStorage.removeItem(k)));
+}
+
+/* ---------- utils ---------- */
+
 function timeAgo(ts) {
   if (!ts) return "";
   const s = Math.floor((Date.now() - ts) / 1000);
@@ -75,6 +135,8 @@ function cleanPlace(s) {
   return s.trim();
 }
 
+const MAX_RECENT_SHOWN = 5;
+
 export default function CommuterDashboard({ navigation }) {
   const [fontsLoaded] = useFonts({
     Poppins_400Regular,
@@ -100,22 +162,34 @@ export default function CommuterDashboard({ navigation }) {
   const [recentTrips, setRecentTrips] = useState([]);
   const [loadingTrips, setLoadingTrips] = useState(false);
 
+  // "daily" safety tip – stable per day
+  const todayTip = useMemo(() => {
+    const today = new Date();
+    const idx = today.getDate() % SAFETY_TIPS.length;
+    return SAFETY_TIPS[idx];
+  }, []);
+
   // ---- auth + profile ----
   useEffect(() => {
     (async () => {
       try {
-        const token = await AsyncStorage.getItem("token");
+        const token = await getAuthToken();
         if (!token) return navigation.replace("Login");
+
         const res = await fetch(`${API_URL}/users/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
+
         if (res.status === 401) {
-          await AsyncStorage.removeItem("token");
+          await clearAuthToken();
           return navigation.replace("Login");
         }
+
         const data = await res.json().catch(() => null);
         if (data) setMe(data);
-      } catch {
+      } catch (e) {
+        console.log("[CommuterDashboard] /users/me error:", e);
+        await clearAuthToken();
         return navigation.replace("Login");
       } finally {
         setChecking(false);
@@ -173,18 +247,26 @@ export default function CommuterDashboard({ navigation }) {
     const unsub = navigation.addListener("focus", async () => {
       try {
         setLoadingTrips(true);
-        const token = await AsyncStorage.getItem("token");
+        const token = await getAuthToken();
         if (!token) {
           setRecentTrips([]);
           return;
         }
+
         const res = await fetch(`${API_URL}/commuter/trips/recent`, {
           headers: { Authorization: `Bearer ${token}` },
         });
+
+        if (res.status === 401) {
+          await clearAuthToken();
+          navigation.replace("Login");
+          return;
+        }
+
         const data = await res.json().catch(() => []);
         setRecentTrips(Array.isArray(data) ? data : []);
       } catch (e) {
-        console.log("load recent trips error:", e);
+        console.log("[CommuterDashboard] load recent trips error:", e);
         setRecentTrips([]);
       } finally {
         setLoadingTrips(false);
@@ -198,6 +280,10 @@ export default function CommuterDashboard({ navigation }) {
   const goSettings = () => navigation?.navigate?.("Settings");
   const goQR = () => navigation?.navigate?.("QRScanner");
   const goHome = () => navigation?.navigate?.("CommuterDashboard");
+
+  const openAllTrips = () => {
+    navigation?.navigate?.("RecentTrips"); // create this screen for full history
+  };
 
   if (!fontsLoaded || checking) {
     return (
@@ -338,9 +424,34 @@ export default function CommuterDashboard({ navigation }) {
           <Text style={s.heroSub}>Ready for a safer commute today?</Text>
         </View>
 
+        {/* 🔐 SAFETY TIP CARD (above recent trips) */}
+        <View style={s.card}>
+          <View style={s.safetyHeader}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View style={s.safetyIconWrap}>
+                <MaterialCommunityIcons
+                  name="shield-check"
+                  size={18}
+                  color="#FFFFFF"
+                />
+              </View>
+              <Text style={s.safetyTitle}>Tips for a safer commute</Text>
+            </View>
+            <Text style={s.safetyBadge}>Daily tip</Text>
+          </View>
+          <Text style={s.safetyBody}>{todayTip}</Text>
+        </View>
+
         {/* 1️⃣ RECENT TRIPS – MoveIt style */}
         <View style={s.card}>
-          <Text style={s.sectionTitle}>Recent trips</Text>
+          <View style={s.sectionHeader}>
+            <Text style={s.sectionTitle}>Recent trips</Text>
+            {recentTrips.length > 0 && (
+              <TouchableOpacity onPress={openAllTrips}>
+                <Text style={s.viewAllTrips}>View all</Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
           {loadingTrips ? (
             <View style={s.emptyWrap}>
@@ -360,7 +471,7 @@ export default function CommuterDashboard({ navigation }) {
               </Text>
             </View>
           ) : (
-            recentTrips.slice(0, 10).map((trip) => {
+            recentTrips.slice(0, MAX_RECENT_SHOWN).map((trip) => {
               const title = `Ride to ${cleanPlace(trip.destLabel)}`;
               const dateTimeStr = fmtDateTime(
                 trip.endedAt || trip.startedAt
@@ -410,10 +521,7 @@ export default function CommuterDashboard({ navigation }) {
                               size={13}
                               color={C.brand}
                             />
-                            <Text
-                              style={s.tripMetaText}
-                              numberOfLines={1}
-                            >
+                            <Text style={s.tripMetaText} numberOfLines={1}>
                               {driverName}
                             </Text>
                           </View>
@@ -425,10 +533,7 @@ export default function CommuterDashboard({ navigation }) {
                               size={13}
                               color={C.brand}
                             />
-                            <Text
-                              style={s.tripMetaText}
-                              numberOfLines={1}
-                            >
+                            <Text style={s.tripMetaText} numberOfLines={1}>
                               {busLabel}
                             </Text>
                           </View>
@@ -449,9 +554,7 @@ export default function CommuterDashboard({ navigation }) {
           )}
         </View>
 
-        {/* you can add back your "Where's your bus" + announcements sections here
-            using the existing styles (busSection, busCard, annItem, etc.)
-            – I kept them untouched in the styles below */}
+        {/* (Where's your bus / announcements sections can stay the same) */}
       </ScrollView>
 
       {/* BOTTOM NAV */}
@@ -566,6 +669,52 @@ const s = StyleSheet.create({
     fontFamily: "Poppins_600SemiBold",
     color: C.text,
     fontSize: 14,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  viewAllTrips: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 11,
+    color: C.brand,
+  },
+
+  /* SAFETY TIP */
+  safetyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  safetyIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: C.brand,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  safetyTitle: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 13,
+    color: C.text,
+  },
+  safetyBadge: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 10,
+    color: "#10B981",
+    backgroundColor: "#DCFCE7",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  safetyBody: {
+    marginTop: 4,
+    fontFamily: "Poppins_400Regular",
+    fontSize: 11.5,
+    color: C.sub,
   },
 
   /* RECENT TRIPS */

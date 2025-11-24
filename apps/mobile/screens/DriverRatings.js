@@ -1,5 +1,10 @@
 // apps/mobile/screens/DriverRatings.js
-import React, { useEffect, useState, useCallback } from "react";
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+} from "react";
 import {
   View,
   Text,
@@ -46,6 +51,7 @@ export default function DriverRatings({ navigation }) {
   const [totalRatings, setTotalRatings] = useState(0);
   const [items, setItems] = useState([]);
   const [errorMsg, setErrorMsg] = useState("");
+  const [sortMode, setSortMode] = useState("NEWEST");
 
   const loadRatings = useCallback(async () => {
     setLoading(true);
@@ -171,6 +177,41 @@ export default function DriverRatings({ navigation }) {
     );
   };
 
+  // ---------- SORTING LOGIC (Newest ↔ Oldest) ---------- //
+  const sortedItems = useMemo(() => {
+    if (!Array.isArray(items)) return [];
+    const arr = [...items];
+
+    const getDateValue = (it) => {
+      const raw =
+        it.createdAt ||
+        it.updatedAt ||
+        it.date ||
+        it.ratedAt ||
+        it.timestamp ||
+        null;
+      const t = raw ? new Date(raw).getTime() : 0;
+      return Number.isNaN(t) ? 0 : t;
+    };
+
+    arr.sort((a, b) => {
+      const ta = getDateValue(a);
+      const tb = getDateValue(b);
+
+      if (sortMode === "NEWEST") {
+        return tb - ta; // newest first
+      } else {
+        return ta - tb; // oldest first
+      }
+    });
+
+    return arr;
+  }, [items, sortMode]);
+
+  const toggleSortMode = () => {
+    setSortMode((prev) => (prev === "NEWEST" ? "OLDEST" : "NEWEST"));
+  };
+
   if (!fontsLoaded) {
     return (
       <SafeAreaView style={styles.safe}>
@@ -203,7 +244,7 @@ export default function DriverRatings({ navigation }) {
         <View style={{ width: 32 }} />
       </View>
 
-      {/* Summary card – blue like DriverDashboard headerCard, now with number 4.5 / 5 */}
+      {/* Summary card – blue like DriverDashboard headerCard */}
       <View style={styles.summaryCard}>
         <View style={{ flex: 1 }}>
           <Text style={styles.summaryLabel}>Average rating</Text>
@@ -225,6 +266,25 @@ export default function DriverRatings({ navigation }) {
         </View>
       </View>
 
+      {/* Sort / Filter button (only if there are ratings and no error) */}
+      {hasRatings && !loading && !errorMsg ? (
+        <View style={styles.toolbarRow}>
+          <TouchableOpacity style={styles.sortBtn} onPress={toggleSortMode}>
+            <MaterialCommunityIcons
+              name="filter-variant"
+              size={16}
+              color={C.text}
+              style={{ marginRight: 6 }}
+            />
+            <Text style={styles.sortLabel}>
+              {sortMode === "NEWEST"
+                ? "Newest to oldest"
+                : "Oldest to newest"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       {/* Error state */}
       {errorMsg ? (
         <View style={styles.errorWrap}>
@@ -244,13 +304,21 @@ export default function DriverRatings({ navigation }) {
         </View>
       ) : !hasRatings ? (
         <View style={styles.center}>
-          <Text style={styles.emptyText}>
-            You don’t have any ratings yet.
+          {/* Empty state like "No commuter reports" */}
+          <MaterialCommunityIcons
+            name="clipboard-check-outline"
+            size={42}
+            color={C.sub}
+            style={{ marginBottom: 10 }}
+          />
+          <Text style={styles.emptyText}>No commuter ratings</Text>
+          <Text style={styles.emptySubText}>
+            You currently have no ratings from commuters. Keep driving safely!
           </Text>
         </View>
       ) : (
         <FlatList
-          data={items}
+          data={sortedItems}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
@@ -334,6 +402,27 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
+  /* toolbar (sort button) */
+  toolbarRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    paddingHorizontal: 16,
+    marginTop: 8,
+  },
+  sortBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#E5E7EB",
+  },
+  sortLabel: {
+    fontSize: 12,
+    color: C.text,
+    fontFamily: "Poppins_400Regular",
+  },
+
   errorWrap: {
     flexDirection: "row",
     alignItems: "center",
@@ -356,10 +445,20 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+
+  // Empty state styles (match "No commuter reports" vibe)
   emptyText: {
-    fontSize: 13,
+    fontSize: 15,
+    color: C.text,
+    fontFamily: "Poppins_600SemiBold",
+  },
+  emptySubText: {
+    marginTop: 4,
+    fontSize: 12,
     color: C.sub,
     fontFamily: "Poppins_400Regular",
+    textAlign: "center",
+    paddingHorizontal: 32,
   },
 
   listContent: {

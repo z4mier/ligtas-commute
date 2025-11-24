@@ -1,4 +1,4 @@
-// apps/mobile-driver/screens/QRScanner.js
+// apps/mobile/screens/BusScanner.js
 import React, {
   useCallback,
   useEffect,
@@ -37,17 +37,22 @@ const C = {
 
 const HEADER_H = 48;
 
-/** Small helper: try reading token from various keys & shapes */
+/** Try reading token from various keys & shapes */
 async function getAuthToken() {
   const tokenKeys = [
-    "authToken",           // pinaka-common sa mobile
+    "authToken", // previous main commuter key
     "AUTH_TOKEN",
     "LC_COMMUTER_TOKEN",
-    "LC_DRIVER_TOKEN",
-    "driverToken",
+
+    // 🔥 actual key from your Login screen
+    "token",
+
+    // other possible keys we might reuse
+    "lc_user",
     "lc_token",
     "lc_admin",
-    "lc_user",
+    "LC_DRIVER_TOKEN",
+    "driverToken",
   ];
 
   for (const key of tokenKeys) {
@@ -55,36 +60,44 @@ async function getAuthToken() {
       const raw = await AsyncStorage.getItem(key);
       if (!raw) continue;
 
-      console.log("[QRScanner] found something in AsyncStorage key =", key);
+      console.log("[BusScanner] found something in AsyncStorage key =", key);
 
-      // If JSON (e.g. { token: "...", role: "COMMUTER" })
-      const trimmed = raw.trim();
+      const trimmed = String(raw).trim();
+
+      // JSON stored: { token: "...", role: "COMMUTER" }
       if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
         try {
           const obj = JSON.parse(trimmed);
           const candidate =
             obj.token || obj.jwt || obj.accessToken || obj.authToken;
           if (candidate) {
-            console.log("[QRScanner] using token from JSON under key =", key);
+            console.log(
+              "[BusScanner] using token from JSON under key =",
+              key
+            );
             return candidate;
           }
-        } catch (e) {
-          console.log("[QRScanner] failed to parse JSON for key", key, e);
+        } catch (err) {
+          console.log(
+            "[BusScanner] failed to parse JSON for key",
+            key,
+            err
+          );
         }
       } else {
         // plain string token
-        console.log("[QRScanner] using raw token under key =", key);
+        console.log("[BusScanner] using raw token under key =", key);
         return trimmed;
       }
-    } catch (e) {
-      console.log("[QRScanner] error reading key", key, e);
+    } catch (err) {
+      console.log("[BusScanner] error reading key", key, err);
     }
   }
 
   return null;
 }
 
-export default function QRScanner({ navigation }) {
+export default function BusScanner({ navigation }) {
   const insets = useSafeAreaInsets();
 
   // Camera permissions
@@ -113,7 +126,7 @@ export default function QRScanner({ navigation }) {
     setError("");
   }, []);
 
-  /** Close modal and go back */
+  /** Close screen */
   const closeAndBack = useCallback(() => {
     setInfoOpen(false);
     setDriver(null);
@@ -125,9 +138,11 @@ export default function QRScanner({ navigation }) {
   /* -------------- HELPERS -------------- */
 
   const corridorLabel = (c) => {
-    if (c === "EAST") return "EAST (via Oslob)";
-    if (c === "WEST") return "WEST (via Barili)";
-    return c || "—";
+    if (!c) return "—";
+    const up = String(c).toUpperCase();
+    if (up === "EAST") return "EAST (via Oslob)";
+    if (up === "WEST") return "WEST (via Barili)";
+    return c;
   };
 
   const normalizeBusType = (out) => {
@@ -221,103 +236,19 @@ export default function QRScanner({ navigation }) {
     };
   };
 
-  /** Build driver object from JSON QR (embedded driver info) */
-  const normalizeDriverFromJson = (parsed) => {
-    const driverProfileId =
-      parsed.driverProfileId ?? parsed.driverId ?? parsed.id ?? null;
-
-    const busId = parsed.busId ?? parsed.bus?.id ?? null;
-
-    const corridor =
-      parsed.corridor ?? parsed.bus?.corridor ?? parsed.bus_corridor ?? null;
-
-    const forwardRoute =
-      parsed.forwardRoute ??
-      parsed.bus?.forwardRoute ??
-      parsed.routeForward ??
-      parsed.route_forward ??
-      null;
-
-    const returnRoute =
-      parsed.returnRoute ??
-      parsed.bus?.returnRoute ??
-      parsed.routeReturn ??
-      parsed.route_return ??
-      null;
-
-    const status =
-      parsed.status ??
-      parsed.driverStatus ??
-      parsed.onDutyStatus ??
-      parsed.on_duty_status ??
-      null;
-
-    const onDuty =
-      parsed.onDuty ??
-      parsed.isOnDuty ??
-      parsed.is_on_duty ??
-      status === "ON_DUTY" ??
-      false;
-
-    return {
-      id: driverProfileId,
-      driverProfileId,
-      busId,
-
-      name: parsed.name ?? parsed.driverName ?? "Unknown Driver",
-      code:
-        parsed.code ??
-        parsed.driverCode ??
-        parsed.driverId ??
-        parsed.id ??
-        "N/A",
-
-      busNumber: parsed.busNumber ?? parsed.bus ?? "—",
-      plateNumber: parsed.plateNumber ?? parsed.plate ?? "—",
-
-      busType: normalizeBusType(parsed),
-      vehicleType: normalizeBusType(parsed),
-
-      corridor,
-      forwardRoute,
-      returnRoute,
-
-      status,
-      onDuty: !!onDuty,
-
-      scannedAt: new Date(),
-    };
-  };
-
-  /** ---------------------------------
-   *  MAIN HANDLER FOR SCANNED PAYLOAD
-   *  --------------------------------- */
+  /** MAIN HANDLER FOR SCANNED PAYLOAD (BUS QR) */
   const handlePayload = async (data) => {
     try {
-      console.log("[QRScanner] scanned data =", data);
+      console.log("[BusScanner] scanned data =", data);
 
-      // Try JSON first
+      // Decode QR payload. For bus QR we expect JSON from backend.
       let parsed = null;
       try {
         parsed = JSON.parse(String(data));
       } catch {
-        parsed = null;
+        parsed = data;
       }
 
-      // If QR contains embedded DRIVER info (no type: "bus")
-      if (
-        parsed &&
-        !parsed.type &&
-        (parsed.driverId || parsed.driverProfileId || parsed.name)
-      ) {
-        const obj = normalizeDriverFromJson(parsed);
-        console.log("[QRScanner] parsed embedded JSON DRIVER:", obj);
-        setDriver(obj);
-        setInfoOpen(true);
-        return;
-      }
-
-      /** Fallback: call API for BUS QR (commuter scanning bus) */
       setLoadingLookup(true);
 
       const token = await getAuthToken();
@@ -335,25 +266,25 @@ export default function QRScanner({ navigation }) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ payload: parsed ?? data }),
+        body: JSON.stringify({ payload: parsed }),
       });
 
       const out = await res.json().catch(() => ({}));
       setLoadingLookup(false);
 
       if (!res.ok) {
-        console.log("[QRScanner] API ERROR:", out);
+        console.log("[BusScanner] API ERROR:", out);
         throw new Error(out?.message || "Invalid QR code");
       }
 
       const obj = normalizeDriverFromApi(out);
-      console.log("[QRScanner] Driver+Bus from API:", obj);
+      console.log("[BusScanner] Driver+Bus from API:", obj);
 
       setDriver(obj);
       setInfoOpen(true);
-    } catch (e) {
-      console.error("[QRScanner] handlePayload ERROR:", e);
-      setError(e.message || "Scan failed. Try again.");
+    } catch (err) {
+      console.error("[BusScanner] handlePayload ERROR:", err);
+      setError(err.message || "Scan failed. Try again.");
 
       setTimeout(() => {
         scanLock.current = false;
@@ -511,7 +442,7 @@ export default function QRScanner({ navigation }) {
           <View style={s.infoCard}>
             {/* Header */}
             <View style={s.infoHeader}>
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
                 <View style={s.avatarCircle}>
                   <MaterialCommunityIcons
                     name="account"
@@ -519,52 +450,60 @@ export default function QRScanner({ navigation }) {
                     color={C.brand}
                   />
                 </View>
-                <View style={{ marginLeft: 10 }}>
-                  <Text style={s.infoTitle}>
-                    {driver?.name ?? "Unknown Driver"}
-                  </Text>
+                <View style={{ marginLeft: 10, flex: 1 }}>
+                  {/* Name + status pill on the same row */}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <Text style={s.infoTitle}>
+                      {driver?.name ?? "Unknown Driver"}
+                    </Text>
+                    <View
+                      style={[
+                        s.statusPill,
+                        {
+                          marginLeft: 8,
+                          backgroundColor: isOnDuty ? "#DCFCE7" : "#F3F4F6",
+                          borderColor: isOnDuty ? "#22C55E" : C.border,
+                        },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          s.statusDot,
+                          { backgroundColor: isOnDuty ? C.green : C.hint },
+                        ]}
+                      />
+                      <Text
+                        style={[
+                          s.statusPillTxt,
+                          { color: isOnDuty ? C.green : C.sub },
+                        ]}
+                      >
+                        {isOnDuty ? "On duty" : "Off duty"}
+                      </Text>
+                    </View>
+                  </View>
+
                   {!!timeText && <Text style={s.infoSub}>{timeText}</Text>}
                 </View>
               </View>
 
-              <TouchableOpacity onPress={() => setInfoOpen(false)}>
+              <TouchableOpacity
+                onPress={() => {
+                  setInfoOpen(false);
+                  resetScan();
+                }}
+              >
                 <MaterialCommunityIcons name="close" size={20} color={C.text} />
               </TouchableOpacity>
             </View>
 
-            {/* Status row */}
-            <View style={[s.row, { marginTop: 8 }]}>
-              <View style={s.badge}>
-                <Text style={s.badgeTxt}>
-                  {driver?.code ? `ID: ${driver.code}` : "No driver code"}
-                </Text>
-              </View>
-
-              <View
-                style={[
-                  s.statusPill,
-                  {
-                    backgroundColor: isOnDuty ? "#DCFCE7" : "#F3F4F6",
-                    borderColor: isOnDuty ? "#22C55E" : C.border,
-                  },
-                ]}
-              >
-                <View
-                  style={[
-                    s.statusDot,
-                    { backgroundColor: isOnDuty ? C.green : C.hint },
-                  ]}
-                />
-                <Text
-                  style={[
-                    s.statusPillTxt,
-                    { color: isOnDuty ? C.green : C.sub },
-                  ]}
-                >
-                  {isOnDuty ? "On duty" : "Off duty"}
-                </Text>
-              </View>
-            </View>
+            {/* (ID row removed) */}
 
             {/* Info sections */}
             <View style={[s.infoBox, { marginTop: 14 }]}>
@@ -622,30 +561,19 @@ export default function QRScanner({ navigation }) {
               </View>
             </View>
 
-            {/* Proceed */}
+            {/* Start Tracking button */}
             <TouchableOpacity
               style={[s.primaryBtn, { marginTop: 14 }]}
-              onPress={async () => {
-                const normalized = {
-                  ...driver,
-                  driverProfileId:
-                    driver?.driverProfileId ?? driver?.id ?? null,
-                  busId: driver?.busId ?? null,
-                };
-
-                await AsyncStorage.setItem(
-                  "LC_CURRENT_DRIVER",
-                  JSON.stringify(normalized)
-                );
-
+              onPress={() => {
+                setInfoOpen(false);
                 navigation.navigate("MapTracking", {
-                  driver: normalized,
+                  driver,
+                  busNumber: driver?.busNumber,
+                  plateNumber: driver?.plateNumber,
                 });
               }}
             >
-              <Text style={s.primaryBtnTxt}>
-                Go Online & Open Live Tracking
-              </Text>
+              <Text style={s.primaryBtnTxt}>Start Tracking</Text>
             </TouchableOpacity>
           </View>
         </View>

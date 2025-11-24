@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { listBuses, createBus, setBusStatus } from "@/lib/api";
-import { Pencil, X as XIcon } from "lucide-react";
+import { Pencil, X as XIcon, Eye, Download } from "lucide-react";
 
 /* ---------- ROUTES (GROUPED) ---------- */
 const ROUTE_GROUPS = {
@@ -41,6 +41,67 @@ const ROUTE_GROUPS = {
   ],
 };
 
+/* ---------- QR HELPER ---------- */
+async function makeQrDataUrl(text) {
+  try {
+    const QR = await import("qrcode");
+    return await QR.toDataURL(text, { margin: 1, scale: 6 });
+  } catch {
+    return `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(
+      text
+    )}`;
+  }
+}
+
+/* ---------- DRIVER HELPERS (assigned driver per bus) ---------- */
+
+function getAssignedDriver(bus) {
+  if (!bus) return null;
+
+  // If backend returns a single driver object
+  if (bus.assignedDriver) return bus.assignedDriver;
+  if (bus.driver) return bus.driver;
+
+  // If backend returns an array of drivers
+  if (Array.isArray(bus.drivers) && bus.drivers.length > 0) {
+    // Prefer on-duty or active driver
+    const active =
+      bus.drivers.find(
+        (d) =>
+          d.onDuty ||
+          d.dutyStatus === "ON_DUTY" ||
+          d.status === "ON_DUTY" ||
+          d.isActive
+      ) || bus.drivers[0];
+    return active;
+  }
+
+  return null;
+}
+
+function driverDisplayName(d) {
+  if (!d) return null;
+  return (
+    d.fullName ||
+    d.name ||
+    d.driverName ||
+    d.displayName ||
+    d.code ||
+    d.driverId ||
+    "Unknown driver"
+  );
+}
+
+function driverDutyLabel(d) {
+  if (!d) return "—";
+  const onDuty =
+    d.onDuty ||
+    d.dutyStatus === "ON_DUTY" ||
+    d.status === "ON_DUTY" ||
+    d.isOnline;
+  return onDuty ? "On duty" : "Off duty";
+}
+
 export default function BusManagementPage() {
   const [tab, setTab] = useState("info");
   const [flash, setFlash] = useState({ type: "", text: "" });
@@ -76,6 +137,11 @@ export default function BusManagementPage() {
     returnRoute: "",
     status: "",
   });
+
+  // QR modal state
+  const [qrOpen, setQrOpen] = useState(false);
+  const [qrImg, setQrImg] = useState("");
+  const [qrBus, setQrBus] = useState(null);
 
   const upd = (k, v) => setForm((s) => ({ ...s, [k]: v }));
 
@@ -139,7 +205,7 @@ export default function BusManagementPage() {
   async function loadBuses() {
     try {
       setLoading(true);
-      const data = await listBuses(); // GET /buses
+      const data = await listBuses(); // GET /buses (should include drivers if available)
       setBuses(Array.isArray(data) ? data : []);
       setPage(1);
     } catch (err) {
@@ -165,16 +231,22 @@ export default function BusManagementPage() {
 
   const filtered = buses.filter((b) => {
     if (!normalizedSearch) return true;
+
+    const driver = getAssignedDriver(b);
+    const driverNameText = driverDisplayName(driver) || "";
+
     const target = [
       b.number,
       b.plate,
       corridorLabel(b.corridor),
       b.forwardRoute,
       b.returnRoute,
+      driverNameText,
     ]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
+
     return target.includes(normalizedSearch);
   });
 
@@ -194,6 +266,27 @@ export default function BusManagementPage() {
   const currentPage = Math.min(page, totalPages);
   const startIndex = (currentPage - 1) * PAGE_SIZE;
   const pageItems = sorted.slice(startIndex, startIndex + PAGE_SIZE);
+
+  /* ---------- QR OPENER ---------- */
+
+  async function openQr(bus) {
+    if (!bus) return;
+
+    const payload = JSON.stringify({
+      type: "bus",
+      id: bus.id,
+      number: bus.number,
+      plate: bus.plate,
+      corridor: bus.corridor,
+      forwardRoute: bus.forwardRoute,
+      returnRoute: bus.returnRoute,
+    });
+
+    const url = await makeQrDataUrl(payload);
+    setQrImg(url);
+    setQrBus(bus);
+    setQrOpen(true);
+  }
 
   /* ---------- submit (create bus) ---------- */
 
@@ -242,6 +335,9 @@ export default function BusManagementPage() {
 
       showFlash("success", "Bus registered successfully.");
       setTab("info");
+
+      // auto-generate + show QR for the newly registered bus
+      await openQr(created);
     } catch (err) {
       console.error("CREATE BUS ERROR (frontend):", err);
       showFlash("error", err.message || "Failed to register bus.");
@@ -320,6 +416,32 @@ export default function BusManagementPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  /* ---------- render driver info in card ---------- */
+
+  function renderDriverInfo(bus) {
+    const d = getAssignedDriver(bus);
+    if (!d) {
+      return (
+        <div style={S.busSub}>
+          Assigned Driver:{" "}
+          <span style={{ fontStyle: "italic", color: "#9CA3AF" }}>
+            Unassigned
+          </span>
+        </div>
+      );
+    }
+
+    const name = driverDisplayName(d);
+    const duty = driverDutyLabel(d);
+
+    return (
+      <>
+        <div style={S.busSub}>Assigned Driver: {name}</div>
+        <div style={S.busSub}>Driver Duty: {duty}</div>
+      </>
+    );
   }
 
   const S = styles;
@@ -499,7 +621,7 @@ export default function BusManagementPage() {
             <div style={S.searchWrapper}>
               <input
                 style={S.searchInput}
-                placeholder="Search by bus number, plate, corridor, route…"
+                placeholder="Search by bus number, plate, corridor, route, driver…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -575,6 +697,9 @@ export default function BusManagementPage() {
                             ? `${b.forwardRoute} — ${b.returnRoute}`
                             : "—"}
                         </div>
+
+                        {/* NEW: Assigned driver + duty */}
+                        {renderDriverInfo(b)}
                       </div>
 
                       <div style={S.busRight}>
@@ -588,6 +713,14 @@ export default function BusManagementPage() {
                         >
                           <Pencil size={14} />
                           <span>Edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          style={S.qrBtn}
+                          onClick={() => openQr(b)}
+                        >
+                          <Eye size={14} />
+                          <span>View QR</span>
                         </button>
                       </div>
                     </div>
@@ -713,6 +846,66 @@ export default function BusManagementPage() {
           </div>
         </div>
       )}
+
+      {/* ---------- QR MODAL ---------- */}
+      {qrOpen && qrBus && (
+        <div style={S.modalBackdrop} onMouseDown={() => setQrOpen(false)}>
+          <div
+            style={{ ...S.modal, maxWidth: 520 }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div style={S.modalHeader}>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>Bus QR Code</div>
+              <button
+                type="button"
+                onClick={() => setQrOpen(false)}
+                style={S.modalCloseBtn}
+              >
+                <XIcon size={18} />
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                placeItems: "center",
+                padding: 16,
+                gap: 12,
+              }}
+            >
+              <img
+                src={qrImg}
+                alt="Bus QR"
+                style={{
+                  width: 240,
+                  height: 240,
+                  borderRadius: 12,
+                  border: "1px solid #E2E8F0",
+                }}
+              />
+              <div style={{ fontSize: 14, color: "#4B5563" }}>
+                Bus {qrBus.number} • Plate {qrBus.plate}
+              </div>
+              <a
+                href={qrImg}
+                download={`BUS-${qrBus.number || "qr"}.png`}
+                style={{
+                  ...S.btn,
+                  width: "auto",
+                  padding: "10px 16px",
+                  textDecoration: "none",
+                  textAlign: "center",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <Download size={16} /> Download QR
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -831,7 +1024,7 @@ const styles = {
     display: "grid",
     gap: 10,
     marginTop: 10,
-    maxHeight: 360, // adjust height as needed
+    maxHeight: 360,
     overflowY: "auto",
     paddingRight: 4,
   },
@@ -907,6 +1100,19 @@ const styles = {
     color: "#0F172A",
     fontSize: 12,
     cursor: "pointer",
+  },
+  qrBtn: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "6px 10px",
+    borderRadius: 999,
+    border: "1px solid #0D658B",
+    background: "#EFF6FF",
+    color: "#0D658B",
+    fontSize: 12,
+    cursor: "pointer",
+    fontWeight: 500,
   },
 
   paginationText: {

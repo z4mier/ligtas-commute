@@ -22,8 +22,8 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
+import QRCode from "qrcode";
 
-// Mailer
 import { sendOtpEmail } from "./utils/mailer.js";
 
 import mapsRouter from "../routes/maps.js";
@@ -91,6 +91,15 @@ function requireUserAuth(req, res, next) {
   });
 }
 
+function requireDriverAuth(req, res, next) {
+  return requireAuth(req, res, () => {
+    if (req.user?.role !== "DRIVER") {
+      return res.status(403).json({ message: "Drivers only" });
+    }
+    next();
+  });
+}
+
 /* ---------- simple OTP store (dev) ---------- */
 const otpStore = new Map();
 const OTP_TTL_MS = 5 * 60 * 1000;
@@ -140,6 +149,135 @@ app.use("/driver", requireAuth, driverProfileRouter);
 app.use("/driver", requireAuth, driverRatingsRouter);
 app.use("/driver", requireAuth, driverReportsRouter);
 
+// --- DRIVER DUTY STATUS (ON_DUTY / OFF_DUTY) ---
+app.patch("/driver/duty", requireAuth, async (req, res) => {
+  try {
+    // ensure driver account
+    if (req.user?.role !== "DRIVER") {
+      return res.status(403).json({ message: "Drivers only" });
+    }
+
+    const schema = z.object({
+      status: z.enum(["ON_DUTY", "OFF_DUTY"]),
+    });
+
+    const { status } = schema.parse(req.body);
+
+    // find driver profile via userId (unique)
+    const driver = await prisma.driverProfile.findUnique({
+      where: { userId: req.user.sub },
+    });
+
+    if (!driver) {
+      return res.status(404).json({ message: "Driver profile not found" });
+    }
+
+    const updated = await prisma.driverProfile.update({
+      where: { driverId: driver.driverId },
+      data: { status },
+    });
+
+    return res.json({
+      message: "Duty status updated",
+      status: updated.status,
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ message: "Invalid status" });
+    }
+    console.error("PATCH /driver/duty ERROR:", err);
+    return res.status(500).json({ message: "Failed to update duty status" });
+  }
+});
+
+
+/* ---------- COMMUTER BUS QR SCAN (for mobile app) ---------- */
+app.post("/commuter/scan-bus", requireUserAuth, async (req, res) => {
+  try {
+    let { payload } = req.body || {};
+    if (!payload) {
+      return res.status(400).json({ message: "Missing payload" });
+    }
+
+    // If QR content is a string, try parse to JSON
+    if (typeof payload === "string") {
+      try {
+        payload = JSON.parse(payload);
+      } catch {
+        payload = { raw: payload };
+      }
+    }
+
+    // Make sure it's a bus QR
+    if (payload.type && payload.type !== "bus") {
+      return res.status(400).json({ message: "QR is not a bus code" });
+    }
+
+    // Bus number from different possible fields
+    const busNumber =
+      payload.busNumber ||
+      payload.number ||
+      payload.bus_no ||
+      payload.bus?.number ||
+      null;
+
+    if (!busNumber) {
+      return res
+        .status(400)
+        .json({ message: "Bus number missing in QR payload" });
+    }
+
+    // Find bus by number
+    const bus = await prisma.bus.findFirst({
+      where: { number: String(busNumber) },
+    });
+
+    if (!bus) {
+      return res.status(404).json({ message: "Bus not found" });
+    }
+
+    // Find latest active driver assigned to this bus
+    const driver = await prisma.driverProfile.findFirst({
+      where: {
+        busId: bus.id,
+        isActive: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const driverStatus = driver?.status || "OFF_DUTY";
+    const onDuty = driverStatus === "ACTIVE" || driverStatus === "ON_DUTY";
+
+    return res.json({
+      // driver identifiers
+      driverProfileId: driver?.id ?? null,
+      driverId: driver?.driverId ?? null,
+
+      // bus id
+      busId: bus.id,
+
+      // UI
+      name: driver?.fullName || "Unknown Driver",
+      code: driver?.driverId ?? driver?.code ?? driver?.driverCode ?? null,
+
+      // bus basics
+      busNumber: bus.number,
+      plateNumber: bus.plate,
+
+      busType: bus.busType,
+      corridor: bus.corridor,
+      forwardRoute: bus.forwardRoute,
+      returnRoute: bus.returnRoute,
+
+      status: driverStatus,
+      onDuty,
+    });
+  } catch (err) {
+    console.error("POST /commuter/scan-bus ERROR:", err);
+    res.status(500).json({ message: "Failed to scan bus QR" });
+  }
+});
+
 app.use("/commuter", requireUserAuth, commuterTripsRouter);
 
 /* ----- ADMIN AREA (ALL PROTECTED) ----- */
@@ -156,26 +294,43 @@ app.use(
 /* ---------- auth endpoints ---------- */
 app.post("/auth/login", async (req, res) => {
   try {
+    // Allow "phone or email" in the same field
     const schema = z.object({
-      email: z.string().email(),
+      email: z.string().min(3),
       password: z.string().min(6),
     });
+
     const { email, password } = schema.parse(req.body);
-    const key = email.toLowerCase().trim();
+    const identifier = email.trim();
+    const isEmail = identifier.includes("@");
 
-    const user = await prisma.user.findUnique({ where: { email: key } });
-    if (!user || !user.password)
+    const where = isEmail
+      ? { email: identifier.toLowerCase() }
+      : { phone: identifier };
+
+    const user = await prisma.user.findFirst({ where });
+
+    if (!user || !user.password) {
       return res.status(401).json({ message: "Invalid credentials" });
+    }
 
-    if (String(user.status || "").toUpperCase() !== "ACTIVE") {
+    const statusUpper = String(user.status || "").toUpperCase();
+
+    if (user.role === "COMMUTER" && statusUpper !== "ACTIVE") {
       return res.status(403).json({
         message: "Account not verified. Please complete OTP verification.",
         code: "NOT_ACTIVE",
       });
     }
 
+    if (statusUpper === "BLOCKED") {
+      return res.status(403).json({ message: "Account is blocked" });
+    }
+
     const ok = await bcrypt.compare(password, user.password);
-    if (!ok) return res.status(401).json({ message: "Invalid credentials" });
+    if (!ok) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
 
     res.json({
       token: sign(user),
@@ -187,10 +342,11 @@ app.post("/auth/login", async (req, res) => {
         role: user.role,
       },
     });
-  } catch (e) {
-    if (e instanceof z.ZodError)
+  } catch (err) {
+    if (err instanceof z.ZodError) {
       return res.status(400).json({ message: "Invalid input" });
-    console.error("LOGIN ERROR:", e);
+    }
+    console.error("LOGIN ERROR:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -261,8 +417,8 @@ app.post("/auth/register", async (req, res) => {
       const code = setOtp(key);
       try {
         await sendOtpEmail(key, code);
-      } catch (err) {
-        console.error("MAILTRAP SEND OTP (existing) ERROR:", err);
+      } catch (err2) {
+        console.error("MAILTRAP SEND OTP (existing) ERROR:", err2);
       }
       console.log(`OTP (unverified existing) for ${key}: ${code}`);
       return res.status(200).json({
@@ -299,21 +455,21 @@ app.post("/auth/register", async (req, res) => {
     const code = setOtp(key);
     try {
       await sendOtpEmail(key, code);
-    } catch (err) {
-      console.error("MAILTRAP SEND OTP (new user) ERROR:", err);
+    } catch (err2) {
+      console.error("MAILTRAP SEND OTP (new user) ERROR:", err2);
     }
     console.log(`OTP for ${key}: ${code}`);
     res.status(201).json({ message: "Registered. OTP sent.", user });
-  } catch (e) {
-    if (e instanceof z.ZodError)
+  } catch (err) {
+    if (err instanceof z.ZodError)
       return res
         .status(400)
-        .json({ message: e.errors[0]?.message || "Invalid input" });
-    if (e?.code === "P2002")
+        .json({ message: err.errors[0]?.message || "Invalid input" });
+    if (err?.code === "P2002")
       return res
         .status(409)
         .json({ message: "Email or phone already registered" });
-    console.error("REGISTER ERROR:", e);
+    console.error("REGISTER ERROR:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -344,18 +500,18 @@ app.post("/auth/request-otp", async (req, res) => {
     const code = setOtp(key);
     try {
       await sendOtpEmail(key, code);
-    } catch (err) {
-      console.error("MAILTRAP SEND OTP (request-otp) ERROR:", err);
+    } catch (err2) {
+      console.error("MAILTRAP SEND OTP (request-otp) ERROR:", err2);
     }
     console.log(`[request-otp] Resent OTP for ${key}: ${code}`);
     return res.json({
       message: "OTP sent",
       otp: process.env.NODE_ENV !== "production" ? code : undefined,
     });
-  } catch (e) {
-    if (e instanceof z.ZodError)
+  } catch (err) {
+    if (err instanceof z.ZodError)
       return res.status(400).json({ message: "Invalid email" });
-    console.error("REQUEST OTP ERROR:", e);
+    console.error("REQUEST OTP ERROR:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -390,15 +546,32 @@ app.post("/auth/verify-otp", async (req, res) => {
     const token = sign(user);
     console.log(`OTP verified for ${key}`);
     res.json({ token, user });
-  } catch (e) {
-    if (e instanceof z.ZodError)
+  } catch (err) {
+    if (err instanceof z.ZodError)
       return res.status(400).json({ message: "Invalid input" });
-    console.error("VERIFY OTP ERROR:", e);
+    console.error("VERIFY OTP ERROR:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
 /* ---------- buses (admin) ---------- */
+
+// shared include so each bus comes with its drivers
+const BUS_INCLUDE = {
+  drivers: {
+    where: { isActive: true },
+    orderBy: { createdAt: "desc" },
+    select: {
+      driverId: true,
+      fullName: true,
+      status: true,
+      isActive: true,
+      createdAt: true,
+      busId: true,
+    },
+  },
+};
+
 app.get("/buses", requireAuth, requireAdmin, async (req, res) => {
   const { busType, type, vehicleType, active, status, corridor } = req.query;
   const typeParam = busType || type || vehicleType;
@@ -410,17 +583,32 @@ app.get("/buses", requireAuth, requireAdmin, async (req, res) => {
     ...(corridor ? { corridor: String(corridor).toUpperCase() } : {}),
   };
 
-  const buses = await prisma.bus.findMany({
-    where,
-    orderBy: [{ busType: "asc" }, { number: "asc" }],
-  });
-  res.json(buses);
+  try {
+    const buses = await prisma.bus.findMany({
+      where,
+      include: BUS_INCLUDE,
+      orderBy: [{ createdAt: "desc" }],
+    });
+
+    res.json(buses);
+  } catch (err) {
+    console.error("GET /buses ERROR:", err);
+    res.status(500).json({ message: "Failed to load buses" });
+  }
 });
 
 app.get("/buses/:id", requireAuth, requireAdmin, async (req, res) => {
-  const bus = await prisma.bus.findUnique({ where: { id: req.params.id } });
-  if (!bus) return res.status(404).json({ message: "Bus not found" });
-  res.json(bus);
+  try {
+    const bus = await prisma.bus.findUnique({
+      where: { id: req.params.id },
+      include: BUS_INCLUDE,
+    });
+    if (!bus) return res.status(404).json({ message: "Bus not found" });
+    res.json(bus);
+  } catch (err) {
+    console.error("GET /buses/:id ERROR:", err);
+    res.status(500).json({ message: "Server error" });
+  }
 });
 
 app.get(
@@ -428,14 +616,21 @@ app.get(
   requireAuth,
   requireAdmin,
   async (req, res) => {
-    const bus = await prisma.bus.findFirst({
-      where: { number: req.params.number },
-    });
-    if (!bus) return res.status(404).json({ message: "Bus not found" });
-    res.json(bus);
+    try {
+      const bus = await prisma.bus.findFirst({
+        where: { number: req.params.number },
+        include: BUS_INCLUDE,
+      });
+      if (!bus) return res.status(404).json({ message: "Bus not found" });
+      res.json(bus);
+    } catch (err) {
+      console.error("GET /buses/by-number/:number ERROR:", err);
+      res.status(500).json({ message: "Server error" });
+    }
   }
 );
 
+// CREATE BUS + generate QR
 app.post("/buses", requireAuth, requireAdmin, async (req, res) => {
   try {
     const schema = z.object({
@@ -445,8 +640,6 @@ app.post("/buses", requireAuth, requireAdmin, async (req, res) => {
       status: z.enum(["ACTIVE", "IN_MAINTENANCE", "INACTIVE"]).optional(),
       corridor: z.enum(["EAST", "WEST"]).optional(),
       isActive: z.boolean().optional(),
-
-      // NEW: route details
       routeId: z.string().optional(),
       forwardRoute: z.string().optional(),
       returnRoute: z.string().optional(),
@@ -468,28 +661,52 @@ app.post("/buses", requireAuth, requireAdmin, async (req, res) => {
           typeof input.isActive === "boolean"
             ? input.isActive
             : finalStatus === "ACTIVE",
-
-        // save to DB
         routeId: input.routeId || null,
         forwardRoute: input.forwardRoute || null,
         returnRoute: input.returnRoute || null,
       },
     });
 
-    console.log("CREATE BUS:", bus.id, bus.number, bus.plate);
-    res.status(201).json(bus);
-  } catch (e) {
-    if (e?.code === "P2002")
+    const payload = {
+      type: "bus",
+      busId: bus.id,
+      number: bus.number,
+      plate: bus.plate,
+      busType: bus.busType,
+      corridor: bus.corridor,
+      routeId: bus.routeId,
+    };
+
+    const qrUrl = await QRCode.toDataURL(JSON.stringify(payload), {
+      margin: 1,
+      scale: 6,
+    });
+
+    const updatedBus = await prisma.bus.update({
+      where: { id: bus.id },
+      data: { qrUrl },
+    });
+
+    console.log(
+      "CREATE BUS:",
+      updatedBus.id,
+      updatedBus.number,
+      updatedBus.plate
+    );
+    res.status(201).json(updatedBus);
+  } catch (err) {
+    if (err?.code === "P2002")
       return res
         .status(409)
         .json({ message: "Bus number or plate already exists" });
-    if (e instanceof z.ZodError)
+    if (err instanceof z.ZodError)
       return res.status(400).json({ message: "Invalid input" });
-    console.error("CREATE BUS ERROR:", e);
+    console.error("CREATE BUS ERROR:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
+// UPDATE BUS + regenerate QR if anything important changed
 app.put("/buses/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
     const schema = z.object({
@@ -499,8 +716,6 @@ app.put("/buses/:id", requireAuth, requireAdmin, async (req, res) => {
       status: z.enum(["ACTIVE", "IN_MAINTENANCE", "INACTIVE"]).optional(),
       corridor: z.enum(["EAST", "WEST"]).optional(),
       isActive: z.boolean().optional(),
-
-      // NEW: route details
       routeId: z.string().optional(),
       forwardRoute: z.string().optional(),
       returnRoute: z.string().optional(),
@@ -526,17 +741,37 @@ app.put("/buses/:id", requireAuth, requireAdmin, async (req, res) => {
       data,
     });
 
-    res.json(bus);
-  } catch (e) {
-    if (e?.code === "P2025")
+    const payload = {
+      type: "bus",
+      busId: bus.id,
+      number: bus.number,
+      plate: bus.plate,
+      busType: bus.busType,
+      corridor: bus.corridor,
+      routeId: bus.routeId,
+    };
+
+    const qrUrl = await QRCode.toDataURL(JSON.stringify(payload), {
+      margin: 1,
+      scale: 6,
+    });
+
+    const updatedBus = await prisma.bus.update({
+      where: { id: bus.id },
+      data: { qrUrl },
+    });
+
+    res.json(updatedBus);
+  } catch (err) {
+    if (err?.code === "P2025")
       return res.status(404).json({ message: "Bus not found" });
-    if (e?.code === "P2002")
+    if (err?.code === "P2002")
       return res
         .status(409)
         .json({ message: "Bus number or plate already exists" });
-    if (e instanceof z.ZodError)
+    if (err instanceof z.ZodError)
       return res.status(400).json({ message: "Invalid input" });
-    console.error("UPDATE BUS ERROR:", e);
+    console.error("UPDATE BUS ERROR:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -553,10 +788,10 @@ app.delete("/buses/:id", requireAuth, requireAdmin, async (req, res) => {
     }
     await prisma.bus.delete({ where: { id: req.params.id } });
     res.json({ message: "Bus deleted" });
-  } catch (e) {
-    if (e?.code === "P2025")
+  } catch (err) {
+    if (err?.code === "P2025")
       return res.status(404).json({ message: "Bus not found" });
-    console.error("DELETE BUS ERROR:", e);
+    console.error("DELETE BUS ERROR:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -591,17 +826,28 @@ app.get("/users/me", requireAuth, async (req, res) => {
       phone: me.phone,
       role: me.role,
       status: me.status,
+
       fullName: driverProfile?.fullName ?? commuter?.fullName ?? null,
       address: driverProfile?.address ?? commuter?.address ?? null,
       language: commuter?.language ?? "en",
+
       profileUrl: commuter?.profileUrl ? abs(req, commuter.profileUrl) : null,
       emergencyContacts: contacts,
 
       qrUrl: driverQrAbs,
       driverQrUrl: driverQrAbs,
 
+      // driver details including route + bus
       driver: driverProfile
         ? {
+            // primary key field in Prisma is driverId
+            driverId: driverProfile.driverId,
+            fullName: driverProfile.fullName,
+            status: driverProfile.status,
+            // these may be undefined if not in schema
+            corridor: driverProfile.corridor,
+            forwardRoute: driverProfile.forwardRoute,
+            returnRoute: driverProfile.returnRoute,
             qrUrl: driverQrAbs,
             bus: driverProfile.bus
               ? {
@@ -610,13 +856,16 @@ app.get("/users/me", requireAuth, async (req, res) => {
                   plate: driverProfile.bus.plate,
                   type: driverProfile.bus.busType,
                   isActive: driverProfile.bus.isActive,
+                  corridor: driverProfile.bus.corridor,
+                  forwardRoute: driverProfile.bus.forwardRoute,
+                  returnRoute: driverProfile.bus.returnRoute,
                 }
               : null,
           }
         : null,
     });
-  } catch (e) {
-    console.error("GET /users/me ERROR:", e);
+  } catch (err) {
+    console.error("GET /users/me ERROR:", err);
     res.status(500).json({ message: "Failed to fetch profile" });
   }
 });
@@ -714,13 +963,13 @@ app.patch("/users/me", requireAuth, async (req, res) => {
       message: "Profile updated successfully",
       emergencyContacts: contacts,
     });
-  } catch (e) {
-    console.error("PATCH /users/me ERROR:", e);
-    if (e instanceof z.ZodError)
+  } catch (err) {
+    console.error("PATCH /users/me ERROR:", err);
+    if (err instanceof z.ZodError)
       return res
         .status(400)
-        .json({ message: e.errors[0]?.message || "Invalid input" });
-    if (e?.code === "P2002")
+        .json({ message: err.errors[0]?.message || "Invalid input" });
+    if (err?.code === "P2002")
       return res
         .status(409)
         .json({ message: "Duplicate entry (phone/priority per user)" });
@@ -751,10 +1000,10 @@ app.patch("/users/change-password", requireAuth, async (req, res) => {
       data: { password: hash, mustChangePassword: false },
     });
     res.json({ message: "Password updated" });
-  } catch (e) {
-    if (e instanceof z.ZodError)
+  } catch (err) {
+    if (err instanceof z.ZodError)
       return res.status(400).json({ message: "Invalid input" });
-    console.error("CHANGE PASSWORD ERROR:", e);
+    console.error("CHANGE PASSWORD ERROR:", err);
     res.status(500).json({ message: "Server error" });
   }
 });

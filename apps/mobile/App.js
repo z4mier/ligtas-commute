@@ -21,12 +21,13 @@ import DriverReports from "./screens/DriverReports";
 
 import CommuterDashboard from "./screens/CommuterDashboard";
 import SettingsScreen from "./screens/SettingsScreen";
-import QRScanner from "./screens/QRScanner";
 import Notifications from "./screens/Notifications";
 import SafetyInsightsList from "./screens/SafetyInsightsList";
 import CommunityList from "./screens/CommunityList";
 import MapTracking from "./screens/MapTracking";
 import TripDetails from "./screens/TripDetails";
+import BusScanner from "./screens/BusScanner";
+import DriverTripHistory from "./screens/DriverTripHistory";
 
 const Stack = createNativeStackNavigator();
 
@@ -41,6 +42,8 @@ export default function App() {
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Signup" component={SignupScreen} />
             <Stack.Screen name="OtpVerify" component={OtpVerifyScreen} />
+            <Stack.Screen name="BusScanner" component={BusScanner} />
+            <Stack.Screen name="DriverTripHistory" component={DriverTripHistory}/>
 
             {/* Driver */}
             <Stack.Screen
@@ -74,7 +77,6 @@ export default function App() {
               component={CommuterDashboard}
             />
             <Stack.Screen name="Settings" component={SettingsScreen} />
-            <Stack.Screen name="QRScanner" component={QRScanner} />
             <Stack.Screen
               name="Notifications"
               component={Notifications}
@@ -88,6 +90,7 @@ export default function App() {
               component={CommunityList}
             />
             <Stack.Screen name="MapTracking" component={MapTracking} />
+            <Stack.Screen name="QRScanner" component={BusScanner} />
 
             {/* Trip details */}
             <Stack.Screen

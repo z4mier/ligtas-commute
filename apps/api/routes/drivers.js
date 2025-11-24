@@ -29,7 +29,7 @@ router.post("/scan", async (req, res) => {
       parsed?.id ||
       raw;
 
-    // 1) Try match with DriverProfile.id
+    // 1) Try match with DriverProfile.id  (legacy – still kept)
     let prof = await prisma.driverProfile.findUnique({
       where: { id: candidateId },
       include: { bus: true },
@@ -51,8 +51,8 @@ router.post("/scan", async (req, res) => {
      * FIX: Correct driver name field
      * ----------------------------- */
     const driverName =
-      prof.driverName || // correct schema
-      prof.fullName ||   // fallback if old schema
+      prof.driverName || // correct schema if present
+      prof.fullName || // fallback if old schema
       prof.name ||
       "Unknown Driver";
 
@@ -159,6 +159,74 @@ router.get("/current", async (req, res) => {
   } catch (e) {
     console.error("GET /drivers/current ERROR", e);
     return res.status(500).json({ message: "Server error" });
+  }
+});
+
+/**
+ * PATCH /driver/duty
+ * Body: { status: "ON_DUTY" | "OFF_DUTY" }
+ * Uses logged-in user (req.user.sub) to find DriverProfile and update status.
+ */
+router.patch("/duty", async (req, res) => {
+  try {
+    // Validate body
+    const { status } = z
+      .object({ status: z.string().min(1) })
+      .parse(req.body);
+
+    const normalized = status.toUpperCase();
+    if (!["ON_DUTY", "OFF_DUTY"].includes(normalized)) {
+      return res.status(400).json({
+        ok: false,
+        message: 'Invalid status. Use "ON_DUTY" or "OFF_DUTY".',
+      });
+    }
+
+    const userId = req.user?.sub;
+    if (!userId) {
+      return res
+        .status(401)
+        .json({ ok: false, message: "Unauthorized: no user in token." });
+    }
+
+    // Find driver profile for this user
+    const driver = await prisma.driverProfile.findFirst({
+      where: { userId },
+      select: { driverId: true, status: true },
+    });
+
+    if (!driver) {
+      return res.status(404).json({
+        ok: false,
+        message: "Driver profile not found for this user.",
+      });
+    }
+
+    const updated = await prisma.driverProfile.update({
+      where: { driverId: driver.driverId },
+      data: { status: normalized },
+      select: {
+        driverId: true,
+        status: true,
+        busId: true,
+      },
+    });
+
+    return res.json({
+      ok: true,
+      status: updated.status,
+    });
+  } catch (e) {
+    console.error("PATCH /driver/duty ERROR", e);
+    if (e instanceof z.ZodError) {
+      return res
+        .status(400)
+        .json({ ok: false, message: "Invalid request body." });
+    }
+    return res.status(500).json({
+      ok: false,
+      message: "Server error updating duty status.",
+    });
   }
 });
 

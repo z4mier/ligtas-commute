@@ -3,6 +3,7 @@ import { Router } from "express";
 import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
+import QRCode from "qrcode";              // ⬅️ QR for buses
 
 const prisma = new PrismaClient();
 const r = Router();
@@ -13,6 +14,9 @@ const r = Router();
 
 function toDriverDto(d) {
   // d = DriverProfile with { user, bus }
+  const dutyStatus = d.status || "OFF_DUTY";
+  const onDuty = dutyStatus === "ON_DUTY";
+
   return {
     id: d.driverId,
     userId: d.userId,
@@ -22,7 +26,9 @@ function toDriverDto(d) {
     address: d.address,
     phone: d.phone || d.user?.phone || null,
     email: d.user?.email || null,
+
     busType: d.busType,
+
     bus: d.bus
       ? {
           id: d.bus.id,
@@ -34,16 +40,30 @@ function toDriverDto(d) {
           routeId: d.bus.routeId,
           forwardRoute: d.bus.forwardRoute,
           returnRoute: d.bus.returnRoute,
+          qrUrl: d.bus.qrUrl ?? null,
         }
       : null,
+
+    // account-level
     isActive: d.isActive,
-    status: d.isActive ? "ACTIVE" : "INACTIVE",
+    status: d.isActive ? "ACTIVE" : "INACTIVE", // 🔹 keep old behavior for admin UI
+
+    // duty-level (for on duty / off duty)
+    dutyStatus,
+    onDuty,
+
     createdAt: d.createdAt,
   };
 }
 
+/**
+ * Create or fetch a Bus based on payload.
+ * - If busId is present → just fetch existing bus.
+ * - If (busNo + plateNumber + vehicleType) → find-or-create by number.
+ *   When creating a new Bus here, we also generate a QR and store it.
+ */
 async function resolveBusForPayload(input) {
-  // Supports either busId OR (busNo + plateNumber + vehicleType)
+  // 1) Explicit busId
   if (input.busId) {
     const bus = await prisma.bus.findUnique({
       where: { id: input.busId },
@@ -52,26 +72,52 @@ async function resolveBusForPayload(input) {
     return bus;
   }
 
+  // 2) busNo + plateNumber + vehicleType
   if (input.busNo && input.plateNumber && input.vehicleType) {
     // Try existing by number
     let bus = await prisma.bus.findFirst({
       where: { number: input.busNo },
     });
 
+    // If not found → create new Bus
     if (!bus) {
-      // Create new bus record
       bus = await prisma.bus.create({
         data: {
           number: input.busNo,
           plate: input.plateNumber,
           busType: input.vehicleType,
           isActive: true,
+          status: "ACTIVE",
+          // corridor / routeId / forward/returnRoute can stay null here
         },
       });
+
+      // Generate QR payload for this bus
+      const payload = {
+        type: "bus",
+        busId: bus.id,
+        number: bus.number,
+        plate: bus.plate,
+        busType: bus.busType,
+        corridor: bus.corridor,
+        routeId: bus.routeId,
+      };
+
+      const qrUrl = await QRCode.toDataURL(JSON.stringify(payload), {
+        margin: 1,
+        scale: 6,
+      });
+
+      bus = await prisma.bus.update({
+        where: { id: bus.id },
+        data: { qrUrl },
+      });
     }
+
     return bus;
   }
 
+  // 3) No bus info
   return null;
 }
 
@@ -145,10 +191,9 @@ async function createDriverInternal(body) {
           address: input.address,
           phone: input.phone,
           busId: bus ? bus.id : null,
-          busType:
-            input.vehicleType ??
-            (bus ? bus.busType : "AIRCON"),
-          isActive: true,
+          busType: input.vehicleType ?? (bus ? bus.busType : "AIRCON"),
+          isActive: true,            // account-level active
+          status: "OFF_DUTY",        // 🔹 duty-level default
         },
       },
     },
@@ -221,9 +266,7 @@ r.get("/driver-profiles/:id", async (req, res) => {
 r.post("/driver-profiles", async (req, res) => {
   try {
     const result = await createDriverInternal(req.body);
-    res
-      .status(201)
-      .json({ message: "Driver registered", ...result });
+    res.status(201).json({ message: "Driver registered", ...result });
   } catch (e) {
     console.error("POST /admin/driver-profiles ERROR:", e);
     if (e instanceof z.ZodError) {
@@ -243,6 +286,7 @@ r.post("/driver-profiles", async (req, res) => {
    Body: { driverId, status: "ACTIVE" | "INACTIVE" }
    - toggles DriverProfile.isActive
    - when INACTIVE → frees the bus for re-use
+   - also forces dutyStatus to OFF_DUTY when deactivated
 ----------------------------------------------------------- */
 r.patch("/driver-status", async (req, res) => {
   try {
@@ -259,10 +303,10 @@ r.patch("/driver-status", async (req, res) => {
       return res.status(404).json({ message: "Driver not found" });
     }
 
-    // When deactivating, free the bus (so it appears as available again)
     const isActive = status === "ACTIVE";
     let busId = driver.busId;
 
+    // When deactivating, free the bus (so it appears as available again)
     if (!isActive) {
       busId = null;
     }
@@ -272,6 +316,8 @@ r.patch("/driver-status", async (req, res) => {
       data: {
         isActive,
         busId,
+        // if deactivated, make sure they are OFF_DUTY as well
+        ...(isActive ? {} : { status: "OFF_DUTY" }),
       },
       include: {
         user: { select: { email: true, phone: true, createdAt: true } },
@@ -341,9 +387,7 @@ r.patch("/driver-profiles/:id", async (req, res) => {
           }
         : {}),
       ...(bus ? { busId: bus.id, busType: bus.busType } : {}),
-      ...(input.vehicleType && !bus
-        ? { busType: input.vehicleType }
-        : {}),
+      ...(input.vehicleType && !bus ? { busType: input.vehicleType } : {}),
     };
 
     const [updatedDriver] = await prisma.$transaction([
@@ -398,9 +442,7 @@ r.patch("/driver-profiles/:id", async (req, res) => {
 r.post("/create-driver", async (req, res) => {
   try {
     const result = await createDriverInternal(req.body);
-    res
-      .status(201)
-      .json({ message: "Driver registered", ...result });
+    res.status(201).json({ message: "Driver registered", ...result });
   } catch (e) {
     console.error("POST /admin/create-driver ERROR:", e);
     if (e instanceof z.ZodError) {
@@ -434,9 +476,7 @@ r.get("/drivers", async (_req, res) => {
 r.post("/drivers", async (req, res) => {
   try {
     const result = await createDriverInternal(req.body);
-    res
-      .status(201)
-      .json({ message: "Driver registered", ...result });
+    res.status(201).json({ message: "Driver registered", ...result });
   } catch (e) {
     console.error("POST /admin/drivers ERROR:", e);
     if (e instanceof z.ZodError) {

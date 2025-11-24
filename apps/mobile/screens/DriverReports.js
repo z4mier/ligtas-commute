@@ -65,12 +65,18 @@ export default function DriverReports({ navigation }) {
         throw new Error(data.error || "Failed to load reports");
       }
 
-      setTotalReports(data.totalReports || 0);
-      setReports(Array.isArray(data.items) ? data.items : []);
+      const items = Array.isArray(data.items) ? data.items : [];
+      setReports(items);
+
+      const total =
+        typeof data.totalReports === "number"
+          ? data.totalReports
+          : items.length;
+      setTotalReports(total);
     } catch (e) {
       console.log("[DriverReports] loadReports error", e);
-      setTotalReports(0);
       setReports([]);
+      setTotalReports(0);
     } finally {
       setLoading(false);
     }
@@ -141,12 +147,12 @@ export default function DriverReports({ navigation }) {
           </View>
         </View>
 
-        {/* Message / body – if no note, show category chosen by commuter */}
+        {/* Message / body */}
         <Text style={styles.cardMessage} numberOfLines={4}>
           {bodyText}
         </Text>
 
-        {/* Footer – no timestamp, just source text */}
+        {/* Footer – source text */}
         <View style={styles.cardFooter}>
           <MaterialCommunityIcons
             name="shield-check"
@@ -159,11 +165,6 @@ export default function DriverReports({ navigation }) {
       </View>
     );
   };
-
-  const hasReports = totalReports > 0;
-  const headerCountText = hasReports
-    ? `${totalReports} report${totalReports === 1 ? "" : "s"}`
-    : "No reports yet";
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: C.bg }]}>
@@ -183,7 +184,6 @@ export default function DriverReports({ navigation }) {
           />
         </TouchableOpacity>
         <Text style={styles.topTitle}>View Reports</Text>
-        {/* spacer to keep title centered */}
         <View style={{ width: 32 }} />
       </View>
 
@@ -191,19 +191,20 @@ export default function DriverReports({ navigation }) {
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerLabel}>Commuter reports</Text>
-          {/* No number under the title */}
+          <Text style={styles.headerValue}>
+            {loading ? "—" : totalReports}
+          </Text>
         </View>
         <View style={styles.headerRight}>
           <MaterialCommunityIcons
             name="file-document-alert-outline"
-            size={34}
+            size={36}
             color="#FBBF24"
           />
-          <Text style={styles.headerCount}>{headerCountText}</Text>
         </View>
       </View>
 
-      {/* List */}
+      {/* List / Empty / Loading */}
       <View style={styles.listContainer}>
         {loading ? (
           <View style={styles.center}>
@@ -211,15 +212,18 @@ export default function DriverReports({ navigation }) {
             <Text style={styles.loadingText}>Loading reports…</Text>
           </View>
         ) : reports.length === 0 ? (
-          <View style={styles.emptyState}>
+          // 👇 Centered empty state, same text style as screenshot
+          <View style={styles.center}>
             <MaterialCommunityIcons
               name="clipboard-check-outline"
-              size={32}
+              size={42}
               color={C.sub}
+              style={{ marginBottom: 10 }}
             />
             <Text style={styles.emptyTitle}>No commuter reports</Text>
             <Text style={styles.emptySubtitle}>
-              You currently have no reports from commuters. Keep driving safely!
+              You currently have no reports from commuters. Keep driving
+              safely!
             </Text>
           </View>
         ) : (
@@ -282,19 +286,19 @@ const styles = StyleSheet.create({
     backgroundColor: C.brand,
   },
   headerLabel: {
-    fontFamily: "Poppins_700Bold", // BOLD title
+    fontFamily: "Poppins_600SemiBold",
     fontSize: 13,
     color: "#FFFFFF",
   },
-  headerRight: {
-    alignItems: "flex-end",
-    justifyContent: "center",
+  headerValue: {
+    marginTop: 6,
+    fontFamily: "Poppins_700Bold",
+    fontSize: 18,
+    color: "#FFFFFF",
   },
-  headerCount: {
-    marginTop: 4,
-    fontFamily: "Poppins_400Regular",
-    fontSize: 12,
-    color: "#E5E7EB",
+  headerRight: {
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   listContainer: {
@@ -315,23 +319,19 @@ const styles = StyleSheet.create({
     color: C.sub,
   },
 
-  emptyState: {
-    marginTop: 40,
-    alignItems: "center",
-  },
+  // Empty state text styles (match “No commuter reports” look)
   emptyTitle: {
-    marginTop: 8,
-    fontFamily: "Poppins_700Bold",
+    fontFamily: "Poppins_600SemiBold",
     fontSize: 15,
     color: C.text,
   },
   emptySubtitle: {
     marginTop: 4,
     fontFamily: "Poppins_400Regular",
-    fontSize: 11,
+    fontSize: 12,
     color: C.sub,
     textAlign: "center",
-    paddingHorizontal: 24,
+    paddingHorizontal: 32,
   },
 
   card: {
