@@ -3,7 +3,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { listIncidents, authHeaders } from "@/lib/api";
-import { X as XIcon } from "lucide-react";
+import { X as XIcon, Pencil } from "lucide-react";
+import { Poppins } from "next/font/google";
+
+/* ---------- FONT ---------- */
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+});
 
 /* small date helpers */
 function todayInput() {
@@ -118,7 +125,7 @@ export default function IncidentReportsPage() {
   const filtered = useMemo(() => {
     let list = incidents;
 
-    // date range filter (only previous + today because of max)
+    // date range filter
     if (fromObj || toObj) {
       list = list.filter((item) => inRange(item.createdAt, fromObj, toObj));
     }
@@ -168,41 +175,51 @@ export default function IncidentReportsPage() {
     setSearch("");
   }
 
-  // CSV Export (current filtered view)
-  function exportCsv() {
+  // Export as CSV (clean for Excel)
+  function exportExcel() {
     if (!filtered.length) {
       showFlash("error", "No reports to export.");
       return;
     }
+
     const header = [
-      "ID",
+      "Report ID",
       "Driver",
-      "Bus",
+      "Bus Number",
       "Reporter",
       "Status",
+      "Categories",
       "Created At",
       "Note",
-      "Latitude",
-      "Longitude",
     ];
-    const rows = filtered.map((i) => [
-      i.id || "",
-      i.driverName || "",
-      i.busNumber || "",
-      i.reporterName || "",
-      i.status || "",
-      i.createdAt ? new Date(i.createdAt).toLocaleString() : "",
-      (i.note || "").replace(/\r?\n/g, " "),
-      i.lat ?? "",
-      i.lng ?? "",
-    ]);
+
+    const rows = filtered.map((i) => {
+      const categoriesText =
+        Array.isArray(i.categories) && i.categories.length > 0
+          ? i.categories
+              .map((c) => (c && (c.name || c)) || "")
+              .filter(Boolean)
+              .join(" / ")
+          : "";
+
+      return [
+        i.id || "",
+        i.driverName || "",
+        i.busNumber || "",
+        i.reporterName || "",
+        i.status || "",
+        categoriesText,
+        i.createdAt ? new Date(i.createdAt).toLocaleString() : "",
+        (i.note || "").replace(/\r?\n/g, " "),
+      ];
+    });
 
     const csv = [header, ...rows]
       .map((row) =>
         row
           .map((cell) => {
             const v = String(cell ?? "");
-            if (v.includes(",") || v.includes('"')) {
+            if (v.includes(",") || v.includes('"') || v.includes("\n")) {
               return `"${v.replace(/"/g, '""')}"`;
             }
             return v;
@@ -211,7 +228,9 @@ export default function IncidentReportsPage() {
       )
       .join("\n");
 
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob([csv], {
+      type: "text/csv;charset=utf-8;",
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -222,17 +241,18 @@ export default function IncidentReportsPage() {
     URL.revokeObjectURL(url);
   }
 
-  // 🔧 HANDLE STATUS (with fallback URL)
+  // 🔧 HANDLE STATUS (called from modal "Update status" button)
   async function handleStatusChange(nextStatus) {
     if (!selected) return;
 
     const newStatus = (nextStatus || "").toUpperCase();
     const prevStatus = (selected.status || "PENDING").toUpperCase();
 
-    setStatusDraft(newStatus);
-
-    // if walay actual change, ayaw na tawag API
-    if (!newStatus || newStatus === prevStatus) return;
+    // if walay actual change, close modal nalang
+    if (!newStatus || newStatus === prevStatus) {
+      setSelected(null);
+      return;
+    }
 
     try {
       setSavingStatus(true);
@@ -286,17 +306,18 @@ export default function IncidentReportsPage() {
           status: newStatus,
         };
 
-      // update list + selected
+      // update list
       setIncidents((prev) =>
         prev.map((i) => (i.id === updated.id ? updated : i))
       );
-      setSelected(updated);
-      setStatusDraft((updated.status || "PENDING").toUpperCase());
+
+      // flash + close modal
       showFlash("success", "Status updated.");
+      setSelected(null);
     } catch (err) {
       console.warn("UPDATE INCIDENT STATUS ERROR (catch):", err?.message || err);
       showFlash("error", err?.message || "Failed to update status.");
-      // balik sa previous value
+      // balik sa previous value sa dropdown
       setStatusDraft(prevStatus);
     } finally {
       setSavingStatus(false);
@@ -306,16 +327,26 @@ export default function IncidentReportsPage() {
   const S = styles;
 
   return (
-    <div style={S.page}>
+    <div className={poppins.className} style={S.page}>
       {/* Header */}
       <div>
         <h1 style={S.title}>Reports</h1>
-        <p style={S.sub}>Review commuter reports</p>
+        <p style={S.sub}>Review commuter reports.</p>
       </div>
 
       {/* Filters card */}
       <section style={S.card}>
         <div style={S.filterRow}>
+          {/* Search FIRST */}
+          <div style={S.searchWrapper}>
+            <input
+              style={S.searchInput}
+              placeholder="Search incidents..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
           {/* From date */}
           <div style={S.filterField}>
             <div style={S.filterLabel}>From</div>
@@ -345,18 +376,8 @@ export default function IncidentReportsPage() {
             Reset
           </button>
 
-          {/* Search */}
-          <div style={S.searchWrapper}>
-            <input
-              style={S.searchInput}
-              placeholder="Search incidents..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-
           {/* Export CSV */}
-          <button type="button" style={S.exportBtn} onClick={exportCsv}>
+          <button type="button" style={S.exportBtn} onClick={exportExcel}>
             Export CSV
           </button>
         </div>
@@ -382,84 +403,119 @@ export default function IncidentReportsPage() {
         ) : (
           <>
             <div style={S.list}>
-              {pageItems.map((r) => (
-                <article
-                  key={r.id}
-                  style={S.item}
-                  onClick={() => setSelected(r)}
-                >
-                  <div style={S.itemMain}>
-                    <div style={S.itemHeader}>
-                      <div style={S.itemTitle}>
-                        {r.driverName || "Unknown driver"}
+              {pageItems.map((r) => {
+                const categoriesText =
+                  Array.isArray(r.categories) && r.categories.length > 0
+                    ? r.categories
+                        .map((c) => (c && (c.name || c)) || "")
+                        .filter(Boolean)
+                        .join(" / ")
+                    : "";
+
+                return (
+                  <article key={r.id} style={S.item}>
+                    <div style={S.itemMain}>
+                      {/* header row similar to bus title + status */}
+                      <div style={S.itemHeaderRow}>
+                        <div style={S.itemTitleRow}>
+                          <span style={S.itemTitle}>
+                            {r.driverName || "Unknown driver"}
+                          </span>
+                        </div>
+                        <div style={S.statusPill(r.status)}>
+                          {r.status || "PENDING"}
+                        </div>
                       </div>
-                      <div style={S.itemMeta}>
-                        Bus <strong>{r.busNumber || "—"}</strong> •{" "}
-                        <span style={{ textTransform: "capitalize" }}>
-                          {r.status ? r.status.toLowerCase() : "pending"}
-                        </span>
+
+                      {/* info grid similar to bus card */}
+                      <div style={S.infoGrid}>
+                        <div>
+                          <div style={S.sectionHeader}>REPORT INFORMATION</div>
+                          <div style={S.infoRow}>
+                            <span style={S.infoLabel}>Driver</span>
+                            <span style={S.infoValue}>
+                              {r.driverName || "Unknown driver"}
+                            </span>
+                          </div>
+                          <div style={S.infoRow}>
+                            <span style={S.infoLabel}>Bus number</span>
+                            <span style={S.infoValue}>
+                              {r.busNumber || "—"}
+                            </span>
+                          </div>
+                          <div style={S.infoRow}>
+                            <span style={S.infoLabel}>Reporter</span>
+                            <span style={S.infoValue}>
+                              {r.reporterName || "—"}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div style={S.sectionHeader}>DETAILS</div>
+                          <div style={S.infoRow}>
+                            <span style={S.infoLabel}>Filed at</span>
+                            <span style={S.infoValue}>
+                              {r.createdAt
+                                ? new Date(r.createdAt).toLocaleString()
+                                : "—"}
+                            </span>
+                          </div>
+                          <div style={S.infoRow}>
+                            <span style={S.infoLabel}>Categories</span>
+                            <span style={S.infoValue}>
+                              {categoriesText || "None"}
+                            </span>
+                          </div>
+                          <div style={S.infoRow}>
+                            <span style={S.infoLabel}>Summary</span>
+                            <span style={S.infoValue}>
+                              {r.note && r.note.trim().length > 0
+                                ? r.note
+                                : "No note provided."}
+                            </span>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
-                    <p style={S.itemNote}>
-                      {r.note && r.note.trim().length > 0
-                        ? r.note
-                        : "No note provided."}
-                    </p>
-
-                    <div style={S.itemFooter}>
-                      <span style={S.smallLabel}>Reporter:</span>{" "}
-                      <span>{r.reporterName || "—"}</span>
-                      <span style={S.dot}>•</span>
-                      <span style={S.smallLabel}>Date:</span>{" "}
-                      <span>
-                        {r.createdAt
-                          ? new Date(r.createdAt).toLocaleString()
-                          : "—"}
-                      </span>
+                    {/* footer: explicit Edit button, info not clickable */}
+                    <div style={S.cardFooter}>
+                      <button
+                        type="button"
+                        style={S.editBtn}
+                        onClick={() => setSelected(r)}
+                      >
+                        <Pencil size={14} />
+                        <span>Edit</span>
+                      </button>
                     </div>
-                  </div>
-
-                  <div style={S.statusPill(r.status)}>
-                    {r.status || "PENDING"}
-                  </div>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
 
-            {/* pagination */}
-            <div style={S.paginationRow}>
-              <span style={S.paginationText}>
-                Showing{" "}
-                {filtered.length === 0
-                  ? 0
-                  : `${startIndex + 1}-${Math.min(
-                      startIndex + PAGE_SIZE,
-                      filtered.length
-                    )}`}{" "}
-                of {filtered.length} reports
+            {/* bottom-right pagination with arrows */}
+            <div style={S.paginationBottom}>
+              <button
+                type="button"
+                style={S.pageCircleBtn}
+                disabled={currentPage === 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                ‹
+              </button>
+              <span style={S.paginationLabel}>
+                Page {currentPage} of {totalPages}
               </span>
-              <div style={S.paginationBtns}>
-                <button
-                  type="button"
-                  style={S.pageBtn}
-                  disabled={currentPage === 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  Previous
-                </button>
-                <span style={S.paginationText}>
-                  Page {currentPage} of {totalPages}
-                </span>
-                <button
-                  type="button"
-                  style={S.pageBtn}
-                  disabled={currentPage === totalPages}
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                >
-                  Next
-                </button>
-              </div>
+              <button
+                type="button"
+                style={S.pageCircleBtn}
+                disabled={currentPage === totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                ›
+              </button>
             </div>
           </>
         )}
@@ -491,12 +547,12 @@ export default function IncidentReportsPage() {
                 value={selected.reporterName || "—"}
               />
 
-              {/* Status dropdown */}
+              {/* Status dropdown – clean, minimal, saved via button */}
               <div style={S.modalRow}>
                 <div style={S.modalLabel}>Status:</div>
                 <select
                   value={statusDraft}
-                  onChange={(e) => handleStatusChange(e.target.value)}
+                  onChange={(e) => setStatusDraft(e.target.value)}
                   disabled={savingStatus}
                   style={S.statusSelect}
                 >
@@ -513,14 +569,7 @@ export default function IncidentReportsPage() {
                     : "—"
                 }
               />
-              <ModalRow
-                label="Location"
-                value={
-                  selected.lat && selected.lng
-                    ? `${selected.lat.toFixed(5)}, ${selected.lng.toFixed(5)}`
-                    : "Not available"
-                }
-              />
+
               <ModalRow
                 label="Categories"
                 value={
@@ -540,6 +589,24 @@ export default function IncidentReportsPage() {
                     ? selected.note
                     : "No note provided."}
                 </div>
+              </div>
+
+              <div style={S.modalActions}>
+                <button
+                  type="button"
+                  style={S.modalCancel}
+                  onClick={() => setSelected(null)}
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  style={S.modalSave}
+                  onClick={() => handleStatusChange(statusDraft)}
+                  disabled={savingStatus}
+                >
+                  {savingStatus ? "Updating…" : "Update status"}
+                </button>
               </div>
             </div>
           </div>
@@ -563,7 +630,13 @@ function ModalRow({ label, value }) {
 
 /* styles */
 const styles = {
-  page: { display: "grid", gap: 16 },
+  page: {
+    display: "grid",
+    gap: 16,
+    maxWidth: 1120,
+    margin: "0 auto",
+    padding: "0 16px 24px",
+  },
   title: { fontSize: 22, fontWeight: 800, margin: 0 },
   sub: { margin: "6px 0 0", color: "var(--muted)" },
   card: {
@@ -574,10 +647,9 @@ const styles = {
   },
   filterRow: {
     display: "grid",
-    gridTemplateColumns:
-      "repeat(2, minmax(140px, 1fr)) 80px minmax(200px, 1.5fr) 110px",
+    gridTemplateColumns: "2fr 1fr 1fr auto auto",
     gap: 10,
-    alignItems: "center",
+    alignItems: "end",
   },
   filterField: { display: "grid", gap: 4 },
   filterLabel: { fontSize: 12, color: "#6B7280", fontWeight: 600 },
@@ -590,16 +662,9 @@ const styles = {
     color: "var(--text)",
     outline: "none",
   },
-  resetBtn: {
-    marginTop: 18,
-    borderRadius: 8,
-    border: "1px solid #D4DBE7",
-    padding: "8px 12px",
-    fontSize: 13,
-    background: "#FFFFFF",
-    cursor: "pointer",
+  searchWrapper: {
+    width: "100%",
   },
-  searchWrapper: { marginTop: 18 },
   searchInput: {
     width: "100%",
     borderRadius: 999,
@@ -609,30 +674,40 @@ const styles = {
     outline: "none",
     background: "#F9FBFF",
   },
-  exportBtn: {
-    marginTop: 18,
-    borderRadius: 8,
-    border: "none",
-    padding: "8px 14px",
+  resetBtn: {
+    borderRadius: 999,
+    border: "1px solid #D4DBE7",
+    padding: "8px 16px",
     fontSize: 13,
-    background: "#0D658B",
-    color: "#F9FAFB",
+    background: "#FFFFFF",
     cursor: "pointer",
     whiteSpace: "nowrap",
+  },
+  exportBtn: {
+    borderRadius: 999,
+    border: "1px solid #0D658B",
+    padding: "8px 18px",
+    fontSize: 13,
+    background: "#FFFFFF",
+    color: "#0D658B",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+    fontWeight: 600,
   },
 
   listCard: {
     background: "var(--card)",
-    borderRadius: 16,
-    border: "1px solid #9CA3AF",
+    borderRadius: 24,
+    border: "1px solid var(--line)",
     padding: 20,
     minHeight: 260,
+    boxShadow: "0 20px 45px rgba(15,23,42,0.06)",
   },
 
   flash: (type) => ({
     marginBottom: 8,
     padding: "8px 12px",
-    borderRadius: 8,
+    borderRadius: 10,
     fontSize: 13,
     background:
       type === "error" ? "rgba(239,68,68,.08)" : "rgba(34,197,94,.08)",
@@ -653,40 +728,85 @@ const styles = {
   emptyTitle: { fontWeight: 600 },
   emptySub: { marginTop: 4 },
 
-  // 🔽 scrollable list
+  // scrollable list of cards
   list: {
     display: "grid",
     gap: 10,
-    maxHeight: 360, // adjust if you want taller/shorter
+    maxHeight: 360,
     overflowY: "auto",
     paddingRight: 4,
   },
 
   item: {
+    border: "1px solid #E2E8F0",
+    borderRadius: 24,
+    padding: 20,
+    background: "#FFFFFF",
+    boxShadow: "0 18px 40px rgba(15,23,42,0.05)",
+  },
+  itemMain: { display: "grid", gap: 10 },
+  itemHeaderRow: {
     display: "flex",
     justifyContent: "space-between",
-    padding: 14,
-    borderRadius: 14,
-    border: "1px solid #9CA3AF",
-    background: "#FFFFFF",
-    cursor: "pointer",
-  },
-  itemMain: { display: "grid", gap: 6, flex: 1 },
-  itemHeader: { display: "grid", gap: 2 },
-  itemTitle: { fontWeight: 700, fontSize: 15, color: "#0F172A" },
-  itemMeta: { fontSize: 13, color: "#6B7280" },
-  itemNote: { margin: 0, fontSize: 13, color: "#4B5563" },
-  itemFooter: {
-    marginTop: 2,
-    fontSize: 12,
-    color: "#6B7280",
-    display: "flex",
-    flexWrap: "wrap",
-    gap: 4,
     alignItems: "center",
+    gap: 10,
+    flexWrap: "wrap",
   },
-  smallLabel: { fontWeight: 600 },
-  dot: { fontSize: 14, color: "#D1D5DB", margin: "0 4px" },
+  itemTitleRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  itemTitle: { fontWeight: 800, fontSize: 16, color: "#0D658B" },
+
+  infoGrid: {
+    marginTop: 6,
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 40,
+  },
+  sectionHeader: {
+    fontSize: 12,
+    fontWeight: 700,
+    letterSpacing: 0.08,
+    textTransform: "uppercase",
+    color: "#9CA3AF",
+    marginBottom: 6,
+  },
+  infoRow: {
+    display: "flex",
+    gap: 16,
+    fontSize: 13,
+    marginTop: 4,
+  },
+  infoLabel: {
+    width: 110,
+    color: "#6B7280",
+  },
+  infoValue: {
+    color: "#111827",
+    fontWeight: 500,
+  },
+
+  cardFooter: {
+    display: "flex",
+    justifyContent: "flex-end",
+    marginTop: 14,
+  },
+  editBtn: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "8px 12px",
+    borderRadius: 999,
+    border: "1px solid #CBD5F5",
+    background: "#FFFFFF",
+    color: "#0F172A",
+    fontSize: 12,
+    cursor: "pointer",
+    fontWeight: 500,
+  },
 
   statusPill: (status) => {
     const s = (status || "PENDING").toUpperCase();
@@ -703,7 +823,6 @@ const styles = {
       color = "#166534";
     }
     return {
-      alignSelf: "center",
       padding: "4px 10px",
       borderRadius: 999,
       fontSize: 11,
@@ -716,31 +835,31 @@ const styles = {
     };
   },
 
-  /* pagination */
-  paginationRow: {
-    marginTop: 14,
-    paddingTop: 10,
-    borderTop: "1px solid var(--line)",
+  // pagination bottom-right with arrows
+  paginationBottom: {
+    marginTop: 18,
     display: "flex",
-    justifyContent: "space-between",
     alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 14,
+  },
+  paginationLabel: {
     fontSize: 13,
     color: "#6B7280",
+    fontWeight: 500,
   },
-  paginationText: { fontSize: 13, color: "#6B7280" },
-  paginationBtns: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-  },
-  pageBtn: {
-    borderRadius: 999,
-    border: "1px solid #D4DBE7",
-    padding: "6px 12px",
+  pageCircleBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: "999px",
+    border: "1px solid #E5E7EB",
     background: "#FFFFFF",
-    color: "#0F172A",
+    color: "#4B5563",
     cursor: "pointer",
-    fontSize: 13,
+    fontSize: 16,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   /* modal */
@@ -802,6 +921,31 @@ const styles = {
     background: "#f9fafb",
     fontSize: 13,
     color: "#374151",
+  },
+  modalActions: {
+    marginTop: 14,
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: 10,
+  },
+  modalCancel: {
+    borderRadius: 999,
+    padding: "8px 16px",
+    border: "1px solid #D4DBE7",
+    background: "#FFFFFF",
+    color: "#0F172A",
+    cursor: "pointer",
+    fontSize: 13,
+  },
+  modalSave: {
+    borderRadius: 999,
+    padding: "8px 18px",
+    border: "none",
+    background: "#0D658B",
+    color: "#F9FAFB",
+    cursor: "pointer",
+    fontWeight: 600,
+    fontSize: 13,
   },
 
   statusSelect: {

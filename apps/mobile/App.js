@@ -28,6 +28,8 @@ import MapTracking from "./screens/MapTracking";
 import TripDetails from "./screens/TripDetails";
 import BusScanner from "./screens/BusScanner";
 import DriverTripHistory from "./screens/DriverTripHistory";
+import ForgotPassword from "./screens/ForgotPassword";
+import ResetPassword from "./screens/ResetPassword";
 
 const Stack = createNativeStackNavigator();
 
@@ -44,6 +46,8 @@ export default function App() {
             <Stack.Screen name="OtpVerify" component={OtpVerifyScreen} />
             <Stack.Screen name="BusScanner" component={BusScanner} />
             <Stack.Screen name="DriverTripHistory" component={DriverTripHistory}/>
+            <Stack.Screen name="ForgotPassword" component={ForgotPassword} />
+            <Stack.Screen name="ResetPassword" component={ResetPassword} />
 
             {/* Driver */}
             <Stack.Screen

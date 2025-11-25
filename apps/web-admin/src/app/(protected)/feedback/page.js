@@ -3,7 +3,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { listFeedback } from "@/lib/api";
-import { Star, X as XIcon } from "lucide-react";
+import { Star } from "lucide-react";
+import { Poppins } from "next/font/google";
+
+/* ---------- FONT ---------- */
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+});
 
 export default function FeedbackPage() {
   const [loading, setLoading] = useState(false);
@@ -11,12 +18,11 @@ export default function FeedbackPage() {
 
   const [feedback, setFeedback] = useState([]);
   const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState(null);
 
-  // sort + pagination (same pattern as buses)
-  const [sortOrder, setSortOrder] = useState("newest"); // "newest" | "oldest" | "az"
+  // sort + pagination
+  const [sortOrder, setSortOrder] = useState("newest"); // "newest" | "oldest" | "az" | "za"
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 5; // minimum of 5 per page
+  const PAGE_SIZE = 5;
 
   function showFlash(type, text) {
     setFlash({ type, text });
@@ -33,7 +39,7 @@ export default function FeedbackPage() {
         ? res
         : [];
       setFeedback(items);
-      setPage(1); // reset page whenever we reload
+      setPage(1);
     } catch (err) {
       console.error("LOAD FEEDBACK ERROR:", err);
       showFlash("error", err.message || "Failed to load feedback.");
@@ -71,16 +77,15 @@ export default function FeedbackPage() {
     });
   }, [normalizedSearch, feedback]);
 
-  // sort (newest / oldest / A-Z)
+  // sort (newest / oldest / A-Z / Z-A)
   const sorted = useMemo(() => {
     const arr = [...searched];
 
-    // A–Z by author name
-    if (sortOrder === "az") {
+    if (sortOrder === "az" || sortOrder === "za") {
       return arr.sort((a, b) => {
         const aa = (a.authorName || "").toLowerCase();
         const bb = (b.authorName || "").toLowerCase();
-        return aa.localeCompare(bb);
+        return sortOrder === "az" ? aa.localeCompare(bb) : bb.localeCompare(aa);
       });
     }
 
@@ -101,19 +106,19 @@ export default function FeedbackPage() {
   const S = styles;
 
   return (
-    <div style={S.page}>
+    <div className={poppins.className} style={S.page}>
       {/* Header */}
       <div>
-        <h1 style={S.title}>User Feedback Management</h1>
-        <p style={S.sub}>Monitor and manage passenger feedback and ratings.</p>
+        <h1 style={S.title}>Feedback</h1>
+        <p style={S.sub}>Monitor commuter feedback and driver ratings.</p>
       </div>
 
       {/* Main card */}
       <section style={S.card}>
         <div style={S.cardHeader}>
-          <div style={S.cardTitle}>Feedback List</div>
+          <div style={S.cardTitle}>Feedback list</div>
 
-          {/* Search + sort (no refresh button) */}
+          {/* Search + sort */}
           <div style={S.toolbar}>
             <div style={S.searchWrapper}>
               <input
@@ -132,7 +137,8 @@ export default function FeedbackPage() {
               >
                 <option value="newest">Newest to oldest</option>
                 <option value="oldest">Oldest to newest</option>
-                <option value="az">A–Z (Author name)</option>
+                <option value="az">A–Z (Author)</option>
+                <option value="za">Z–A (Author)</option>
               </select>
             </div>
           </div>
@@ -146,139 +152,110 @@ export default function FeedbackPage() {
 
         {/* List */}
         {loading && feedback.length === 0 ? (
-          <p style={S.muted}>Loading feedback…</p>
+          <div style={S.emptyWrapper}>
+            <div style={S.emptyTitle}>Loading feedback…</div>
+          </div>
         ) : pageItems.length === 0 ? (
-          <p style={S.muted}>No feedback found.</p>
+          <div style={S.emptyWrapper}>
+            <div style={S.emptyTitle}>No feedback found</div>
+            <div style={S.emptySub}>Try different search or sorting.</div>
+          </div>
         ) : (
           <>
             <div style={S.list}>
-              {pageItems.map((f) => (
-                <article key={f.id} style={S.item}>
-                  <div style={S.itemMain}>
-                    <div style={S.itemHeader}>
-                      <div style={S.itemAuthor}>{f.authorName}</div>
-                      <div style={S.itemMeta}>
-                        <span style={S.metaLabel}>Driver:</span>{" "}
-                        <span>{f.driverName}</span>
+              {pageItems.map((f) => {
+                const dateText = f.createdAt
+                  ? new Date(f.createdAt).toLocaleDateString()
+                  : "—";
+
+                return (
+                  <article key={f.id} style={S.item}>
+                    <div style={S.itemMain}>
+                      {/* Header row: author only */}
+                      <div style={S.itemHeaderRow}>
+                        <div style={S.itemTitleRow}>
+                          <span style={S.itemTitle}>
+                            {f.authorName || "Unknown passenger"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* 2-column info like driver card */}
+                      <div style={S.infoGrid}>
+                        <div>
+                          <div style={S.sectionHeader}>PASSENGER</div>
+                          <div style={S.infoRow}>
+                            <span style={S.infoLabel}>Name</span>
+                            <span style={S.infoValue}>
+                              {f.authorName || "Unknown passenger"}
+                            </span>
+                          </div>
+                          <div style={S.infoRow}>
+                            <span style={S.infoLabel}>Date</span>
+                            <span style={S.infoValue}>{dateText}</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div style={S.sectionHeader}>DRIVER & RATING</div>
+                          <div style={S.infoRow}>
+                            <span style={S.infoLabel}>Driver</span>
+                            <span style={S.infoValue}>
+                              {f.driverName || "—"}
+                            </span>
+                          </div>
+                          <div style={S.infoRow}>
+                            <span style={S.infoLabel}>Rating</span>
+                            <span style={S.infoValue}>
+                              <StarRating score={f.score} />
+                              <span style={S.inlineScore}>
+                                {f.score}/5
+                              </span>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Comment block */}
+                      <div style={S.commentBlock}>
+                        <div style={S.commentLabel}>Comment</div>
+                        <div style={S.commentBox}>
+                          {f.comment?.trim()
+                            ? f.comment
+                            : "No comment provided."}
+                        </div>
                       </div>
                     </div>
-
-                    <p style={S.commentPreview}>
-                      {f.comment || "No comment provided."}
-                    </p>
-
-                    <div style={S.itemFooter}>
-                      <div style={S.ratingRow}>
-                        <StarRating score={f.score} />
-                        <span style={S.scoreText}>{f.score}/5</span>
-                        <span style={S.dot}>•</span>
-                        <span style={S.dateText}>
-                          {f.createdAt
-                            ? new Date(f.createdAt).toLocaleDateString()
-                            : "—"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={S.itemSide}>
-                    <button
-                      type="button"
-                      style={S.viewBtn}
-                      onClick={() => setSelected(f)}
-                    >
-                      View
-                    </button>
-                  </div>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
 
-            {/* pagination (same pattern as buses) */}
-            <div style={S.paginationRow}>
-              <span style={S.paginationText}>
-                Showing{" "}
-                {sorted.length === 0
-                  ? 0
-                  : `${startIndex + 1}-${Math.min(
-                      startIndex + PAGE_SIZE,
-                      sorted.length
-                    )}`}{" "}
-                of {sorted.length} feedback
+            {/* Arrow pagination */}
+            <div style={S.paginationBottom}>
+              <button
+                type="button"
+                style={S.pageCircleBtn}
+                disabled={currentPage === 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                ‹
+              </button>
+              <span style={S.paginationLabel}>
+                Page {currentPage} of {totalPages}
               </span>
-              <div style={S.paginationBtns}>
-                <button
-                  type="button"
-                  style={S.pageBtn}
-                  disabled={currentPage === 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  Previous
-                </button>
-                <span style={S.paginationText}>
-                  Page {currentPage} of {totalPages}
-                </span>
-                <button
-                  type="button"
-                  style={S.pageBtn}
-                  disabled={currentPage === totalPages}
-                  onClick={() =>
-                    setPage((p) => Math.min(totalPages, p + 1))
-                  }
-                >
-                  Next
-                </button>
-              </div>
+              <button
+                type="button"
+                style={S.pageCircleBtn}
+                disabled={currentPage === totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                ›
+              </button>
             </div>
           </>
         )}
       </section>
-
-      {/* Modal */}
-      {selected && (
-        <div style={S.modalBackdrop}>
-          <div style={S.modal}>
-            <div style={S.modalHeader}>
-              <div style={S.modalTitle}>Feedback Details</div>
-              <button
-                type="button"
-                style={S.modalClose}
-                onClick={() => setSelected(null)}
-              >
-                <XIcon size={16} />
-              </button>
-            </div>
-
-            <div style={S.modalBody}>
-              <Row label="Author" value={selected.authorName} />
-              <Row label="Driver" value={selected.driverName} />
-              <Row
-                label="Date"
-                value={
-                  selected.createdAt
-                    ? new Date(selected.createdAt).toLocaleDateString()
-                    : "—"
-                }
-              />
-              <Row
-                label="Rating"
-                value={
-                  <div style={S.modalRating}>
-                    <StarRating score={selected.score} />
-                    <span style={S.scoreText}>{selected.score}/5</span>
-                  </div>
-                }
-              />
-              <div style={{ marginTop: 10 }}>
-                <div style={S.modalLabel}>Comment</div>
-                <div style={S.modalCommentBox}>
-                  {selected.comment || "No comment provided."}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -303,37 +280,25 @@ function StarRating({ score = 0 }) {
   );
 }
 
-function Row({ label, value }) {
-  const S = styles;
-  return (
-    <div style={S.row}>
-      <div style={S.modalLabel}>{label}:</div>
-      <div style={S.rowValue}>{value ?? "—"}</div>
-    </div>
-  );
-}
-
-/* inline styles to match your existing admin theme */
+/* styles – aligned with your driver/incidents cards */
 
 const styles = {
   page: {
     display: "grid",
     gap: 16,
+    maxWidth: 1120,
+    margin: "0 auto",
+    padding: "0 16px 24px",
   },
-  title: {
-    fontSize: 22,
-    fontWeight: 800,
-    margin: 0,
-  },
-  sub: {
-    margin: "6px 0 0",
-    color: "var(--muted)",
-  },
+  title: { fontSize: 22, fontWeight: 800, margin: 0 },
+  sub: { margin: "6px 0 0", color: "var(--muted)" },
+
   card: {
     background: "var(--card)",
-    borderRadius: 16,
-    border: "1px solid #9CA3AF",
+    borderRadius: 24,
+    border: "1px solid var(--line)",
     padding: 20,
+    boxShadow: "0 20px 45px rgba(15,23,42,0.06)",
   },
   cardHeader: {
     display: "flex",
@@ -346,24 +311,21 @@ const styles = {
     fontSize: 18,
   },
 
-  /* toolbar (search + sort) */
   toolbar: {
     display: "flex",
     alignItems: "center",
     gap: 12,
     marginTop: 4,
   },
-  searchWrapper: {
-    flex: 1,
-  },
+  searchWrapper: { flex: 1 },
   searchInput: {
     width: "100%",
     borderRadius: 999,
-    border: "1px solid #9CA3AF",
-    padding: "10px 14px",
-    fontSize: 14,
+    border: "1px solid rgba(148,163,184,.45)",
+    padding: "8px 12px",
+    fontSize: 13,
     outline: "none",
-    background: "#f9fafb",
+    background: "#F9FBFF",
   },
   toolbarRight: {
     display: "flex",
@@ -372,7 +334,7 @@ const styles = {
   },
   sortSelect: {
     borderRadius: 999,
-    border: "1px solid #9CA3AF",
+    border: "1px solid #D4DBE7",
     padding: "8px 12px",
     fontSize: 13,
     background: "#FFFFFF",
@@ -382,6 +344,7 @@ const styles = {
 
   flash: (type) => ({
     marginTop: 6,
+    marginBottom: 6,
     padding: "8px 12px",
     borderRadius: 8,
     fontSize: 13,
@@ -393,190 +356,130 @@ const styles = {
         ? "1px solid rgba(248,113,113,.7)"
         : "1px solid rgba(74,222,128,.7)",
   }),
-  muted: {
-    color: "#9ca3af",
-    fontSize: 14,
-    marginTop: 4,
-  },
 
-  // 🔽 scrollable feedback list
+  emptyWrapper: {
+    height: 200,
+    display: "grid",
+    placeItems: "center",
+    textAlign: "center",
+    color: "#9CA3AF",
+    fontSize: 13,
+  },
+  emptyTitle: { fontWeight: 600 },
+  emptySub: { marginTop: 4 },
+
   list: {
     display: "grid",
     gap: 10,
-    marginTop: 4,
-    maxHeight: 360,      // adjust if you want taller/shorter
+    maxHeight: 360,
     overflowY: "auto",
-    paddingRight: 4,     // small space so scrollbar doesn't cover content
+    paddingRight: 4,
   },
 
   item: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "stretch",
-    padding: 14,
-    borderRadius: 14,
-    border: "1px solid #9CA3AF",
-    background: "#ffffff",
+    border: "1px solid #E2E8F0",
+    borderRadius: 24,
+    padding: 20,
+    background: "#FFFFFF",
+    boxShadow: "0 18px 40px rgba(15,23,42,0.05)",
   },
-  itemMain: {
-    display: "grid",
-    gap: 6,
-    flex: 1,
-  },
-  itemHeader: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 4,
-  },
-  itemAuthor: {
-    fontWeight: 700,
-    fontSize: 15,
-    color: "#0f172a",
-  },
-  itemMeta: {
-    fontSize: 13,
-    color: "#6b7280",
-  },
-  metaLabel: {
-    fontWeight: 600,
-  },
-  commentPreview: {
-    margin: 0,
-    fontSize: 13,
-    color: "#4b5563",
-  },
-  itemFooter: {
-    marginTop: 2,
-  },
-  ratingRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-    fontSize: 13,
-    color: "#6b7280",
-  },
-  scoreText: {
-    fontWeight: 600,
-  },
-  dateText: {
-    fontSize: 12,
-    color: "#9ca3af",
-  },
-  dot: {
-    fontSize: 14,
-    color: "#d1d5db",
-  },
-  itemSide: {
-    display: "flex",
-    alignItems: "center",
-  },
-  viewBtn: {
-    borderRadius: 999,
-    border: "1px solid rgba(148,163,184,.7)",
-    padding: "6px 16px",
-    background: "#ffffff",
-    fontSize: 13,
-    cursor: "pointer",
-  },
+  itemMain: { display: "grid", gap: 10 },
 
-  /* pagination (same style family as buses) */
-  paginationRow: {
-    marginTop: 14,
-    paddingTop: 10,
-    borderTop: "1px solid var(--line)",
+  itemHeaderRow: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "center",
-    fontSize: 13,
-    color: "#6B7280",
-  },
-  paginationText: {
-    fontSize: 13,
-    color: "#6B7280",
-  },
-  paginationBtns: {
-    display: "flex",
     alignItems: "center",
     gap: 10,
+    flexWrap: "wrap",
   },
-  pageBtn: {
-    borderRadius: 999,
-    border: "1px solid #D4DBE7",
-    padding: "6px 12px",
-    background: "#FFFFFF",
-    color: "#0F172A",
-    cursor: "pointer",
-    fontSize: 13,
-  },
-
-  /* modal */
-  modalBackdrop: {
-    position: "fixed",
-    inset: 0,
+  itemTitleRow: {
     display: "flex",
     alignItems: "center",
-    justifyContent: "center",
-    background: "rgba(15,23,42,.45)",
-    zIndex: 40,
-  },
-  modal: {
-    width: "min(520px, 96vw)",
-    borderRadius: 16,
-    border: "1px solid rgba(203,213,225,.9)",
-    background: "#ffffff",
-    padding: 16,
-    boxShadow: "0 20px 60px rgba(15,23,42,.28)",
-  },
-  modalHeader: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
-  },
-  modalTitle: {
-    fontWeight: 700,
-    fontSize: 14,
-  },
-  modalClose: {
-    border: "none",
-    background: "transparent",
-    cursor: "pointer",
-    padding: 4,
-    borderRadius: 999,
-  },
-  modalBody: {
-    marginTop: 4,
-    fontSize: 13,
-    color: "#374151",
-    display: "grid",
-    gap: 6,
-  },
-  row: {
-    display: "flex",
     gap: 8,
-    alignItems: "baseline",
+    flexWrap: "wrap",
   },
-  modalLabel: {
+  itemTitle: { fontWeight: 800, fontSize: 16, color: "#0D658B" },
+
+  infoGrid: {
+    marginTop: 6,
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 40,
+  },
+  sectionHeader: {
+    fontSize: 12,
+    fontWeight: 700,
+    letterSpacing: 0.08,
+    textTransform: "uppercase",
+    color: "#9CA3AF",
+    marginBottom: 6,
+  },
+  infoRow: {
+    display: "flex",
+    gap: 16,
+    fontSize: 13,
+    marginTop: 4,
+  },
+  infoLabel: {
+    width: 110,
+    color: "#6B7280",
+  },
+  infoValue: {
+    color: "#111827",
+    fontWeight: 500,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "wrap",
+  },
+  inlineScore: {
     fontWeight: 600,
     fontSize: 12,
-    color: "#6b7280",
-    minWidth: 70,
+    color: "#4B5563",
   },
-  rowValue: {
-    fontSize: 13,
+
+  commentBlock: {
+    marginTop: 8,
   },
-  modalRating: {
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
+  commentLabel: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: "#6B7280",
+    marginBottom: 4,
   },
-  modalCommentBox: {
-    marginTop: 4,
+  commentBox: {
     padding: "8px 10px",
-    borderRadius: 8,
+    borderRadius: 10,
     border: "1px solid rgba(209,213,219,.9)",
-    background: "#f9fafb",
+    background: "#F9FAFB",
     fontSize: 13,
     color: "#374151",
+  },
+
+  // pagination bottom-right with arrows
+  paginationBottom: {
+    marginTop: 18,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 14,
+  },
+  paginationLabel: {
+    fontSize: 13,
+    color: "#6B7280",
+    fontWeight: 500,
+  },
+  pageCircleBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: "999px",
+    border: "1px solid #E5E7EB",
+    background: "#FFFFFF",
+    color: "#4B5563",
+    cursor: "pointer",
+    fontSize: 16,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
 };

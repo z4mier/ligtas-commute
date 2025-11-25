@@ -1,11 +1,10 @@
-// apps/mobile/screens/LoginScreen.js
-import React, { useState, useMemo, useRef } from "react";
+// apps/mobile/screens/ForgotPassword.js
+import React, { useState, useRef } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
-  Pressable,
   ScrollView,
   ActivityIndicator,
   StyleSheet,
@@ -17,7 +16,6 @@ import {
   Keyboard,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import {
   useFonts,
@@ -27,7 +25,15 @@ import {
 } from "@expo-google-fonts/poppins";
 import { API_URL } from "../constants/config";
 
-export default function LoginScreen({ navigation }) {
+const COLORS = {
+  bgdark: "#0F1B2B",
+  brand: "#2078A8",
+  inputBg: "#FFFFFF",
+  border: "#2A3B52",
+  link: "#9CC7E5",
+};
+
+export default function ForgotPassword({ navigation }) {
   const [fontsLoaded] = useFonts({
     Poppins_400Regular,
     Poppins_600SemiBold,
@@ -35,98 +41,77 @@ export default function LoginScreen({ navigation }) {
   });
 
   const { width, height } = useWindowDimensions();
-  const HERO_H = Math.min(height * 0.28, 260);
+  const HERO_H = Math.min(height * 0.26, 240);
   const CIRCLE = Math.max(width * 3.4, 1700);
   const CURVE_DEPTH = Math.round(HERO_H * 0.9);
-  const ICON = Math.min(100, Math.max(120, HERO_H * 0.9));
+  const ICON = Math.min(90, Math.max(100, HERO_H * 0.85));
 
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const inFlight = useRef(false); // 🚫 prevents double submit
-
   const [errors, setErrors] = useState({
     email: undefined,
-    password: undefined,
     general: undefined,
   });
 
+  const inFlight = useRef(false);
+
   const isValidEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
-  const validate = () => {
+
+  function validate() {
     const e = {};
     if (!isValidEmail(email)) e.email = "Enter a valid email.";
-    if (!password) e.password = "Enter your password.";
     setErrors(e);
     return Object.keys(e).length === 0;
-  };
+  }
 
-  const disabled = useMemo(
-    () => loading || !email.trim() || !password,
-    [loading, email, password]
-  );
-
-  async function handleLogin() {
+  async function handleSubmit() {
     if (!validate()) return;
     if (inFlight.current) return;
+
     inFlight.current = true;
+    setLoading(true);
+    setErrors({ email: undefined, general: undefined });
 
     try {
-      setLoading(true);
-
       const key = email.trim().toLowerCase();
-      const res = await fetch(`${API_URL}/auth/login`, {
+
+      const res = await fetch(`${API_URL}/auth/forgot-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: key, password }),
+        body: JSON.stringify({ email: key }),
       });
 
       const data = await res.json().catch(() => ({}));
 
-      // ⛔ Not verified yet → route to OTP screen for this email
-      if (res.status === 403 && data?.code === "NOT_ACTIVE") {
-        navigation.replace("OtpVerify", { email: key });
-        return;
-      }
-
       if (!res.ok) {
-        const msg = data?.message || "Login failed";
-        const lower = String(msg).toLowerCase();
-        const fieldErr = {};
-        if (lower.includes("credential") || res.status === 401) {
-          fieldErr.password = "Invalid email or password.";
-        } else if (lower.includes("email")) {
-          fieldErr.email = msg;
+        // 400 from backend = invalid email format
+        if (res.status === 400) {
+          setErrors((prev) => ({
+            ...prev,
+            email: "Enter a valid email address.",
+          }));
         }
-        setErrors((prev) => ({
-          ...prev,
-          ...fieldErr,
-          general: Object.keys(fieldErr).length ? undefined : msg,
-        }));
+        // 404 from backend = email not found
+        else if (res.status === 404) {
+          setErrors((prev) => ({
+            ...prev,
+            email: "Email not registered.",
+          }));
+        } else {
+          const msg =
+            data?.message ||
+            "Unable to send reset instructions. Please try again later.";
+          setErrors((prev) => ({ ...prev, general: msg }));
+        }
         return;
       }
 
-      // ✅ Success
-      if (data?.token) await AsyncStorage.setItem("token", data.token);
-      if (data?.user)
-        await AsyncStorage.setItem("user", JSON.stringify(data.user));
-
-      if (data.role === "DRIVER") {
-        navigation.replace("DriverDashboard");
-      } else if (data.role === "COMMUTER") {
-        navigation.replace("CommuterDashboard");
-      } else {
-        setErrors({
-          email: undefined,
-          password: undefined,
-          general:
-            "Logged in, but dashboard is not configured for this role.",
-        });
-      }
-    } catch {
+      // ✅ Success: email exists, reset code sent → go to ResetPassword screen
+      navigation.navigate("ResetPassword", { email: key });
+      return;
+    } catch (_e) {
       setErrors({
         email: undefined,
-        password: undefined,
         general: "Network error. Please try again.",
       });
     } finally {
@@ -145,7 +130,7 @@ export default function LoginScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
-      {/* Curved hero with bigger logo */}
+      {/* Curved hero */}
       <View style={[styles.curveHero, { height: HERO_H }]}>
         <View
           style={[
@@ -174,12 +159,12 @@ export default function LoginScreen({ navigation }) {
             <Text style={styles.f700}>Ligtas</Text>Commute
           </Text>
           <Text style={[styles.subtle, styles.f400]}>
-            Safety that rides with you
+            Reset your password safely
           </Text>
         </View>
       </View>
 
-      {/* Login form body */}
+      {/* Body */}
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{ flex: 1 }}
@@ -190,9 +175,16 @@ export default function LoginScreen({ navigation }) {
             style={styles.bodyPad}
             keyboardShouldPersistTaps="handled"
           >
-            <Text style={[styles.h2, styles.center, styles.f600]}>Login</Text>
+            {/* Header text */}
+            <Text style={[styles.h2, styles.center, styles.f600]}>
+              Forgot password
+            </Text>
+            <Text style={[styles.infoText, styles.center, styles.f400]}>
+              Enter the email associated with your account and we&apos;ll send
+              you a 6-digit code to reset your password.
+            </Text>
 
-            {/* Email */}
+            {/* Email field */}
             <View style={styles.fieldBlock}>
               <Text style={[styles.label, styles.f600]}>Email Address</Text>
               <View
@@ -229,119 +221,52 @@ export default function LoginScreen({ navigation }) {
               ) : null}
             </View>
 
-            {/* Password */}
-            <View style={{ marginBottom: 4 }}>
-              <Text style={[styles.label, styles.f600]}>Password</Text>
-              <View
-                style={[
-                  styles.inputWrap,
-                  errors.password && styles.inputError,
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name="lock-outline"
-                  size={20}
-                  color={errors.password ? "#EF4444" : "#6B7280"}
-                  style={styles.leftIcon}
-                />
-                <TextInput
-                  style={[styles.input, styles.f400]}
-                  placeholder="Enter your password"
-                  placeholderTextColor="#9CA3AF"
-                  secureTextEntry={!showPassword}
-                  value={password}
-                  onChangeText={(t) => {
-                    setPassword(t);
-                    setErrors((e) => ({
-                      ...e,
-                      password: undefined,
-                      general: undefined,
-                    }));
-                  }}
-                />
-                <TouchableOpacity
-                  onPress={() => setShowPassword((v) => !v)}
-                  style={styles.rightIconBtn}
-                >
-                  <Ionicons
-                    name={showPassword ? "eye-off-outline" : "eye-outline"}
-                    size={20}
-                    color="#6B7280"
-                  />
-                </TouchableOpacity>
-              </View>
-              {errors.password ? (
-                <Text style={styles.errorText}>{errors.password}</Text>
-              ) : null}
-            </View>
-
-            {/* 👉 Forgot password link (right-aligned) */}
-            <View style={styles.forgotRow}>
-              <TouchableOpacity
-                onPress={() => navigation.navigate("ForgotPassword")}
-                hitSlop={8}
-              >
-                <Text style={[styles.forgotText, styles.f400]}>
-                  Forgot password?
-                </Text>
-              </TouchableOpacity>
-            </View>
-
+            {/* General error */}
             {errors.general ? (
               <Text style={[styles.errorText, { marginBottom: 8 }]}>
                 {errors.general}
               </Text>
             ) : null}
 
+            {/* Submit button */}
             <TouchableOpacity
-              onPress={handleLogin}
-              disabled={disabled || inFlight.current}
+              onPress={handleSubmit}
+              disabled={loading || inFlight.current}
               style={[
                 styles.primaryBtn,
-                (disabled || inFlight.current) && { opacity: 0.7 },
+                (loading || inFlight.current) && { opacity: 0.7 },
               ]}
             >
               {loading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text
-                  style={[styles.primaryBtnText, styles.f600]}
-                >
-                  Sign in
+                <Text style={[styles.primaryBtnText, styles.f600]}>
+                  Send reset code
                 </Text>
               )}
             </TouchableOpacity>
 
-            <View style={styles.footerRow}>
-              <Text
-                style={[styles.smallText, styles.subtle, styles.f400]}
-              >
-                Don’t have an account?
+            {/* Back to login */}
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              style={styles.backRow}
+            >
+              <Ionicons
+                name="arrow-back"
+                size={16}
+                color={COLORS.link}
+                style={{ marginRight: 4 }}
+              />
+              <Text style={[styles.backText, styles.f600]}>
+                Back to Login
               </Text>
-              <Pressable
-                onPress={() => navigation.navigate("Signup")}
-                hitSlop={8}
-              >
-                <Text style={[styles.linkText, styles.f600]}>
-                  {"  "}
-                  Sign up
-                </Text>
-              </Pressable>
-            </View>
+            </TouchableOpacity>
           </ScrollView>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
-
-const COLORS = {
-  bgdark: "#0F1B2B",
-  brand: "#2078A8",
-  inputBg: "#FFFFFF",
-  border: "#2A3B52",
-  link: "#9CC7E5",
-};
 
 const styles = StyleSheet.create({
   f400: { fontFamily: "Poppins_400Regular" },
@@ -369,15 +294,22 @@ const styles = StyleSheet.create({
 
   brandTitle: {
     color: "#FFFFFF",
-    fontSize: 30,
+    fontSize: 26,
     marginTop: 10,
     letterSpacing: 0.3,
   },
-  subtle: { color: "rgba(255,255,255,0.85)", fontSize: 14, marginTop: 4 },
+  subtle: { color: "rgba(255,255,255,0.85)", fontSize: 13, marginTop: 4 },
 
-  h2: { color: "#FFFFFF", fontSize: 22, marginTop: 8, marginBottom: 16 },
+  h2: { color: "#FFFFFF", fontSize: 20, marginTop: 8, marginBottom: 8 },
 
-  fieldBlock: { marginBottom: 12 },
+  infoText: {
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 13,
+    marginBottom: 18,
+    paddingHorizontal: 4,
+  },
+
+  fieldBlock: { marginBottom: 14 },
   label: { color: "#FFFFFF", fontSize: 12.5, marginBottom: 6 },
 
   inputWrap: {
@@ -393,28 +325,14 @@ const styles = StyleSheet.create({
   errorText: { color: "#EF4444", fontSize: 12, marginTop: 6 },
 
   leftIcon: { position: "absolute", left: 12, zIndex: 1 },
-  rightIconBtn: { position: "absolute", right: 8, padding: 6 },
 
   input: {
     flex: 1,
     height: "100%",
     paddingLeft: 44,
-    paddingRight: 40,
+    paddingRight: 16,
     fontSize: 14.5,
     color: "#0F1B2B",
-  },
-
-  /* Forgot password row */
-  forgotRow: {
-    width: "100%",
-    alignItems: "flex-end",
-    marginTop: 4,
-    marginBottom: 4,
-  },
-  forgotText: {
-    fontSize: 11.5,
-    color: "#FFFFFF",
-    textDecorationLine: "underline",
   },
 
   primaryBtn: {
@@ -425,15 +343,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: 8,
   },
-  primaryBtnText: { color: "#FFFFFF", fontSize: 16 },
+  primaryBtnText: { color: "#FFFFFF", fontSize: 15 },
 
-  footerRow: {
+  backRow: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "center",
     marginTop: 16,
   },
-  smallText: { fontSize: 12.5 },
-  linkText: {
+  backText: {
     color: COLORS.link,
     textDecorationLine: "underline",
     fontSize: 13.5,

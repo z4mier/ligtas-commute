@@ -67,7 +67,6 @@ export default function Topbar() {
   const [notifLoading, setNotifLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // new: store logged in user
   const [user, setUser] = useState({ email: "", role: "" });
 
   const menuRef = useRef(null);
@@ -89,7 +88,6 @@ export default function Topbar() {
       const raw = localStorage.getItem("lc_user");
       if (!raw) return;
       const parsed = JSON.parse(raw);
-      // expecting { id, email, role }
       setUser({
         email: parsed?.email || "",
         role: parsed?.role || "",
@@ -113,9 +111,7 @@ export default function Topbar() {
   }, []);
 
   async function loadNotifications() {
-    // avoid re-loading while already fetching
     if (notifLoading) return;
-
     setNotifLoading(true);
 
     try {
@@ -174,7 +170,6 @@ export default function Topbar() {
         return bd - ad;
       });
 
-      // 🔒 filter out cleared notifications (persisted)
       const cleared = getClearedNotifIds();
       combined = combined.filter((n) => !cleared.has(n.id));
 
@@ -185,7 +180,7 @@ export default function Topbar() {
     }
   }
 
-  // 🔔 Load notifications on mount so badge/count is ready even without clicking
+  // load notifications on mount
   useEffect(() => {
     loadNotifications();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -197,7 +192,6 @@ export default function Topbar() {
     setUserOpen(false);
 
     if (willOpen) {
-      // optional: re-sync from server when opening
       loadNotifications();
     }
   }
@@ -223,17 +217,14 @@ export default function Topbar() {
 
   function clearAll() {
     if (!notifications.length) return;
-    // persist cleared IDs so dili na mubalik after refresh
     const ids = notifications.map((n) => n.id);
     saveClearedNotifIds(ids);
-
     setNotifications([]);
     setUnreadCount(0);
   }
 
   const hasNotifs = notifications.length > 0;
 
-  // values for display
   const displayEmail = user.email || "admin@example.com";
   const displayRole =
     user.role && user.role.toUpperCase() === "ADMIN"
@@ -244,110 +235,121 @@ export default function Topbar() {
   const initials = getInitialsFromEmail(displayEmail);
 
   return (
-    <header style={S.bar}>
-      {/* Left brand */}
-      <div style={S.left}>
-        <img src="/logo.png" alt="LigtasCommute logo" style={S.logoImg} />
-        <div>
-          <div style={S.brandText}>LigtasCommute</div>
-          <div style={S.brandSub}>Admin Portal</div>
+    <>
+      <style>{css}</style>
+      <header className="admin-topbar" style={S.bar}>
+        {/* Left brand */}
+        <div style={S.left}>
+          <img src="/logo.png" alt="LigtasCommute logo" style={S.logoImg} />
+          <div>
+            <div style={S.brandText}>LigtasCommute</div>
+            <div style={S.brandSub}>Admin Portal</div>
+          </div>
         </div>
-      </div>
 
-      {/* Right actions */}
-      <div style={S.right} ref={menuRef}>
-        {/* Notification bell */}
-        <button
-          aria-label="Notifications"
-          style={S.iconBtn}
-          type="button"
-          onClick={handleBellClick}
-        >
-          <Bell size={18} />
-          {unreadCount > 0 && (
-            <span style={S.badge}>{unreadCount > 9 ? "9+" : unreadCount}</span>
-          )}
-        </button>
+        {/* Right actions */}
+        <div style={S.right} ref={menuRef}>
+          {/* Notification bell */}
+          <button
+            aria-label="Notifications"
+            style={S.iconBtn}
+            type="button"
+            onClick={handleBellClick}
+            className="admin-icon-btn"
+          >
+            <Bell size={18} />
+            {unreadCount > 0 && (
+              <span style={S.badge}>{unreadCount > 9 ? "9+" : unreadCount}</span>
+            )}
+          </button>
 
-        {/* Notifications dropdown */}
-        {notifOpen && (
-          <div style={S.notifMenu}>
-            <div style={S.notifHeader}>
-              <span style={S.notifTitle}>Notifications</span>
-              {hasNotifs && (
-                <button
-                  type="button"
-                  style={S.markAllBtn}
-                  onClick={markAllRead}
-                >
-                  Mark all read
-                </button>
-              )}
-            </div>
-
-            <div style={S.notifList}>
-              {notifLoading && !hasNotifs ? (
-                <div style={S.notifEmpty}>Loading…</div>
-              ) : !hasNotifs ? (
-                <div style={S.notifEmpty}>No notifications</div>
-              ) : (
-                notifications.map((n) => (
+          {/* Notifications dropdown */}
+          {notifOpen && (
+            <div style={S.notifMenu}>
+              <div style={S.notifHeader}>
+                <span style={S.notifTitle}>Notifications</span>
+                {hasNotifs && (
                   <button
-                    key={n.id}
                     type="button"
-                    style={S.notifItem(!n.read)}
-                    onClick={() => handleNotificationClick(n)}
+                    style={S.markAllBtn}
+                    onClick={markAllRead}
                   >
-                    <div style={S.notifItemTop}>
-                      <span style={S.notifItemTitle}>{n.title}</span>
-                      {!n.read && <span style={S.unreadDot} />}
-                    </div>
-                    <div style={S.notifItemBody}>{n.body}</div>
-                    <div style={S.notifItemTime}>
-                      {formatRelativeTime(n.createdAt)}
-                    </div>
+                    Mark all read
                   </button>
-                ))
-              )}
+                )}
+              </div>
+
+              <div style={S.notifList}>
+                {notifLoading && !hasNotifs ? (
+                  <div style={S.notifEmpty}>Loading…</div>
+                ) : !hasNotifs ? (
+                  <div style={S.notifEmpty}>No notifications</div>
+                ) : (
+                  notifications.map((n) => (
+                    <button
+                      key={n.id}
+                      type="button"
+                      style={S.notifItem(!n.read)}
+                      onClick={() => handleNotificationClick(n)}
+                      className="admin-notif-item"
+                    >
+                      <div style={S.notifItemTop}>
+                        <span style={S.notifItemTitle}>{n.title}</span>
+                        {!n.read && <span style={S.unreadDot} />}
+                      </div>
+                      <div style={S.notifItemBody}>{n.body}</div>
+                      <div style={S.notifItemTime}>
+                        {formatRelativeTime(n.createdAt)}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+
+              <button
+                type="button"
+                style={S.clearBtn}
+                onClick={clearAll}
+                disabled={!hasNotifs}
+              >
+                Clear all notifications
+              </button>
             </div>
+          )}
 
-            <button
-              type="button"
-              style={S.clearBtn}
-              onClick={clearAll}
-              disabled={!hasNotifs}
-            >
-              Clear all notifications
-            </button>
-          </div>
-        )}
+          {/* User chip with email + initials */}
+          <button
+            type="button"
+            onClick={() => {
+              setUserOpen((v) => !v);
+              setNotifOpen(false);
+            }}
+            style={S.userChip}
+            className="admin-user-chip"
+          >
+            <div style={S.userText}>
+              <span style={S.userName}>{displayEmail}</span>
+              <span style={S.userRole}>{displayRole}</span>
+            </div>
+            <div style={S.initialCircle}>{initials}</div>
+          </button>
 
-        {/* User chip with email + initials */}
-        <button
-          type="button"
-          onClick={() => {
-            setUserOpen((v) => !v);
-            setNotifOpen(false);
-          }}
-          style={S.userChip}
-        >
-          <div style={S.userText}>
-            <span style={S.userName}>{displayEmail}</span>
-            <span style={S.userRole}>{displayRole}</span>
-          </div>
-          <div style={S.initialCircle}>{initials}</div>
-        </button>
-
-        {userOpen && (
-          <div style={S.menu}>
-            <button type="button" onClick={handleLogout} style={S.menuItem}>
-              <LogOut size={16} />
-              <span>Logout</span>
-            </button>
-          </div>
-        )}
-      </div>
-    </header>
+          {userOpen && (
+            <div style={S.menu}>
+              <button
+                type="button"
+                onClick={handleLogout}
+                style={S.menuItem}
+                className="admin-menu-item"
+              >
+                <LogOut size={16} />
+                <span>Logout</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </header>
+    </>
   );
 }
 
@@ -363,6 +365,7 @@ const S = {
     position: "sticky",
     top: 0,
     zIndex: 30,
+    boxShadow: "0 6px 16px rgba(15,23,42,0.06)",
   },
   left: {
     display: "flex",
@@ -370,14 +373,16 @@ const S = {
     gap: 10,
   },
   logoImg: {
-    height: 48,
-    width: 48,
+    height: 40,
+    width: 40,
+    borderRadius: 12,
     objectFit: "cover",
   },
   brandText: {
     fontWeight: 700,
     fontSize: 18,
     color: "#0D658B",
+    letterSpacing: 0.2,
   },
   brandSub: {
     fontSize: 12,
@@ -564,3 +569,48 @@ const S = {
     color: "#4B5563",
   },
 };
+
+const css = `
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+
+.admin-topbar {
+  font-family: 'Poppins', system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Hover states */
+.admin-icon-btn {
+  transition: background 140ms ease, border-color 140ms ease, transform 120ms ease, box-shadow 120ms ease;
+}
+.admin-icon-btn:hover {
+  background: #E5F0FF;
+  border-color: #C7DDFF;
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.18);
+  transform: translateY(-1px);
+}
+
+.admin-user-chip {
+  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease, transform 120ms ease;
+}
+.admin-user-chip:hover {
+  border-color: #D0E2FF;
+  background: #F9FBFF;
+  box-shadow: 0 8px 20px rgba(15,23,42,0.06);
+  transform: translateY(-1px);
+}
+
+.admin-menu-item {
+  transition: background 120ms ease, color 120ms ease;
+}
+.admin-menu-item:hover {
+  background: #FEF2F2;
+  color: #B91C1C;
+}
+
+/* Notification item hover */
+.admin-notif-item {
+  transition: background 120ms ease;
+}
+.admin-notif-item:hover {
+  background: #E5F0FF;
+}
+`;

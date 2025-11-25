@@ -24,7 +24,7 @@ import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import QRCode from "qrcode";
 
-import { sendOtpEmail } from "./utils/mailer.js";
+import { sendOtpEmail, sendPasswordResetEmail } from "./utils/mailer.js";
 
 import mapsRouter from "../routes/maps.js";
 import tripsRouter from "../routes/trips.js";
@@ -106,10 +106,23 @@ const OTP_TTL_MS = 5 * 60 * 1000;
 const OTP_RESEND_COOLDOWN_MS = 30 * 1000;
 const generateOtp = () =>
   Math.floor(100000 + Math.random() * 900000).toString();
+
 function setOtp(email) {
   const code = generateOtp();
   const now = Date.now();
   otpStore.set(email, { code, expiresAt: now + OTP_TTL_MS, lastSentAt: now });
+  return code;
+}
+
+/* ---------- password-reset store (forgot password) ---------- */
+// separate from account-activation OTPs so they don't conflict
+const resetStore = new Map();
+const RESET_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+function setResetToken(email) {
+  const code = generateOtp();
+  const now = Date.now();
+  resetStore.set(email, { code, expiresAt: now + RESET_TTL_MS });
   return code;
 }
 
@@ -152,7 +165,6 @@ app.use("/driver", requireAuth, driverReportsRouter);
 // --- DRIVER DUTY STATUS (ON_DUTY / OFF_DUTY) ---
 app.patch("/driver/duty", requireAuth, async (req, res) => {
   try {
-    // ensure driver account
     if (req.user?.role !== "DRIVER") {
       return res.status(403).json({ message: "Drivers only" });
     }
@@ -163,7 +175,6 @@ app.patch("/driver/duty", requireAuth, async (req, res) => {
 
     const { status } = schema.parse(req.body);
 
-    // find driver profile via userId (unique)
     const driver = await prisma.driverProfile.findUnique({
       where: { userId: req.user.sub },
     });
@@ -190,7 +201,6 @@ app.patch("/driver/duty", requireAuth, async (req, res) => {
   }
 });
 
-
 /* ---------- COMMUTER BUS QR SCAN (for mobile app) ---------- */
 app.post("/commuter/scan-bus", requireUserAuth, async (req, res) => {
   try {
@@ -199,7 +209,6 @@ app.post("/commuter/scan-bus", requireUserAuth, async (req, res) => {
       return res.status(400).json({ message: "Missing payload" });
     }
 
-    // If QR content is a string, try parse to JSON
     if (typeof payload === "string") {
       try {
         payload = JSON.parse(payload);
@@ -208,12 +217,10 @@ app.post("/commuter/scan-bus", requireUserAuth, async (req, res) => {
       }
     }
 
-    // Make sure it's a bus QR
     if (payload.type && payload.type !== "bus") {
       return res.status(400).json({ message: "QR is not a bus code" });
     }
 
-    // Bus number from different possible fields
     const busNumber =
       payload.busNumber ||
       payload.number ||
@@ -227,7 +234,6 @@ app.post("/commuter/scan-bus", requireUserAuth, async (req, res) => {
         .json({ message: "Bus number missing in QR payload" });
     }
 
-    // Find bus by number
     const bus = await prisma.bus.findFirst({
       where: { number: String(busNumber) },
     });
@@ -236,7 +242,6 @@ app.post("/commuter/scan-bus", requireUserAuth, async (req, res) => {
       return res.status(404).json({ message: "Bus not found" });
     }
 
-    // Find latest active driver assigned to this bus
     const driver = await prisma.driverProfile.findFirst({
       where: {
         busId: bus.id,
@@ -249,26 +254,17 @@ app.post("/commuter/scan-bus", requireUserAuth, async (req, res) => {
     const onDuty = driverStatus === "ACTIVE" || driverStatus === "ON_DUTY";
 
     return res.json({
-      // driver identifiers
       driverProfileId: driver?.id ?? null,
       driverId: driver?.driverId ?? null,
-
-      // bus id
       busId: bus.id,
-
-      // UI
       name: driver?.fullName || "Unknown Driver",
       code: driver?.driverId ?? driver?.code ?? driver?.driverCode ?? null,
-
-      // bus basics
       busNumber: bus.number,
       plateNumber: bus.plate,
-
       busType: bus.busType,
       corridor: bus.corridor,
       forwardRoute: bus.forwardRoute,
       returnRoute: bus.returnRoute,
-
       status: driverStatus,
       onDuty,
     });
@@ -294,7 +290,6 @@ app.use(
 /* ---------- auth endpoints ---------- */
 app.post("/auth/login", async (req, res) => {
   try {
-    // Allow "phone or email" in the same field
     const schema = z.object({
       email: z.string().min(3),
       password: z.string().min(6),
@@ -550,6 +545,119 @@ app.post("/auth/verify-otp", async (req, res) => {
     if (err instanceof z.ZodError)
       return res.status(400).json({ message: "Invalid input" });
     console.error("VERIFY OTP ERROR:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ---------- password reset (forgot + reset) ---------- */
+
+// 1) request password reset – send code to email
+app.post("/auth/forgot-password", async (req, res) => {
+  try {
+    const schema = z.object({ email: z.string().email() });
+    const { email } = schema.parse(req.body);
+    const key = email.toLowerCase().trim();
+
+    const user = await prisma.user.findUnique({
+      where: { email: key },
+      include: {
+        commuterProfile: true,
+        driverProfile: true,
+      },
+    });
+
+    // ❌ Email not found → tell the client explicitly
+    if (!user) {
+      console.log(`[forgot-password] No user found for ${key}`);
+      return res
+        .status(404)
+        .json({ ok: false, message: "Email not registered." });
+    }
+
+    const code = setResetToken(key);
+
+    const displayName =
+      user.driverProfile?.fullName ||
+      user.commuterProfile?.fullName ||
+      "LigtasCommute user";
+
+    try {
+      await sendPasswordResetEmail(key, code, displayName);
+    } catch (err2) {
+      console.error("MAILTRAP SEND RESET CODE ERROR:", err2);
+      // still continue; code is stored in resetStore
+    }
+
+    console.log(
+      `[forgot-password] Reset code for ${key}: ${code} (expires in ${
+        RESET_TTL_MS / 60000
+      }m)`
+    );
+
+    return res.json({
+      ok: true,
+      message: "Password reset code sent.",
+      code: process.env.NODE_ENV !== "production" ? code : undefined,
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError)
+      return res.status(400).json({ ok: false, message: "Invalid email" });
+    console.error("FORGOT PASSWORD ERROR:", err);
+    res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// 2) actually reset password using code
+app.post("/auth/reset-password", async (req, res) => {
+  try {
+    const schema = z.object({
+      email: z.string().email(),
+      code: z.string().length(6),
+      newPassword: z.string().min(6),
+    });
+
+    const { email, code, newPassword } = schema.parse(req.body);
+    const key = email.toLowerCase().trim();
+
+    const record = resetStore.get(key);
+    if (!record) {
+      return res
+        .status(400)
+        .json({ message: "No reset request found. Please try again." });
+    }
+
+    if (Date.now() > record.expiresAt) {
+      resetStore.delete(key);
+      return res
+        .status(400)
+        .json({ message: "Reset code expired. Please request again." });
+    }
+
+    if (record.code !== code.trim()) {
+      return res.status(400).json({ message: "Invalid reset code" });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email: key },
+    });
+
+    if (!user) {
+      resetStore.delete(key);
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const hash = await bcrypt.hash(newPassword, 12);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { password: hash, mustChangePassword: false },
+    });
+
+    resetStore.delete(key);
+    return res.json({ message: "Password reset successful" });
+  } catch (err) {
+    if (err instanceof z.ZodError)
+      return res.status(400).json({ message: "Invalid input" });
+    console.error("RESET PASSWORD ERROR:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -837,14 +945,11 @@ app.get("/users/me", requireAuth, async (req, res) => {
       qrUrl: driverQrAbs,
       driverQrUrl: driverQrAbs,
 
-      // driver details including route + bus
       driver: driverProfile
         ? {
-            // primary key field in Prisma is driverId
             driverId: driverProfile.driverId,
             fullName: driverProfile.fullName,
             status: driverProfile.status,
-            // these may be undefined if not in schema
             corridor: driverProfile.corridor,
             forwardRoute: driverProfile.forwardRoute,
             returnRoute: driverProfile.returnRoute,

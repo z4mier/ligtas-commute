@@ -1,38 +1,58 @@
-// apps/web-admin/src/components/LoginView.js
+// apps/web-admin/src/app/forgot/page.js (or wherever this file lives)
 "use client";
+
 import React, { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Eye, EyeOff } from "lucide-react";
-import { apiLogin } from "@/lib/api";
+import { useRouter } from "next/navigation";
 
-export default function LoginView() {
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API ||
+  "http://localhost:4000";
+
+export default function ForgotPage() {
   const r = useRouter();
-  const next = useSearchParams().get("next") || "/dashboard";
-
-  const [show, setShow] = useState(false);
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [info, setInfo] = useState("");
 
   async function onSubmit(e) {
     e.preventDefault();
     setErr("");
+    setInfo("");
+    const trimmed = email.trim();
+
+    if (!trimmed) {
+      setErr("Please enter your admin email.");
+      return;
+    }
+
     setLoading(true);
     try {
-      if (!email || !password) throw new Error("Please fill in all fields.");
+      const res = await fetch(`${API_URL}/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmed }),
+      });
 
-      const data = await apiLogin({ email, password });
+      const data = await res.json().catch(() => ({}));
 
-      localStorage.setItem(
-        "lc_admin",
-        JSON.stringify({ email, role: data.role || "ADMIN" })
+      if (!res.ok) {
+        throw new Error(
+          data?.message || "Unable to send reset code. Please try again."
+        );
+      }
+
+      setInfo(
+        `We sent a 6-digit reset code to ${trimmed}. You’ll be redirected to enter the code.`
       );
 
-      r.replace(next);
+      setTimeout(() => {
+        r.push(`/reset-password?email=${encodeURIComponent(trimmed)}`);
+      }, 1500);
     } catch (ex) {
-      console.error("Login failed:", ex);
-      setErr(ex.message || "Login failed");
+      console.error("Forgot password failed:", ex);
+      setErr(ex.message || "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -43,24 +63,24 @@ export default function LoginView() {
       <style>{css}</style>
       <div style={S.cardWrap}>
         <div style={S.card}>
-          {/* Brand line */}
+          {/* Brand line – same as LoginView */}
           <div style={S.brandRow}>
             <span style={S.brandMain}>LigtasCommute</span>
             <span style={S.brandDot}>•</span>
             <span style={S.brandSub}>Admin</span>
           </div>
 
-          {/* Heading */}
-          <h1 style={S.heading}>Welcome</h1>
+          {/* Heading + copy */}
+          <h1 style={S.heading}>Forgot password</h1>
           <p style={S.sub}>
-            Sign in with your admin account to manage drivers, buses, and
-            incident reports.
+            Enter the admin email linked to your account. We’ll send a 6-digit
+            code so you can reset your password.
           </p>
 
+          {info && <div style={S.info}>{info}</div>}
           {err && <div style={S.error}>{err}</div>}
 
-          <form onSubmit={onSubmit} style={S.form} noValidate>
-            {/* Email / Phone */}
+          <form style={S.form} onSubmit={onSubmit} noValidate>
             <div style={S.field}>
               <label style={S.label}>Admin Email</label>
               <input
@@ -68,46 +88,20 @@ export default function LoginView() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Enter your email"
-                autoComplete="username"
                 style={S.input}
               />
             </div>
 
-            {/* Password */}
-            <div style={S.field}>
-              <label style={S.label}>Password</label>
-              <div style={S.passwordWrap}>
-                <input
-                  type={show ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter your password"
-                  autoComplete="current-password"
-                  style={{ ...S.input, paddingRight: 44 }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShow((v) => !v)}
-                  aria-label="Toggle password visibility"
-                  style={S.eyeBtn}
-                >
-                  {show ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-            </div>
-
-            {/* Login button */}
             <button type="submit" disabled={loading} style={S.btn}>
-              {loading ? "Logging in…" : "Login"}
+              {loading ? "Sending code…" : "Send reset code"}
             </button>
 
-            {/* Forgot password */}
             <button
               type="button"
-              onClick={() => r.push("/forgot")}
+              onClick={() => r.push("/login")}
               style={S.forgot}
             >
-              Forgot password?
+              Back to login
             </button>
           </form>
         </div>
@@ -116,7 +110,7 @@ export default function LoginView() {
   );
 }
 
-/* ---- Clean / professional styles with Poppins ---- */
+/* ---- Same style system as LoginView ---- */
 
 const S = {
   page: {
@@ -158,10 +152,6 @@ const S = {
     color: "#0D658B",
     fontWeight: 700,
   },
-  brandAccent: {
-    color: "#0D658B",
-    fontWeight: 700,
-  },
   brandDot: {
     color: "#9CA3AF",
     fontSize: 14,
@@ -171,7 +161,7 @@ const S = {
     color: "#6B7280",
   },
   heading: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 800,
     margin: "0 0 6px",
     color: "#0F172A",
@@ -207,35 +197,8 @@ const S = {
     fontSize: 14,
     color: "#111827",
     outline: "none",
-    transition: "border-color 120ms ease, box-shadow 120ms ease, background 120ms ease",
-  },
-  passwordWrap: {
-    position: "relative",
-  },
-  eyeBtn: {
-    position: "absolute",
-    right: 8,
-    top: "50%",
-    transform: "translateY(-50%)",
-    width: 32,
-    height: 32,
-    display: "grid",
-    placeItems: "center",
-    borderRadius: 999,
-    border: "none",
-    background: "transparent",
-    color: "#6B7280",
-    cursor: "pointer",
-  },
-  error: {
-    background: "#FEF2F2",
-    border: "1px solid #FCA5A5",
-    color: "#B91C1C",
-    fontSize: 13,
-    padding: "8px 10px",
-    borderRadius: 10,
-    textAlign: "center",
-    marginBottom: 4,
+    transition:
+      "border-color 120ms ease, box-shadow 120ms ease, background 120ms ease",
   },
   btn: {
     marginTop: 4,
@@ -264,6 +227,26 @@ const S = {
     cursor: "pointer",
     textDecoration: "underline",
     alignSelf: "center",
+  },
+  error: {
+    background: "#FEF2F2",
+    border: "1px solid #FCA5A5",
+    color: "#B91C1C",
+    fontSize: 13,
+    padding: "8px 10px",
+    borderRadius: 10,
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  info: {
+    background: "#EFF6FF",
+    border: "1px solid #BFDBFE",
+    color: "#1E3A8A",
+    fontSize: 13,
+    padding: "8px 10px",
+    borderRadius: 10,
+    textAlign: "center",
+    marginBottom: 4,
   },
 };
 
@@ -297,4 +280,3 @@ button[type="submit"]:disabled {
   box-shadow: none;
 }
 `;
-

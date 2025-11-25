@@ -7,7 +7,22 @@ import {
   setDriverStatus,
   authHeaders,
 } from "@/lib/api";
-import { Pencil, X, AlertTriangle } from "lucide-react";
+import {
+  Eye,
+  Pencil,
+  Download,
+  X,
+  AlertTriangle,
+  Trash2,
+  RefreshCw,
+} from "lucide-react";
+import { Poppins } from "next/font/google";
+
+/* ---------- FONT ---------- */
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+});
 
 /* ---------- CONFIG ---------- */
 const API_URL =
@@ -22,6 +37,18 @@ const shortId = (id) =>
   id ? `DRV-${String(id).slice(-5).padStart(5, "0").toUpperCase()}` : "DRV—";
 const pick = (v, fb = "—") => (v == null || v === "" ? fb : v);
 
+/* QR helper */
+async function makeQrDataUrl(text) {
+  try {
+    const QR = await import("qrcode");
+    return await QR.toDataURL(text, { margin: 1, scale: 6 });
+  } catch {
+    return `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(
+      text
+    )}`;
+  }
+}
+
 /* ---------- NORMALIZE DRIVER (includes route info) ---------- */
 function normalizeDriver(p) {
   const bus = p.bus || {};
@@ -30,7 +57,9 @@ function normalizeDriver(p) {
     .toUpperCase();
 
   const routeSide = bus.corridor || bus.routeSide || p.routeSide || "";
+
   const routeLabelFromBus = bus.route || bus.routeLabel || "";
+
   const forwardRoute = bus.forwardRoute || p.forwardRoute || "";
   const returnRoute = bus.returnRoute || p.returnRoute || "";
 
@@ -53,7 +82,6 @@ function normalizeDriver(p) {
     status: statusRaw || "ACTIVE",
     active: statusRaw === "ACTIVE",
     createdAt: p.createdAt,
-
     routeSide,
     forwardRoute,
     returnRoute,
@@ -63,7 +91,7 @@ function normalizeDriver(p) {
 
 /* ---------- Validation (PH rules) ---------- */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
-const PHONE_RE = /^09\d{9}$/;
+const PHONE_RE = /^(09\d{9}|\+639\d{9})$/;
 const LTO_LICENSE_RE = /^[A-Z]\d{2}-\d{2}-\d{6}$/;
 
 function isAdult(dateStr) {
@@ -72,12 +100,6 @@ function isAdult(dateStr) {
   const now = new Date();
   const eighteen = new Date(d.getFullYear() + 18, d.getMonth(), d.getDate());
   return eighteen <= now;
-}
-
-function getMaxBirthDate() {
-  const now = new Date();
-  now.setFullYear(now.getFullYear() - 18);
-  return now.toISOString().slice(0, 10);
 }
 
 /* ---------- NiceSelect (scrollable, LIGHT THEME) ---------- */
@@ -139,12 +161,12 @@ function NiceSelect({
           width: "100%",
           textAlign: "left",
           border: "1px solid #D4DBE7",
-          borderRadius: 10,
-          padding: "10px 12px",
-          background: "#F9FBFF",
+          borderRadius: 999,
+          padding: "10px 14px",
+          background: "#FFFFFF",
           color: "var(--text)",
           cursor: disabled ? "not-allowed" : "pointer",
-          fontSize: 14,
+          fontSize: 13,
         }}
       >
         <span style={{ opacity: selected ? 1 : 0.6 }}>
@@ -200,8 +222,7 @@ function NiceSelect({
                     if (!active) e.currentTarget.style.background = "#EDF3FA";
                   }}
                   onMouseLeave={(e) => {
-                    if (!active) e.currentTarget.style.background =
-                      "transparent";
+                    if (!active) e.currentTarget.style.background = "transparent";
                   }}
                 >
                   {o.label}
@@ -253,10 +274,16 @@ export default function DriverManagementPage() {
   const [drvLoading, setDrvLoading] = useState(false);
   const [drvError, setDrvError] = useState("");
   const [query, setQuery] = useState("");
-  const [sortOrder, setSortOrder] = useState("newest"); // NEW: match bus page
 
+  // sorting + pagination
+  const [sortMode, setSortMode] = useState("newest"); // newest | oldest | nameAsc | nameDesc
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 5;
+  const PAGE_SIZE = 6;
+
+  // QR modal
+  const [qrOpen, setQrOpen] = useState(false);
+  const [qrImg, setQrImg] = useState("");
+  const [qrDriver, setQrDriver] = useState(null);
 
   // Edit modal
   const [editOpen, setEditOpen] = useState(false);
@@ -284,9 +311,7 @@ export default function DriverManagementPage() {
     setDrvLoading(true);
     try {
       const items = await listDrivers();
-      const norm = (items || []).map(normalizeDriver);
-      setDrivers(norm);
-      setPage(1);
+      setDrivers((items || []).map(normalizeDriver));
     } catch (e) {
       setDrvError(e.message || "Failed to load");
       setDrivers([]);
@@ -368,7 +393,7 @@ export default function DriverManagementPage() {
     setReturnRoute(ret);
   }, [busId, busList]);
 
-  // FILTERED + SORTED (same behavior as buses page)
+  /* Search filter */
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return drivers;
@@ -391,24 +416,51 @@ export default function DriverManagementPage() {
     });
   }, [drivers, query]);
 
+  /* Sort */
   const sorted = useMemo(() => {
-    const arr = [...filtered];
-    arr.sort((a, b) => {
-      const aDate = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const bDate = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return sortOrder === "newest" ? bDate - aDate : aDate - bDate;
-    });
+    const arr = filtered.slice();
+    if (sortMode === "newest") {
+      arr.sort((a, b) => {
+        const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bt - at; // newest first
+      });
+    } else if (sortMode === "oldest") {
+      arr.sort((a, b) => {
+        const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return at - bt; // oldest first
+      });
+    } else if (sortMode === "nameAsc") {
+      arr.sort((a, b) =>
+        (a.fullName || "").localeCompare(b.fullName || "", undefined, {
+          sensitivity: "base",
+        })
+      );
+    } else if (sortMode === "nameDesc") {
+      arr.sort((a, b) =>
+        (b.fullName || "").localeCompare(a.fullName || "", undefined, {
+          sensitivity: "base",
+        })
+      );
+    }
     return arr;
-  }, [filtered, sortOrder]);
+  }, [filtered, sortMode]);
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const startIndex = (currentPage - 1) * PAGE_SIZE;
-  const pageItems = sorted.slice(startIndex, startIndex + PAGE_SIZE);
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
 
   useEffect(() => {
     setPage(1);
-  }, [query, sortOrder]);
+  }, [query, sortMode, drivers.length]);
+
+  useEffect(() => {
+    setPage((p) => Math.min(p, pageCount));
+  }, [pageCount]);
+
+  const pageItems = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return sorted.slice(start, start + PAGE_SIZE);
+  }, [sorted, page]);
 
   function askDeactivate(drv) {
     setConfirm({ open: true, driver: drv });
@@ -433,11 +485,11 @@ export default function DriverManagementPage() {
 
   function validateFormBase(f) {
     if (!f.fullName?.trim()) return "Full name is required.";
-    if (!EMAIL_RE.test((f.email || "").trim())) return "Invalid email address.";
+    if (!EMAIL_RE.test((f.email || "").trim())) return "Invalid email.";
     if (!PHONE_RE.test((f.phone || "").trim()))
-      return "Invalid phone number. Use 11-digit format 09XXXXXXXXX.";
+      return "Invalid phone number.";
     if (!LTO_LICENSE_RE.test((f.licenseNo || "").trim().toUpperCase()))
-      return "Invalid driver’s license number (use format: T43-54-983252).";
+      return "Invalid driver’s license number.";
     if (!isAdult(f.birthDate)) return "Driver must be at least 18 years old.";
     if (!f.address?.trim()) return "Address is required.";
     return "";
@@ -481,6 +533,7 @@ export default function DriverManagementPage() {
     if (selectedBus) {
       routePayload.routeSide =
         selectedBus.corridor || selectedBus.routeSide || null;
+
       routePayload.routeCode = selectedBus.routeId || null;
 
       const fwd = selectedBus.forwardRoute || "";
@@ -558,6 +611,21 @@ export default function DriverManagementPage() {
     return res.json().catch(() => ({}));
   }
 
+  async function openQr(drv) {
+    const payload = JSON.stringify({
+      type: "driver",
+      id: drv.id,
+      code: shortId(drv.id),
+      name: drv.fullName,
+      bus: drv.busNo,
+      plate: drv.plateNumber,
+    });
+    const url = await makeQrDataUrl(payload);
+    setQrImg(url);
+    setQrDriver(drv);
+    setQrOpen(true);
+  }
+
   function openEdit(drv) {
     setEditForm({
       id: drv.id,
@@ -601,16 +669,21 @@ export default function DriverManagementPage() {
     }
   }
 
-  const maxBirth = getMaxBirthDate();
-
-  /* ---------- Styles (LIGHT THEME, MATCH BUS PAGE TOOLBAR) ---------- */
+  /* ---------- Styles (LIGHT THEME) ---------- */
   const S = {
-    page: { display: "grid", gap: 16 },
+    page: {
+      display: "grid",
+      gap: 16,
+      maxWidth: 1120,
+      margin: "0 auto",
+      padding: "0 16px 24px",
+    },
     tabs: {
       display: "flex",
       gap: 24,
-      borderBottom: "1px solid #9CA3AF",
+      borderBottom: "1px solid var(--line)",
       marginBottom: 16,
+      overflowX: "auto",
     },
     tabBtn: (active) => ({
       padding: "10px 0",
@@ -619,10 +692,11 @@ export default function DriverManagementPage() {
       fontSize: 14,
       color: active ? "var(--accent)" : "var(--muted)",
       cursor: "pointer",
+      whiteSpace: "nowrap",
     }),
     card: {
       background: "var(--card)",
-      border: "1px solid #9CA3AF",
+      border: "1px solid var(--line)",
       borderRadius: 24,
       padding: 20,
       boxShadow: "0 20px 45px rgba(15,23,42,0.06)",
@@ -664,92 +738,53 @@ export default function DriverManagementPage() {
       background: "#0B5878",
       boxShadow: "0 0 14px rgba(13,101,139,.45)",
     },
-    badge: {
-      display: "inline-flex",
-      alignItems: "center",
-      gap: 6,
-      fontSize: 12,
-      color: "#64748B",
-    },
-    dot: (on) => ({
-      height: 6,
-      width: 6,
-      borderRadius: 999,
-      background: on ? "#22c55e" : "#ef4444",
-    }),
-
-    // NEW: same toolbar styles as Bus page
-    toolbar: {
+    searchRow: {
       display: "flex",
-      alignItems: "center",
+      flexWrap: "wrap",
       gap: 12,
-      marginTop: 4,
-      marginBottom: 6,
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 12,
     },
-    searchWrapper: {
+    search: {
       flex: 1,
-    },
-    searchInput: {
-      width: "100%",
+      minWidth: 260,
       borderRadius: 999,
-      border: "1px solid #9CA3AF",
-      padding: "10px 14px",
-      fontSize: 14,
+      border: "1px solid #E2E8F0",
+      padding: "10px 18px",
       background: "#F9FBFF",
       color: "var(--text)",
-      outline: "none",
+      fontSize: 14,
     },
-    toolbarRight: {
-      display: "flex",
-      alignItems: "center",
-      gap: 10,
-    },
-    sortSelect: {
-      borderRadius: 999,
-      border: "1px solid #9CA3AF",
-      padding: "8px 12px",
-      fontSize: 13,
-      background: "#FFFFFF",
-      color: "var(--text)",
-      outline: "none",
-    },
-
-    paginationInline: {
-      display: "flex",
-      alignItems: "center",
-      gap: 10,
-    },
-    paginationText: {
-      fontSize: 13,
-      color: "#6B7280",
-    },
-    paginationBtns: {
+    searchRight: {
       display: "flex",
       alignItems: "center",
       gap: 8,
+      flexWrap: "wrap",
+      justifyContent: "flex-end",
     },
-    pageBtn: {
-      borderRadius: 999,
+    sortSelect: {
       border: "1px solid #D4DBE7",
-      padding: "6px 10px",
+      borderRadius: 999,
+      padding: "8px 14px",
+      fontSize: 13,
       background: "#FFFFFF",
       color: "#0F172A",
-      cursor: "pointer",
-      fontSize: 13,
+      outline: "none",
     },
-
     drvCard: {
-      border: "1px solid #9CA3AF",
-      borderRadius: 18,
-      padding: 14,
+      border: "1px solid #E2E8F0",
+      borderRadius: 24,
+      padding: 20,
       background: "#FFFFFF",
-      maxWidth: "100%",
+      boxShadow: "0 18px 40px rgba(15,23,42,0.05)",
     },
     drvHeader: {
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
       gap: 10,
+      flexWrap: "wrap",
     },
     drvName: {
       fontWeight: 800,
@@ -757,6 +792,8 @@ export default function DriverManagementPage() {
       display: "flex",
       gap: 10,
       color: "var(--accent)",
+      alignItems: "center",
+      flexWrap: "wrap",
     },
     idPill: {
       padding: "4px 10px",
@@ -767,9 +804,11 @@ export default function DriverManagementPage() {
       fontWeight: 600,
     },
     drvRight: {
-      display: "grid",
+      display: "flex",
+      alignItems: "center",
       gap: 8,
-      justifyItems: "end",
+      flexWrap: "wrap",
+      justifyContent: "flex-end",
     },
     statusPill: (status) => {
       const isActive = status === "ACTIVE";
@@ -780,7 +819,6 @@ export default function DriverManagementPage() {
         background: isActive ? "#E8F9F0" : "#E5E7EB",
         color: isActive ? "#166534" : "#4B5563",
         border: isActive ? "1px solid #86EFAC" : "1px solid #CBD5F5",
-        textTransform: "none",
         fontWeight: 600,
       };
     },
@@ -788,13 +826,14 @@ export default function DriverManagementPage() {
       display: "inline-flex",
       alignItems: "center",
       gap: 6,
-      padding: "6px 10px",
+      padding: "6px 12px",
       borderRadius: 999,
       border: "1px solid #CBD5F5",
       background: "#FFFFFF",
       color: "#0F172A",
       fontSize: 12,
       cursor: "pointer",
+      fontWeight: 500,
     },
     drvBody: {
       display: "grid",
@@ -821,11 +860,12 @@ export default function DriverManagementPage() {
       fontSize: 14,
       color: "#0F172A",
     },
-    drvActions: {
+    drvFooter: {
       display: "flex",
-      gap: 10,
-      marginTop: 12,
       justifyContent: "flex-end",
+      gap: 8,
+      marginTop: 16,
+      flexWrap: "wrap",
     },
     btnGhost: {
       padding: "8px 10px",
@@ -841,24 +881,30 @@ export default function DriverManagementPage() {
       fontWeight: 500,
     },
     btnGreen: {
-      padding: "8px 10px",
+      padding: "8px 12px",
       borderRadius: 999,
       border: "1px solid #22C55E",
-      background: "#E8F9F0",
-      color: "#166534",
+      background: "#FFFFFF",
+      color: "#16A34A",
       cursor: "pointer",
       fontSize: 13,
       fontWeight: 500,
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6,
     },
     btnRed: {
-      padding: "8px 10px",
+      padding: "8px 12px",
       borderRadius: 999,
-      border: "1px solid #EF4444",
-      background: "#FEE2E2",
+      border: "1px solid #FCA5A5",
+      background: "#FFFFFF",
       color: "#B91C1C",
       cursor: "pointer",
       fontSize: 13,
       fontWeight: 500,
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6,
     },
     muted: { color: "#6B7280", fontSize: 14 },
     flash: (type) => ({
@@ -926,149 +972,334 @@ export default function DriverManagementPage() {
       border:
         type === "error" ? "1px solid #FCA5A5" : "1px solid #86EFAC",
     }),
-    scrollArea: {
-      maxHeight: 420,
-      overflowY: "auto",
-      paddingRight: 4,
+    pagination: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "flex-end",
+      gap: 8,
+      marginTop: 16,
+    },
+    paginationBtn: {
+      height: 32,
+      width: 32,
+      borderRadius: 999,
+      border: "1px solid #D4DBE7",
+      background: "#FFFFFF",
+      display: "grid",
+      placeItems: "center",
+      cursor: "pointer",
+      fontSize: 16,
+      lineHeight: 1,
+      color: "#0F172A",
+    },
+    paginationInfo: {
+      fontSize: 13,
+      color: "#6B7280",
+      fontWeight: 500,
     },
   };
 
   return (
-    <div style={S.page}>
-      <div>
-        <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>
-          Driver Management
-        </h1>
-        <p style={{ margin: "6px 0 0", color: "var(--muted)" }}>
-          Register new drivers and manage applications.
-        </p>
-      </div>
+    <>
+      <style jsx global>{`
+        @media (max-width: 900px) {
+          .driver-grid-2 {
+            grid-template-columns: 1fr !important;
+          }
+          .driver-grid-3 {
+            grid-template-columns: 1fr !important;
+          }
+          .driver-body-grid {
+            grid-template-columns: 1fr !important;
+          }
+        }
+      `}</style>
 
-      <div style={S.tabs}>
-        <div style={S.tabBtn(tab === "info")} onClick={() => setTab("info")}>
-          Informations
-        </div>
-        <div
-          style={S.tabBtn(tab === "register")}
-          onClick={() => setTab("register")}
-        >
-          Register Driver
-        </div>
-      </div>
-
-      {flash.text && (
-        <div aria-live="polite" role="status" style={S.flash(flash.type)}>
-          {flash.text}
-        </div>
-      )}
-
-      {tab === "register" ? (
-        /* ---------- REGISTER DRIVER ---------- */
-        <section style={S.card}>
-          <div
+      <div className={poppins.className} style={S.page}>
+        <div>
+          <h1
             style={{
-              fontWeight: 700,
-              fontSize: 18,
-              marginBottom: 8,
-              display: "flex",
-              justifyContent: "space-between",
+              fontSize: 22,
+              fontWeight: 800,
+              margin: 0,
+              letterSpacing: 0.2,
             }}
           >
-            <span>+ Register New Driver</span>
-            <span style={S.badge}>
-              <span style={S.dot(!listRefreshing)} />
-              {listRefreshing ? "Refreshing list…" : "List up to date"}
-            </span>
-          </div>
+            Driver Management
+          </h1>
+          <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 14 }}>
+            Register new drivers and manage applications.
+          </p>
+        </div>
 
-          <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }} noValidate>
-            {/* form fields (unchanged) */}
-            {/* ... same as before ... */}
-          </form>
-        </section>
-      ) : (
-        /* ---------- DRIVER INFORMATIONS (MATCH BUS TOOLBAR) ---------- */
-        <section style={S.card}>
-          <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 10 }}>
-            Driver Informations
+        <div style={S.tabs}>
+          <div style={S.tabBtn(tab === "info")} onClick={() => setTab("info")}>
+            Informations
           </div>
+          <div
+            style={S.tabBtn(tab === "register")}
+            onClick={() => setTab("register")}
+          >
+            Register Driver
+          </div>
+        </div>
 
-          {/* SEARCH + SORT + PAGINATION TOOLBAR (same layout as Bus page) */}
-          <div style={S.toolbar}>
-            <div style={S.searchWrapper}>
+        {flash.text && (
+          <div aria-live="polite" role="status" style={S.flash(flash.type)}>
+            {flash.text}
+          </div>
+        )}
+
+        {tab === "register" ? (
+          <section style={S.card}>
+            <div
+              style={{
+                fontWeight: 700,
+                fontSize: 18,
+                marginBottom: 8,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <span>+ Register New Driver</span>
+            </div>
+
+            <form
+              onSubmit={onSubmit}
+              style={{ display: "grid", gap: 12 }}
+              noValidate
+            >
+              <div style={S.grid2} className="driver-grid-2">
+                <div style={S.field}>
+                  <label style={S.label}>Full Name</label>
+                  <input
+                    style={S.input}
+                    placeholder="Juan Dela Cruz"
+                    value={form.fullName}
+                    onChange={(e) => upd("fullName", e.target.value)}
+                    required
+                  />
+                </div>
+                <div style={S.field}>
+                  <label style={S.label}>Phone Number</label>
+                  <input
+                    style={S.input}
+                    placeholder="09XXXXXXXXX"
+                    value={form.phone}
+                    onChange={(e) => upd("phone", e.target.value)}
+                    required
+                    inputMode="tel"
+                  />
+                </div>
+              </div>
+
+              <div style={S.grid2} className="driver-grid-2">
+                <div style={S.field}>
+                  <label style={S.label}>Email</label>
+                  <input
+                    style={S.input}
+                    type="email"
+                    placeholder="driver@example.com"
+                    value={form.email}
+                    onChange={(e) => upd("email", e.target.value)}
+                    required
+                  />
+                </div>
+                <div style={S.field}>
+                  <label style={S.label}>Driver’s License Number</label>
+                  <input
+                    style={S.input}
+                    placeholder="X00-00-000000"
+                    value={form.licenseNo}
+                    onChange={(e) =>
+                      upd("licenseNo", e.target.value.toUpperCase())
+                    }
+                    required
+                  />
+                </div>
+              </div>
+
+              <div style={S.grid2} className="driver-grid-2">
+                <div style={S.field}>
+                  <label style={S.label}>Birth Date</label>
+                  <input
+                    style={S.input}
+                    type="date"
+                    value={form.birthDate}
+                    onChange={(e) => upd("birthDate", e.target.value)}
+                    required
+                  />
+                </div>
+                <div style={S.field}>
+                  <label style={S.label}>Address</label>
+                  <input
+                    style={S.input}
+                    placeholder="Street, Barangay, City"
+                    value={form.address}
+                    onChange={(e) => upd("address", e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div style={S.grid3} className="driver-grid-3">
+                <div style={S.field}>
+                  <label style={S.label}>Vehicle Type</label>
+                  <NiceSelect
+                    ariaLabel="Vehicle Type"
+                    value={vehicleType}
+                    onChange={(v) => setVehicleType(v)}
+                    options={[
+                      { value: "AIRCON", label: "Ceres Bus (AC)" },
+                      { value: "NON_AIRCON", label: "Ceres Bus (Non-AC)" },
+                    ]}
+                    placeholder="Select vehicle type"
+                    listMaxHeight={300}
+                  />
+                </div>
+
+                <div style={S.field}>
+                  <label style={S.label}>Bus Number</label>
+                  <NiceSelect
+                    ariaLabel="Bus Number"
+                    value={busId}
+                    onChange={(v) => setBusId(v)}
+                    options={busOptions}
+                    placeholder={
+                      vehicleType ? "Select bus number" : "Select vehicle first"
+                    }
+                    disabled={!vehicleType}
+                    listMaxHeight={300}
+                  />
+                  {vehicleType && busOptions.length === 0 && (
+                    <div
+                      style={{
+                        marginTop: 6,
+                        fontSize: 12,
+                        color: "#B91C1C",
+                      }}
+                    >
+                      No registered buses available for this type. Please
+                      register buses first.
+                    </div>
+                  )}
+                </div>
+
+                <div style={S.field}>
+                  <label style={S.label}>Plate Number</label>
+                  <input
+                    style={{
+                      ...S.input,
+                      background: "#F3F4F6",
+                    }}
+                    placeholder="Auto-filled"
+                    value={busPlate}
+                    readOnly
+                  />
+                </div>
+              </div>
+
+              <div style={S.grid2} className="driver-grid-2">
+                <div style={S.field}>
+                  <label style={S.label}>Route Side</label>
+                  <input
+                    style={{
+                      ...S.input,
+                      background: "#F3F4F6",
+                    }}
+                    placeholder="Auto-filled from selected bus"
+                    value={routeSideLabel(routeSide)}
+                    readOnly
+                  />
+                </div>
+
+                <div style={S.field}>
+                  <label style={S.label}>Route</label>
+                  <input
+                    style={{
+                      ...S.input,
+                      background: "#F3F4F6",
+                    }}
+                    placeholder="Auto-filled from selected bus"
+                    value={
+                      forwardRoute && returnRoute
+                        ? `${forwardRoute} — ${returnRoute}`
+                        : ""
+                    }
+                    readOnly
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading || submitting}
+                style={{ ...S.btn }}
+                onMouseEnter={(e) =>
+                  Object.assign(e.currentTarget.style, S.btnHover)
+                }
+                onMouseLeave={(e) =>
+                  Object.assign(e.currentTarget.style, S.btn)
+                }
+              >
+                {loading
+                  ? "Registering..."
+                  : "Register Driver & Generate QR Code"}
+              </button>
+            </form>
+          </section>
+        ) : (
+          <section style={S.card}>
+            <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 10 }}>
+              Driver Informations
+            </div>
+
+            <div style={S.searchRow}>
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search by name, phone, license, bus…"
-                style={S.searchInput}
+                placeholder="Search by name, email, phone, bus, plate…"
+                style={S.search}
               />
-            </div>
-
-            <div style={S.toolbarRight}>
-              <select
-                style={S.sortSelect}
-                value={sortOrder}
-                onChange={(e) => setSortOrder(e.target.value)}
-              >
-                <option value="newest">Newest to oldest</option>
-                <option value="oldest">Oldest to newest</option>
-              </select>
-
-              <div style={S.paginationInline}>
-                <span style={S.paginationText}>
-                  {sorted.length === 0
-                    ? "Showing 0 of 0 drivers"
-                    : `Showing ${startIndex + 1}-${Math.min(
-                        startIndex + PAGE_SIZE,
-                        sorted.length
-                      )} of ${sorted.length} drivers`}
-                </span>
-                <div style={S.paginationBtns}>
-                  <button
-                    type="button"
-                    style={S.pageBtn}
-                    disabled={currentPage === 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  >
-                    Prev
-                  </button>
-                  <button
-                    type="button"
-                    style={S.pageBtn}
-                    disabled={currentPage === totalPages}
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  >
-                    Next
-                  </button>
-                </div>
+              <div style={S.searchRight}>
+                <select
+                  value={sortMode}
+                  onChange={(e) => setSortMode(e.target.value)}
+                  style={S.sortSelect}
+                >
+                  <option value="newest">Newest to oldest</option>
+                  <option value="oldest">Oldest to newest</option>
+                  <option value="nameAsc">A–Z (driver name)</option>
+                  <option value="nameDesc">Z–A (driver name)</option>
+                </select>
               </div>
             </div>
-          </div>
 
-          {drvError && (
-            <div
-              style={{
-                ...S.muted,
-                marginBottom: 8,
-                color: "#B91C1C",
-              }}
-            >
-              Error: {drvError}
-            </div>
-          )}
+            {drvError && (
+              <div
+                style={{
+                  ...S.muted,
+                  marginBottom: 8,
+                  color: "#B91C1C",
+                }}
+              >
+                Error: {drvError}
+              </div>
+            )}
 
-          {drvLoading ? (
-            <div style={S.muted}>Loading drivers…</div>
-          ) : pageItems.length === 0 ? (
-            <div style={S.muted}>No drivers found.</div>
-          ) : (
-            <>
-              <div style={S.scrollArea}>
+            {drvLoading ? (
+              <div style={S.muted}>Loading drivers…</div>
+            ) : sorted.length === 0 ? (
+              <div style={S.muted}>No drivers found.</div>
+            ) : (
+              <>
                 <div style={{ display: "grid", gap: 12 }}>
                   {pageItems.map((d, idx) => {
                     const key = d.id || d.email || d.licenseNo || `drv-${idx}`;
 
-                    const routeLabel =
+                    const routeLabelText =
                       d.routeLabel ||
                       (d.forwardRoute && d.returnRoute
                         ? `${d.forwardRoute} — ${d.returnRoute}`
@@ -1076,6 +1307,7 @@ export default function DriverManagementPage() {
 
                     return (
                       <div key={key} style={S.drvCard}>
+                        {/* HEADER: name + code left, status pill right */}
                         <div style={S.drvHeader}>
                           <div style={S.drvName}>
                             <span>{d.fullName || "Unnamed Driver"}</span>
@@ -1086,18 +1318,14 @@ export default function DriverManagementPage() {
                             <div style={S.statusPill(d.status)}>
                               {d.active ? "Active" : "Not active"}
                             </div>
-                            <button
-                              type="button"
-                              style={S.editBtn}
-                              onClick={() => openEdit(d)}
-                            >
-                              <Pencil size={14} />
-                              <span>Edit</span>
-                            </button>
                           </div>
                         </div>
 
-                        <div style={S.drvBody}>
+                        {/* BODY */}
+                        <div
+                          style={S.drvBody}
+                          className="driver-body-grid"
+                        >
                           <div style={S.drvCol}>
                             <div style={S.sectionTitle}>
                               Personal information
@@ -1148,25 +1376,39 @@ export default function DriverManagementPage() {
                             </div>
                             <div style={S.drvRow}>
                               <div>Route</div>
-                              <div>{routeLabel}</div>
+                              <div>{routeLabelText}</div>
                             </div>
                           </div>
                         </div>
 
-                        <div style={S.drvActions}>
+                        {/* FOOTER BUTTONS bottom-right */}
+                        <div style={S.drvFooter}>
+                          <button
+                            type="button"
+                            style={S.editBtn}
+                            onClick={() => openEdit(d)}
+                          >
+                            <Pencil size={14} />
+                            <span>Edit</span>
+                          </button>
+
                           {d.active ? (
                             <button
+                              type="button"
                               style={S.btnRed}
                               onClick={() => askDeactivate(d)}
                             >
-                              Deactivate
+                              <Trash2 size={14} />
+                              <span>Deactivate</span>
                             </button>
                           ) : (
                             <button
+                              type="button"
                               style={S.btnGreen}
                               onClick={() => toggleDriverActive(d, true)}
                             >
-                              Reactivate
+                              <RefreshCw size={14} />
+                              <span>Reactivate</span>
                             </button>
                           )}
                         </div>
@@ -1174,87 +1416,289 @@ export default function DriverManagementPage() {
                     );
                   })}
                 </div>
-              </div>
-            </>
-          )}
-        </section>
-      )}
 
-      {/* EDIT MODAL */}
-      {editOpen && editForm && (
-        <div style={S.overlay} onMouseDown={() => setEditOpen(false)}>
-          <div
-            style={S.modal}
-            onMouseDown={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-          >
-            <div style={S.modalHeader}>
-              <strong>Edit Driver</strong>
-              <button style={S.iconBtn} onClick={() => setEditOpen(false)}>
-                <X size={16} />
-              </button>
-            </div>
+                {pageCount > 1 && (
+                  <div style={S.pagination}>
+                    <button
+                      type="button"
+                      style={{
+                        ...S.paginationBtn,
+                        opacity: page === 1 ? 0.4 : 1,
+                        cursor: page === 1 ? "default" : "pointer",
+                      }}
+                      disabled={page === 1}
+                      onClick={() => page > 1 && setPage(page - 1)}
+                    >
+                      ‹
+                    </button>
+                    <span style={S.paginationInfo}>
+                      Page {page} of {pageCount}
+                    </span>
+                    <button
+                      type="button"
+                      style={{
+                        ...S.paginationBtn,
+                        opacity: page === pageCount ? 0.4 : 1,
+                        cursor:
+                          page === pageCount ? "default" : "pointer",
+                      }}
+                      disabled={page === pageCount}
+                      onClick={() =>
+                        page < pageCount && setPage(page + 1)
+                      }
+                    >
+                      ›
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        )}
 
-            {editError && <div style={S.modalFlash("error")}>{editError}</div>}
-
-            <form onSubmit={saveEdit} style={{ display: "grid", gap: 12 }}>
-              {/* edit form fields (same as before) */}
-              {/* ... */}
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* CONFIRM DEACTIVATE MODAL */}
-      {confirm.open && confirm.driver && (
-        <div
-          style={S.overlay}
-          onMouseDown={() => setConfirm({ open: false, driver: null })}
-        >
-          <div
-            style={S.modal}
-            onMouseDown={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-          >
-            <div style={S.modalHeader}>
-              <strong>Deactivate Driver?</strong>
-              <button
-                style={S.iconBtn}
-                onClick={() => setConfirm({ open: false, driver: null })}
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <div style={S.danger}>
-              <AlertTriangle size={18} />
-              This will disable the driver’s account. The assigned bus number
-              becomes available for new registrations.
-            </div>
+        {/* QR MODAL */}
+        {qrOpen && (
+          <div style={S.overlay} onMouseDown={() => setQrOpen(false)}>
             <div
-              style={{
-                display: "flex",
-                gap: 10,
-                justifyContent: "flex-end",
-              }}
+              style={S.modal}
+              onMouseDown={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
             >
-              <button
-                style={S.btnGhost}
-                onClick={() => setConfirm({ open: false, driver: null })}
+              <div style={S.modalHeader}>
+                <strong>Driver QR Code</strong>
+                <button style={S.iconBtn} onClick={() => setQrOpen(false)}>
+                  <X size={16} />
+                </button>
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  placeItems: "center",
+                  padding: 16,
+                  gap: 12,
+                }}
               >
-                Cancel
-              </button>
-              <button
-                style={{ ...S.btnRed }}
-                onClick={() => toggleDriverActive(confirm.driver, false)}
-              >
-                Yes, Deactivate
-              </button>
+                <img
+                  src={qrImg}
+                  alt="Driver QR"
+                  style={{
+                    width: 240,
+                    height: 240,
+                    borderRadius: 12,
+                    border: "1px solid #E2E8F0",
+                  }}
+                />
+                <a
+                  href={qrImg}
+                  download={`${
+                    qrDriver ? shortId(qrDriver.id) : "driver-qr"
+                  }.png`}
+                  style={{
+                    ...S.btn,
+                    width: "auto",
+                    padding: "10px 14px",
+                    textDecoration: "none",
+                    textAlign: "center",
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      gap: 8,
+                      alignItems: "center",
+                    }}
+                  >
+                    <Download size={16} /> Download QR
+                  </span>
+                </a>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+
+        {/* EDIT MODAL */}
+        {editOpen && editForm && (
+          <div
+            style={S.overlay}
+            onMouseDown={() => setEditOpen(false)}
+          >
+            <div
+              style={S.modal}
+              onMouseDown={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+            >
+              <div style={S.modalHeader}>
+                <strong>Edit Driver</strong>
+                <button
+                  style={S.iconBtn}
+                  onClick={() => setEditOpen(false)}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {editError && (
+                <div style={S.modalFlash("error")}>{editError}</div>
+              )}
+
+              <form onSubmit={saveEdit} style={{ display: "grid", gap: 12 }}>
+                <div style={S.grid2} className="driver-grid-2">
+                  <div style={S.field}>
+                    <label style={S.label}>Full Name</label>
+                    <input
+                      style={S.input}
+                      value={editForm.fullName}
+                      onChange={(e) => eupd("fullName", e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div style={S.field}>
+                    <label style={S.label}>Phone Number</label>
+                    <input
+                      style={S.input}
+                      value={editForm.phone}
+                      onChange={(e) => eupd("phone", e.target.value)}
+                      required
+                      inputMode="tel"
+                    />
+                  </div>
+                </div>
+
+                <div style={S.grid2} className="driver-grid-2">
+                  <div style={S.field}>
+                    <label style={S.label}>Email</label>
+                    <input
+                      style={S.input}
+                      type="email"
+                      value={editForm.email}
+                      onChange={(e) => eupd("email", e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div style={S.field}>
+                    <label style={S.label}>Driver’s License Number</label>
+                    <input
+                      style={S.input}
+                      value={editForm.licenseNo}
+                      onChange={(e) =>
+                        eupd("licenseNo", e.target.value.toUpperCase())
+                      }
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div style={S.grid2} className="driver-grid-2">
+                  <div style={S.field}>
+                    <label style={S.label}>Birth Date</label>
+                    <input
+                      style={S.input}
+                      type="date"
+                      value={editForm.birthDate}
+                      onChange={(e) => eupd("birthDate", e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div style={S.field}>
+                    <label style={S.label}>Address</label>
+                    <input
+                      style={S.input}
+                      value={editForm.address}
+                      onChange={(e) => eupd("address", e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "end",
+                    gap: 10,
+                  }}
+                >
+                  <button
+                    type="button"
+                    style={S.btnGhost}
+                    onClick={() => setEditOpen(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    style={{
+                      ...S.btn,
+                      width: "auto",
+                      padding: "10px 16px",
+                    }}
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* CONFIRM DEACTIVATE */}
+        {confirm.open && confirm.driver && (
+          <div
+            style={S.overlay}
+            onMouseDown={() => setConfirm({ open: false, driver: null })}
+          >
+            <div
+              style={S.modal}
+              onMouseDown={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+            >
+              <div style={S.modalHeader}>
+                <strong>Deactivate Driver?</strong>
+                <button
+                  style={S.iconBtn}
+                  onClick={() =>
+                    setConfirm({ open: false, driver: null })
+                  }
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <div style={S.danger}>
+                <AlertTriangle size={18} />
+                This will disable the driver’s account. The assigned bus
+                number becomes available for new registrations.
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  justifyContent: "flex-end",
+                }}
+              >
+                <button
+                  style={S.btnGhost}
+                  onClick={() =>
+                    setConfirm({ open: false, driver: null })
+                  }
+                >
+                  Cancel
+                </button>
+                <button
+                  style={{ ...S.btnRed }}
+                  onClick={() =>
+                    toggleDriverActive(confirm.driver, false)
+                  }
+                >
+                  <Trash2 size={16} />
+                  <span>Yes, Deactivate</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 }

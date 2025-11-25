@@ -2,8 +2,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { X, Eye, EyeOff } from "lucide-react";
 import { authHeaders } from "@/lib/api";
+import { Poppins } from "next/font/google";
+
+/* ---------- FONT ---------- */
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+});
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ||
@@ -29,6 +36,10 @@ export default function SettingsPage() {
   const [passwordMsg, setPasswordMsg] = useState({ type: "", text: "" });
   const [passwordSaving, setPasswordSaving] = useState(false);
 
+  /* show/hide password */
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+
   /* ---------- MODALS ---------- */
   const [showTerms, setShowTerms] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -41,12 +52,12 @@ export default function SettingsPage() {
 
     async function loadProfile() {
       try {
-        console.log("SETTINGS API_URL =", API_URL);
         setProfileLoading(true);
         setProfileMsg({ type: "", text: "" });
 
+        const headers = await authHeaders();
         const res = await fetch(`${API_URL}/admin/profile`, {
-          headers: authHeaders(),
+          headers,
         });
 
         let data = {};
@@ -109,11 +120,12 @@ export default function SettingsPage() {
     try {
       setProfileLoading(true);
 
+      const headers = await authHeaders();
       const res = await fetch(`${API_URL}/admin/profile`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          ...authHeaders(),
+          ...headers,
         },
         body: JSON.stringify({
           email: email.trim(),
@@ -174,11 +186,12 @@ export default function SettingsPage() {
     try {
       setPasswordSaving(true);
 
+      const headers = await authHeaders();
       const res = await fetch(`${API_URL}/admin/password`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          ...authHeaders(),
+          ...headers,
         },
         body: JSON.stringify({ newPassword }),
       });
@@ -200,6 +213,8 @@ export default function SettingsPage() {
       });
       setNewPassword("");
       setConfirmPassword("");
+      setShowNew(false);
+      setShowConfirm(false);
     } catch (err) {
       console.error("UPDATE PASSWORD ERROR:", err);
       setPasswordMsg({
@@ -213,103 +228,158 @@ export default function SettingsPage() {
 
   /* ---------- RENDER ---------- */
   return (
-    <div style={S.page}>
+    <div className={poppins.className} style={S.page}>
       {/* Header */}
       <div>
-        <h1 style={S.title}>System Settings</h1>
-        <p style={S.subtitle}>Configure system preferences and settings.</p>
+        <h1 style={S.title}>System settings</h1>
+        <p style={S.subtitle}>
+          Manage your admin account details and security preferences.
+        </p>
       </div>
 
       {/* Main card */}
       <section style={S.card}>
-        <h2 style={S.sectionTitle}>Admin Account</h2>
+        <div style={S.cardHeader}>
+          <div>
+            <h2 style={S.sectionTitle}>Admin account</h2>
+            <p style={S.sectionSub}>
+              This information is used for login and system notifications.
+            </p>
+          </div>
+          <div style={S.chip}>
+            <span style={S.chipDot} /> Primary administrator
+          </div>
+        </div>
+
         <hr style={S.divider} />
 
         {profileMsg.text && (
           <div style={S.flash(profileMsg.type)}>{profileMsg.text}</div>
         )}
 
-        <form onSubmit={onSaveProfile} style={{ display: "grid", gap: 12 }}>
+        {/* PROFILE FORM */}
+        <form onSubmit={onSaveProfile} style={{ display: "grid", gap: 16 }}>
           <div style={S.grid2}>
             <div style={S.field}>
-              <label style={S.label}>Email</label>
+              <label style={S.label}>Email address</label>
               <input
                 style={S.input}
                 type="email"
-                placeholder="admin@example.com"
+                placeholder="admin@ligtas.com"
                 value={profile.email}
                 onChange={(e) =>
                   setProfile((p) => ({ ...p, email: e.target.value }))
                 }
               />
+              <p style={S.helper}>
+                This email receives alerts about incidents and account activity.
+              </p>
             </div>
             <div style={S.field}>
-              <label style={S.label}>Phone Number</label>
+              <label style={S.label}>Phone number</label>
               <input
                 style={S.input}
-                placeholder="09123456789"
+                placeholder="09871234567"
                 value={profile.phone}
                 onChange={(e) =>
                   setProfile((p) => ({ ...p, phone: e.target.value }))
                 }
               />
+              <p style={S.helper}>
+                Use an active mobile number for urgent SMS notifications.
+              </p>
             </div>
           </div>
 
-          <div
-            style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}
-          >
+          <div style={S.actionsRow}>
             <button
               type="submit"
-              style={S.primaryBtnSm}
+              style={S.primaryBtn}
               disabled={profileLoading}
             >
-              {profileLoading ? "Saving..." : "Save Changes"}
+              {profileLoading ? "Saving…" : "Save changes"}
             </button>
           </div>
         </form>
 
-        {/* Password section */}
-        <div style={{ marginTop: 24 }}>
+        {/* PASSWORD SECTION */}
+        <div style={S.passwordBlock}>
+          <div style={S.passwordHeader}>
+            <div>
+              <h3 style={S.sectionTitle}>Security</h3>
+              <p style={S.sectionSub}>
+                Set a strong password to protect the admin portal.
+              </p>
+            </div>
+          </div>
+
           {passwordMsg.text && (
             <div style={S.flash(passwordMsg.type)}>{passwordMsg.text}</div>
           )}
 
+          {/* PASSWORD FORM */}
           <form
             onSubmit={onChangePassword}
-            style={{ display: "grid", gap: 12 }}
+            style={{ display: "grid", gap: 20 }}
           >
             <div style={S.grid2}>
+              {/* New password */}
               <div style={S.field}>
-                <label style={S.label}>New Password</label>
-                <input
-                  style={S.input}
-                  type="password"
-                  placeholder="**********"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                />
+                <label style={S.label}>New password</label>
+                <div style={S.inputWrapper}>
+                  <input
+                    style={S.inputPassword}
+                    type={showNew ? "text" : "password"}
+                    placeholder="Enter a new password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNew((v) => !v)}
+                    style={S.eyeIcon}
+                    aria-label={showNew ? "Hide password" : "Show password"}
+                  >
+                    {showNew ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                <p style={S.helper}>
+                  Minimum 8 characters. Use a mix of letters and numbers.
+                </p>
               </div>
+
+              {/* Confirm password */}
               <div style={S.field}>
-                <label style={S.label}>Confirm Password</label>
-                <input
-                  style={S.input}
-                  type="password"
-                  placeholder="**********"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                />
+                <label style={S.label}>Confirm new password</label>
+                <div style={S.inputWrapper}>
+                  <input
+                    style={S.inputPassword}
+                    type={showConfirm ? "text" : "password"}
+                    placeholder="Re-enter new password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirm((v) => !v)}
+                    style={S.eyeIcon}
+                    aria-label={
+                      showConfirm ? "Hide password" : "Show password"
+                    }
+                  >
+                    {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
             </div>
-            <div
-              style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}
-            >
+
+            <div style={S.actionsRow}>
               <button
                 type="submit"
-                style={S.primaryBtnSm}
+                style={S.primaryBtn}
                 disabled={passwordSaving}
               >
-                {passwordSaving ? "Updating..." : "Update Password"}
+                {passwordSaving ? "Updating…" : "Update password"}
               </button>
             </div>
           </form>
@@ -320,9 +390,12 @@ export default function SettingsPage() {
       <div style={S.bottomGrid}>
         {/* Terms & Privacy Policy */}
         <section style={S.smallCard}>
-          <div style={S.smallTitle}>Terms & Privacy Policy</div>
+          <div style={S.smallTitleRow}>
+            <span style={S.smallTitle}>Terms &amp; privacy</span>
+            <span style={S.smallPill}>Policy</span>
+          </div>
           <p style={S.smallText}>
-            Review the system terms and privacy practices.
+            Review how LigtasCommute handles commuter, driver, and trip data.
           </p>
           <button
             type="button"
@@ -335,9 +408,12 @@ export default function SettingsPage() {
 
         {/* Help & Support */}
         <section style={S.smallCard}>
-          <div style={S.smallTitle}>Help & Support</div>
+          <div style={S.smallTitleRow}>
+            <span style={S.smallTitle}>Help &amp; support</span>
+            <span style={S.smallPillMuted}>Admin guide</span>
+          </div>
           <p style={S.smallText}>
-            Need assistance? Browse help topics or contact support.
+            Need assistance? Browse common admin tasks or contact the dev team.
           </p>
           <button
             type="button"
@@ -352,20 +428,25 @@ export default function SettingsPage() {
       {/* TERMS MODAL */}
       {showTerms && (
         <Modal onClose={() => setShowTerms(false)}>
-          <h3 style={S.modalHeading}>LigtasCommute Terms &amp; Privacy Policy</h3>
+          <h3 style={S.modalHeading}>LigtasCommute Terms &amp; Privacy</h3>
           <p style={S.modalMeta}>
-            <strong>Last Updated:</strong> June 17, 2025
+            <strong>Last updated:</strong> November 26, 2025
           </p>
           <p style={S.modalBody}>
-            Welcome, Admin! This policy outlines your responsibilities and how
-            data is handled in LigtasCommute. Please ensure that any commuter
-            or driver information you access is used only for official purposes.
+            As an administrator, you are responsible for handling commuter and
+            driver information securely. Use data only for operational and
+            safety-related purposes and avoid exporting or sharing records
+            outside official channels.
           </p>
           <p style={S.modalBody}>
-            By continuing to use the LigtasCommute Admin Portal, you agree to
-            keep account credentials secure, avoid sharing sensitive data
-            outside authorized channels, and promptly report any suspected
-            security issues to the system maintainer.
+            The system logs changes to driver profiles, bus assignments, and
+            incidents for auditing. Do not share your admin account with other
+            users. If additional admins are needed, request that a separate
+            account be created for them.
+          </p>
+          <p style={S.modalBody}>
+            For questions about data retention and privacy, contact{" "}
+            <strong>support@ligtascommute.com</strong>.
           </p>
         </Modal>
       )}
@@ -375,16 +456,19 @@ export default function SettingsPage() {
         <Modal onClose={() => setShowHelp(false)}>
           <h3 style={S.modalHeading}>Help &amp; Support</h3>
           <p style={S.modalBody}>
-            For assistance, check the <strong>Driver Management</strong> or{" "}
-            <strong>Incident Reports</strong> sections for common admin tasks
-            like registering drivers, viewing QR codes, and monitoring
-            emergency incidents.
+            You can use the admin portal to register drivers, manage buses,
+            review commuter feedback, and monitor incident reports sent from the
+            devices and mobile apps.
           </p>
           <p style={S.modalBody}>
-            If you encounter issues such as failed logins, missing data, or
-            incorrect bus assignments, please contact your system coordinator
-            or send a report to the LigtasCommute development team with a
-            screenshot of the error and the time it occurred.
+            If something looks incorrect (for example, a driver is assigned to
+            the wrong bus or incidents are not appearing), capture a screenshot
+            and send it together with the approximate time of the issue to{" "}
+            <strong>support@ligtascommute.com</strong>.
+          </p>
+          <p style={S.modalBody}>
+            For urgent safety concerns, always follow your organization’s
+            on-ground escalation procedure first before relying on the system.
           </p>
         </Modal>
       )}
@@ -421,7 +505,10 @@ function Modal({ children, onClose }) {
 const styles = {
   page: {
     display: "grid",
-    gap: 16,
+    gap: 18,
+    maxWidth: 1120,
+    margin: "0 auto",
+    padding: "0 16px 24px",
   },
   title: {
     fontSize: 22,
@@ -436,24 +523,57 @@ const styles = {
   card: {
     background: "var(--card)",
     borderRadius: 24,
-    border: "1px solid #9CA3AF",
+    border: "1px solid var(--line)",
     padding: 24,
     boxShadow: "0 20px 45px rgba(15,23,42,0.06)",
+    display: "grid",
+    gap: 18,
+  },
+  cardHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: 700,
     margin: 0,
   },
+  sectionSub: {
+    marginTop: 4,
+    fontSize: 13,
+    color: "#6B7280",
+  },
+  chip: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    background: "#EFF6FF",
+    border: "1px solid #BFDBFE",
+    color: "#1D4ED8",
+  },
+  chipDot: {
+    width: 6,
+    height: 6,
+    borderRadius: "999px",
+    background: "#22C55E",
+  },
   divider: {
     border: "none",
-    borderTop: "1px solid #9CA3AF",
-    margin: "14px 0 18px",
+    borderTop: "1px solid #E5E7EB",
+    margin: "4px 0 8px",
   },
   grid2: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 14,
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 20,
+    alignItems: "start",
   },
   field: {
     display: "grid",
@@ -462,7 +582,7 @@ const styles = {
   label: {
     fontSize: 13,
     fontWeight: 600,
-    color: "var(--muted)",
+    color: "#4B5563",
   },
   input: {
     width: "100%",
@@ -474,46 +594,117 @@ const styles = {
     color: "var(--text)",
     outline: "none",
   },
-  primaryBtnSm: {
+  helper: {
+    fontSize: 12,
+    color: "#9CA3AF",
+  },
+  inputWrapper: {
+    position: "relative",
+    width: "100%",
+  },
+  inputPassword: {
+    width: "100%",
+    borderRadius: 10,
+    border: "1px solid #D4DBE7",
+    padding: "10px 40px 10px 12px",
+    fontSize: 14,
+    background: "#F9FBFF",
+    color: "var(--text)",
+    outline: "none",
+  },
+  eyeIcon: {
+    position: "absolute",
+    right: 10,
+    top: "50%",
+    transform: "translateY(-50%)",
+    border: "none",
+    background: "transparent",
+    padding: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    color: "#6B7280",
+  },
+  actionsRow: {
+    display: "flex",
+    justifyContent: "flex-end",
+    marginTop: 4,
+  },
+  primaryBtn: {
     borderRadius: 999,
     border: "none",
     background: "#0D658B",
     color: "#FFFFFF",
-    padding: "8px 18px",
+    padding: "8px 20px",
     fontSize: 13,
     fontWeight: 600,
     cursor: "pointer",
   },
   flash: (type) => ({
-    marginBottom: 10,
+    marginTop: 4,
+    marginBottom: 4,
     padding: "8px 12px",
     borderRadius: 10,
     fontSize: 13,
     color: type === "error" ? "#B91C1C" : "#166534",
-    background: type === "error" ? "#FEE2E2" : "#DCFCE7",
+    background: type === "error" ? "#FEF2F2" : "#ECFDF3",
     border:
       type === "error" ? "1px solid #FCA5A5" : "1px solid #86EFAC",
   }),
+  passwordBlock: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTop: "1px dashed #E5E7EB",
+  },
+  passwordHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+
   bottomGrid: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: 16,
   },
   smallCard: {
     background: "var(--card)",
     borderRadius: 20,
-    border: "1px solid #9CA3AF",
+    border: "1px solid var(--line)",
     padding: 18,
     boxShadow: "0 10px 25px rgba(15,23,42,0.04)",
+  },
+  smallTitleRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4,
+    gap: 8,
   },
   smallTitle: {
     fontSize: 14,
     fontWeight: 700,
-    marginBottom: 4,
+  },
+  smallPill: {
+    fontSize: 11,
+    padding: "2px 8px",
+    borderRadius: 999,
+    background: "#EFF6FF",
+    color: "#1D4ED8",
+  },
+  smallPillMuted: {
+    fontSize: 11,
+    padding: "2px 8px",
+    borderRadius: 999,
+    background: "#F3F4F6",
+    color: "#4B5563",
   },
   smallText: {
     fontSize: 13,
-    color: "var(--muted)",
+    color: "#6B7280",
+    marginTop: 4,
     marginBottom: 10,
   },
   linkBtn: {
@@ -542,7 +733,7 @@ const styles = {
     position: "relative",
     width: "min(640px, 96vw)",
     background: "#FFFFFF",
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 20,
     boxShadow: "0 24px 60px rgba(15,23,42,0.25)",
     border: "1px solid #CBD5F5",

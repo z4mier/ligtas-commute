@@ -4,6 +4,13 @@
 import { useEffect, useState } from "react";
 import { listBuses, createBus, setBusStatus } from "@/lib/api";
 import { Pencil, X as XIcon, Eye, Download } from "lucide-react";
+import { Poppins } from "next/font/google";
+
+/* ---------- FONT ---------- */
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+});
 
 /* ---------- ROUTES (GROUPED) ---------- */
 const ROUTE_GROUPS = {
@@ -102,6 +109,45 @@ function driverDutyLabel(d) {
   return onDuty ? "On duty" : "Off duty";
 }
 
+/* ---------- LABEL HELPERS ---------- */
+
+function corridorLabel(corridor) {
+  if (!corridor) return "—";
+  if (corridor === "EAST") return "EAST (via Oslob)";
+  if (corridor === "WEST") return "WEST (via Barili)";
+  return corridor;
+}
+
+function routeSideLabel(corridor) {
+  if (corridor === "EAST") return "East route (via Oslob)";
+  if (corridor === "WEST") return "West route (via Barili)";
+  return "—";
+}
+
+/** Turn "SBT → Ginatilan" + "Ginatilan → SBT" into "SBT — Ginatilan — SBT" */
+function friendlyRoute(forwardRoute, returnRoute) {
+  if (!forwardRoute || !returnRoute) {
+    if (forwardRoute && !returnRoute) return forwardRoute;
+    if (!forwardRoute && returnRoute) return returnRoute;
+    return "—";
+  }
+
+  if (forwardRoute.includes("→")) {
+    const parts = forwardRoute.split("→").map((p) => p.trim());
+    if (parts.length === 2) {
+      const fromRaw = parts[0] || "";
+      const to = parts[1] || "";
+
+      // remove any "(via ...)" from the "from" side so it's just "SBT"
+      const baseFrom = fromRaw.split("(")[0].trim();
+      return `${baseFrom} — ${to} — ${baseFrom}`;
+    }
+  }
+
+  // fallback to original
+  return `${forwardRoute} — ${returnRoute}`;
+}
+
 export default function BusManagementPage() {
   const [tab, setTab] = useState("info");
   const [flash, setFlash] = useState({ type: "", text: "" });
@@ -146,13 +192,6 @@ export default function BusManagementPage() {
   const upd = (k, v) => setForm((s) => ({ ...s, [k]: v }));
 
   /* ---------- helpers ---------- */
-
-  function corridorLabel(corridor) {
-    if (!corridor) return "—";
-    if (corridor === "EAST") return "EAST (via Oslob)";
-    if (corridor === "WEST") return "WEST (via Barili)";
-    return corridor;
-  }
 
   function statusLabel(status) {
     if (status === "ACTIVE") return "Active";
@@ -346,7 +385,7 @@ export default function BusManagementPage() {
     }
   }
 
-  /* ---------- update status only (used on save in modal) ---------- */
+  /* ---------- update status only (used in edit modal) ---------- */
 
   async function updateBusStatus(id, status) {
     const updated = await setBusStatus(id, status);
@@ -418,32 +457,6 @@ export default function BusManagementPage() {
     }
   }
 
-  /* ---------- render driver info in card ---------- */
-
-  function renderDriverInfo(bus) {
-    const d = getAssignedDriver(bus);
-    if (!d) {
-      return (
-        <div style={S.busSub}>
-          Assigned Driver:{" "}
-          <span style={{ fontStyle: "italic", color: "#9CA3AF" }}>
-            Unassigned
-          </span>
-        </div>
-      );
-    }
-
-    const name = driverDisplayName(d);
-    const duty = driverDutyLabel(d);
-
-    return (
-      <>
-        <div style={S.busSub}>Assigned Driver: {name}</div>
-        <div style={S.busSub}>Driver Duty: {duty}</div>
-      </>
-    );
-  }
-
   const S = styles;
   const availableRoutes =
     form.corridor && ROUTE_GROUPS[form.corridor]
@@ -451,13 +464,13 @@ export default function BusManagementPage() {
       : [];
 
   return (
-    <div style={S.page}>
+    <div className={poppins.className} style={S.page}>
       {/* header */}
       <div>
         <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>
           Bus Management
         </h1>
-        <p style={{ margin: "6px 0 0", color: "var(--muted)" }}>
+        <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 14 }}>
           View bus details and register new units.
         </p>
       </div>
@@ -616,7 +629,7 @@ export default function BusManagementPage() {
             <span>Bus Informations</span>
           </div>
 
-          {/* search + sort + inline pagination (no refresh) */}
+          {/* search + sort (pagination moved to bottom-right) */}
           <div style={S.toolbar}>
             <div style={S.searchWrapper}>
               <input
@@ -636,37 +649,6 @@ export default function BusManagementPage() {
                 <option value="newest">Newest to oldest</option>
                 <option value="oldest">Oldest to newest</option>
               </select>
-
-              <div style={S.paginationInline}>
-                <span style={S.paginationText}>
-                  {sorted.length === 0
-                    ? "Showing 0 of 0 buses"
-                    : `Showing ${startIndex + 1}-${Math.min(
-                        startIndex + PAGE_SIZE,
-                        sorted.length
-                      )} of ${sorted.length} buses`}
-                </span>
-                <div style={S.paginationBtns}>
-                  <button
-                    type="button"
-                    style={S.pageBtn}
-                    disabled={currentPage === 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  >
-                    Prev
-                  </button>
-                  <button
-                    type="button"
-                    style={S.pageBtn}
-                    disabled={currentPage === totalPages}
-                    onClick={() =>
-                      setPage((p) => Math.min(totalPages, p + 1))
-                    }
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
             </div>
           </div>
 
@@ -677,35 +659,75 @@ export default function BusManagementPage() {
           ) : (
             <>
               <div style={S.busList}>
-                {pageItems.map((b) => (
-                  <div key={b.id} style={S.busCard}>
-                    <div style={S.busHeader}>
-                      <div>
+                {pageItems.map((b) => {
+                  const driver = getAssignedDriver(b);
+                  return (
+                    <div key={b.id} style={S.busCard}>
+                      {/* HEADER: Bus title (blue) + status pill beside it */}
+                      <div style={S.busHeader}>
                         <div style={S.busTitleRow}>
                           <span style={S.busTitle}>Bus {b.number}</span>
-                          <span style={S.busTypePill}>
-                            {b.busType === "AIRCON" ? "AIRCON" : "NON_AIRCON"}
+                          <span style={S.statusPill(b.status)}>
+                            {statusLabel(b.status)}
                           </span>
                         </div>
-                        <div style={S.busSub}>Plate Number: {b.plate}</div>
-                        <div style={S.busSub}>
-                          Corridor: {corridorLabel(b.corridor)}
-                        </div>
-                        <div style={S.busSub}>
-                          Route:{" "}
-                          {b.forwardRoute && b.returnRoute
-                            ? `${b.forwardRoute} — ${b.returnRoute}`
-                            : "—"}
-                        </div>
-
-                        {/* NEW: Assigned driver + duty */}
-                        {renderDriverInfo(b)}
                       </div>
 
-                      <div style={S.busRight}>
-                        <div style={S.statusPill(b.status)}>
-                          {statusLabel(b.status)}
+                      {/* BODY: info grid like driver card */}
+                      <div style={S.infoGrid}>
+                        <div>
+                          <div style={S.sectionHeader}>BUS INFORMATION</div>
+                          <div style={S.infoRow}>
+                            <span style={S.infoLabel}>Vehicle</span>
+                            <span style={S.infoValue}>
+                              {b.busType || "—"}
+                            </span>
+                          </div>
+                          <div style={S.infoRow}>
+                            <span style={S.infoLabel}>Bus number</span>
+                            <span style={S.infoValue}>
+                              {b.number || "—"}
+                            </span>
+                          </div>
+                          <div style={S.infoRow}>
+                            <span style={S.infoLabel}>Plate number</span>
+                            <span style={S.infoValue}>
+                              {b.plate || "—"}
+                            </span>
+                          </div>
                         </div>
+
+                        <div>
+                          <div style={S.sectionHeader}>BUS & ROUTE</div>
+                          <div style={S.infoRow}>
+                            <span style={S.infoLabel}>Route side</span>
+                            <span style={S.infoValue}>
+                              {routeSideLabel(b.corridor)}
+                            </span>
+                          </div>
+                          <div style={S.infoRow}>
+                            <span style={S.infoLabel}>Route</span>
+                            <span style={S.infoValue}>
+                              {friendlyRoute(b.forwardRoute, b.returnRoute)}
+                            </span>
+                          </div>
+                          <div style={S.infoRow}>
+                            <span style={S.infoLabel}>Assigned driver</span>
+                            <span style={S.infoValue}>
+                              {driverDisplayName(driver) || "Unassigned"}
+                            </span>
+                          </div>
+                          <div style={S.infoRow}>
+                            <span style={S.infoLabel}>Driver duty</span>
+                            <span style={S.infoValue}>
+                              {driverDutyLabel(driver)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* FOOTER: bottom-right actions (Edit + View QR only) */}
+                      <div style={S.busFooter}>
                         <button
                           type="button"
                           style={S.editBtn}
@@ -714,6 +736,7 @@ export default function BusManagementPage() {
                           <Pencil size={14} />
                           <span>Edit</span>
                         </button>
+
                         <button
                           type="button"
                           style={S.qrBtn}
@@ -724,8 +747,31 @@ export default function BusManagementPage() {
                         </button>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
+              </div>
+
+              {/* Bottom-right pagination */}
+              <div style={S.paginationBottom}>
+                <button
+                  type="button"
+                  style={S.pageCircleBtn}
+                  disabled={currentPage === 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  ‹
+                </button>
+                <span style={S.paginationLabel}>
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  style={S.pageCircleBtn}
+                  disabled={currentPage === totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  ›
+                </button>
               </div>
             </>
           )}
@@ -910,14 +956,20 @@ export default function BusManagementPage() {
   );
 }
 
-/* ---------- LIGHT THEME STYLES (synced with Driver Management UI) ---------- */
+/* ---------- LIGHT THEME STYLES ---------- */
 
 const styles = {
-  page: { display: "grid", gap: 16 },
+  page: {
+    display: "grid",
+    gap: 16,
+    maxWidth: 1120,
+    margin: "0 auto",
+    padding: "0 16px 24px",
+  },
   tabs: {
     display: "flex",
     gap: 24,
-    borderBottom: "1px solid #9CA3AF",
+    borderBottom: "1px solid var(--line)",
     marginBottom: 16,
   },
   tabBtn: (active) => ({
@@ -930,7 +982,7 @@ const styles = {
   }),
   card: {
     background: "var(--card)",
-    border: "1px solid #9CA3AF",
+    border: "1px solid var(--line)",
     borderRadius: 24,
     padding: 20,
     boxShadow: "0 20px 45px rgba(15,23,42,0.06)",
@@ -965,8 +1017,6 @@ const styles = {
     fontSize: 14,
     letterSpacing: 0.3,
     cursor: "pointer",
-    transition: "background .15s ease, box-shadow .15s ease",
-    boxShadow: "0 0 0 rgba(13,101,139,0)",
   },
   muted: { color: "#6B7280", fontSize: 14 },
   flash: (type) => ({
@@ -976,7 +1026,6 @@ const styles = {
     color: type === "error" ? "#B91C1C" : "#166534",
     background: type === "error" ? "#FEE2E2" : "#DCFCE7",
     border: type === "error" ? "1px solid #FCA5A5" : "1px solid #86EFAC",
-    transition: "opacity .2s ease",
   }),
 
   toolbar: {
@@ -985,9 +1034,11 @@ const styles = {
     gap: 12,
     marginTop: 4,
     marginBottom: 6,
+    flexWrap: "wrap",
   },
   searchWrapper: {
     flex: 1,
+    minWidth: 260,
   },
   searchInput: {
     width: "100%",
@@ -1003,6 +1054,7 @@ const styles = {
     display: "flex",
     alignItems: "center",
     gap: 10,
+    flexWrap: "wrap",
   },
   sortSelect: {
     borderRadius: 999,
@@ -1014,52 +1066,69 @@ const styles = {
     outline: "none",
   },
 
-  paginationInline: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-  },
-
   busList: {
     display: "grid",
     gap: 10,
     marginTop: 10,
-    maxHeight: 360,
-    overflowY: "auto",
-    paddingRight: 4,
   },
 
   busCard: {
-    border: "1px solid #9CA3AF",
-    borderRadius: 20,
-    padding: 16,
+    border: "1px solid #E2E8F0",
+    borderRadius: 24,
+    padding: 20,
     background: "#FFFFFF",
+    boxShadow: "0 18px 40px rgba(15,23,42,0.05)",
   },
   busHeader: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
     gap: 10,
+    flexWrap: "wrap",
   },
   busTitleRow: {
     display: "flex",
     alignItems: "center",
     gap: 8,
+    flexWrap: "wrap",
   },
-  busTitle: { fontWeight: 700, fontSize: 15, color: "#0F172A" },
-  busSub: { fontSize: 13, color: "#6B7280", marginTop: 2 },
-  busTypePill: {
-    padding: "3px 8px",
-    borderRadius: 999,
-    fontSize: 11,
-    background: "#EEF2FF",
-    color: "#4B5563",
-    fontWeight: 600,
-  },
-  busRight: {
+  busTitle: { fontWeight: 800, fontSize: 16, color: "#0D658B" },
+
+  infoGrid: {
+    marginTop: 14,
     display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 40,
+  },
+  sectionHeader: {
+    fontSize: 12,
+    fontWeight: 700,
+    letterSpacing: 0.08,
+    textTransform: "uppercase",
+    color: "#9CA3AF",
+    marginBottom: 6,
+  },
+  infoRow: {
+    display: "flex",
+    gap: 16,
+    fontSize: 13,
+    marginTop: 4,
+  },
+  infoLabel: {
+    width: 110,
+    color: "#6B7280",
+  },
+  infoValue: {
+    color: "#111827",
+    fontWeight: 500,
+  },
+
+  busFooter: {
+    display: "flex",
+    justifyContent: "flex-end",
     gap: 8,
-    justifyItems: "end",
+    marginTop: 16,
+    flexWrap: "wrap",
   },
   statusPill: (status) => {
     const isActive = status === "ACTIVE";
@@ -1085,7 +1154,6 @@ const styles = {
       background: bg,
       color,
       border,
-      textTransform: "none",
       fontWeight: 600,
     };
   },
@@ -1093,19 +1161,20 @@ const styles = {
     display: "inline-flex",
     alignItems: "center",
     gap: 6,
-    padding: "6px 10px",
+    padding: "8px 12px",
     borderRadius: 999,
     border: "1px solid #CBD5F5",
     background: "#FFFFFF",
     color: "#0F172A",
     fontSize: 12,
     cursor: "pointer",
+    fontWeight: 500,
   },
   qrBtn: {
     display: "inline-flex",
     alignItems: "center",
     gap: 6,
-    padding: "6px 10px",
+    padding: "8px 12px",
     borderRadius: 999,
     border: "1px solid #0D658B",
     background: "#EFF6FF",
@@ -1115,23 +1184,30 @@ const styles = {
     fontWeight: 500,
   },
 
-  paginationText: {
-    fontSize: 13,
-    color: "#6B7280",
-  },
-  paginationBtns: {
+  paginationBottom: {
+    marginTop: 18,
     display: "flex",
     alignItems: "center",
-    gap: 8,
+    justifyContent: "flex-end",
+    gap: 14,
   },
-  pageBtn: {
-    borderRadius: 999,
-    border: "1px solid #D4DBE7",
-    padding: "6px 10px",
-    background: "#FFFFFF",
-    color: "#0F172A",
-    cursor: "pointer",
+  paginationLabel: {
     fontSize: 13,
+    color: "#6B7280",
+    fontWeight: 500,
+  },
+  pageCircleBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: "999px",
+    border: "1px solid #E5E7EB",
+    background: "#FFFFFF",
+    color: "#4B5563",
+    cursor: "pointer",
+    fontSize: 16,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   modalBackdrop: {
