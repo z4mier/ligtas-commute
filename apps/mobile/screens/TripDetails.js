@@ -26,7 +26,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL } from "../constants/config";
 
-// ✅ NEW: notification helpers
+// ✅ notification helpers
 import {
   addRatingSubmitted,
   addIncidentSubmitted,
@@ -172,10 +172,29 @@ export default function TripDetails({ route, navigation }) {
       ? driverName.trim().charAt(0).toUpperCase()
       : "?";
 
+  // ✅ 7-DAY LIMIT: rating + reporting disabled after 7 days
+  const isExpired = (() => {
+    if (!started) return false;
+    const d = new Date(started);
+    if (Number.isNaN(d.getTime())) return false;
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    return diffDays > 7;
+  })();
+
   /* ------------------------------------------------------------------
    * SUBMIT RATING
    * ------------------------------------------------------------------ */
   const onSubmitRating = async () => {
+    if (isExpired) {
+      Alert.alert(
+        "Rating not available",
+        "You can rate a trip within 7 days after it ends."
+      );
+      return;
+    }
+
     if (!rating || submitting) return;
 
     try {
@@ -244,6 +263,14 @@ export default function TripDetails({ route, navigation }) {
    * SUBMIT INCIDENT REPORT
    * ------------------------------------------------------------------ */
   const onSubmitReport = async () => {
+    if (isExpired) {
+      Alert.alert(
+        "Reporting not available",
+        "You can report an issue within 7 days after the trip."
+      );
+      return;
+    }
+
     if (reportCategories.length === 0 && !reportNotes.trim()) {
       Alert.alert(
         "Missing details",
@@ -363,15 +390,16 @@ export default function TripDetails({ route, navigation }) {
 
         {/* MAP + ROUTE CARD */}
         <View style={styles.tripCard}>
+          {/* ✅ Updated: no more “Trip route preview will appear here.” */}
           <View style={styles.mapPlaceholder}>
             <MaterialCommunityIcons
               name="map-outline"
               size={22}
               color={C.sub}
             />
-            <Text style={styles.mapPlaceholderText}>
-              Trip route preview will appear here.
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.mapPlaceholderTitle}>Route Overview</Text>
+            </View>
           </View>
 
           <View style={styles.routeBlock}>
@@ -410,13 +438,21 @@ export default function TripDetails({ route, navigation }) {
                 Rate this ride with {driverName}.
               </Text>
 
-              <View style={styles.starsRow}>
+              <View
+                style={[
+                  styles.starsRow,
+                  isExpired && { opacity: 0.4 },
+                ]}
+              >
                 {[1, 2, 3, 4, 5].map((value) => {
                   const active = value <= rating;
                   return (
                     <TouchableOpacity
                       key={value}
-                      onPress={() => setRating(value)}
+                      onPress={() => {
+                        if (isExpired) return;
+                        setRating(value);
+                      }}
                       activeOpacity={0.8}
                     >
                       <MaterialCommunityIcons
@@ -439,27 +475,46 @@ export default function TripDetails({ route, navigation }) {
                 Additional feedback (optional)
               </Text>
               <TextInput
-                style={styles.notesInput}
+                style={[
+                  styles.notesInput,
+                  isExpired && { opacity: 0.6 },
+                ]}
                 placeholder="Tell us what went well or what we can improve…"
                 placeholderTextColor={C.hint}
                 multiline
                 value={notes}
-                onChangeText={setNotes}
+                onChangeText={(v) => {
+                  if (isExpired) return;
+                  setNotes(v);
+                }}
+                editable={!isExpired}
               />
+
+              {isExpired && (
+                <Text style={styles.expiredText}>
+                  Rating and reports are available within 7 days after
+                  your trip.
+                </Text>
+              )}
 
               <TouchableOpacity
                 style={[
                   styles.submitBtn,
-                  { opacity: !rating || submitting ? 0.6 : 1 },
+                  {
+                    opacity:
+                      !rating || submitting || isExpired ? 0.6 : 1,
+                  },
                 ]}
-                disabled={!rating || submitting}
+                disabled={!rating || submitting || isExpired}
                 onPress={onSubmitRating}
                 activeOpacity={0.9}
               >
                 {submitting ? (
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
-                  <Text style={styles.submitBtnText}>Submit rating</Text>
+                  <Text style={styles.submitBtnText}>
+                    Submit rating
+                  </Text>
                 )}
               </TouchableOpacity>
             </>
@@ -495,10 +550,22 @@ export default function TripDetails({ route, navigation }) {
             </>
           )}
 
-          {/* ALWAYS VISIBLE: REPORT LINK */}
+          {/* ALWAYS VISIBLE: REPORT LINK (but disabled after 7 days) */}
           <TouchableOpacity
-            style={styles.reportLinkBtn}
-            onPress={() => setReportModalVisible(true)}
+            style={[
+              styles.reportLinkBtn,
+              isExpired && { opacity: 0.5 },
+            ]}
+            onPress={() => {
+              if (isExpired) {
+                Alert.alert(
+                  "Reporting not available",
+                  "You can report an issue within 7 days after the trip."
+                );
+                return;
+              }
+              setReportModalVisible(true);
+            }}
           >
             <Text style={styles.reportLinkText}>Report An Issue</Text>
           </TouchableOpacity>
@@ -703,7 +770,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: C.border,
-    paddingVertical: 14,
+    paddingVertical: 12,
     paddingHorizontal: 10,
     backgroundColor: "#EFF6FF",
     flexDirection: "row",
@@ -711,10 +778,16 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 10,
   },
+  mapPlaceholderTitle: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 12,
+    color: C.text,
+  },
   mapPlaceholderText: {
     fontFamily: "Poppins_400Regular",
     fontSize: 11,
     color: C.sub,
+    marginTop: 2,
   },
 
   routeBlock: {
@@ -824,6 +897,13 @@ const styles = StyleSheet.create({
     color: C.text,
     textAlignVertical: "top",
     backgroundColor: "#F9FAFB",
+  },
+  expiredText: {
+    marginTop: 6,
+    fontFamily: "Poppins_400Regular",
+    fontSize: 11,
+    color: C.sub,
+    textAlign: "center",
   },
 
   ratingSummaryPill: {

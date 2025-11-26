@@ -38,6 +38,7 @@ import driverReportsRouter from "../routes/driver.reports.js";
 import adminFeedbackRouter from "../routes/admin.feedback.js";
 import adminIncidentsRouter from "../routes/admin.incidents.js";
 import adminSettingsRoutes from "../routes/admin.settings.js";
+import iotRouter from "../routes/iot.js";
 
 const app = express();
 const prisma = new PrismaClient();
@@ -162,6 +163,9 @@ app.use("/driver", requireAuth, driverProfileRouter);
 app.use("/driver", requireAuth, driverRatingsRouter);
 app.use("/driver", requireAuth, driverReportsRouter);
 
+// MOUNT IOT ROUTER UNDER /iot TO AVOID CONFLICTS
+app.use("/iot", iotRouter);
+
 // --- DRIVER DUTY STATUS (ON_DUTY / OFF_DUTY) ---
 app.patch("/driver/duty", requireAuth, async (req, res) => {
   try {
@@ -267,6 +271,7 @@ app.post("/commuter/scan-bus", requireUserAuth, async (req, res) => {
       returnRoute: bus.returnRoute,
       status: driverStatus,
       onDuty,
+      deviceId: bus.deviceId || null, // expose deviceId to client
     });
   } catch (err) {
     console.error("POST /commuter/scan-bus ERROR:", err);
@@ -751,6 +756,7 @@ app.post("/buses", requireAuth, requireAdmin, async (req, res) => {
       routeId: z.string().optional(),
       forwardRoute: z.string().optional(),
       returnRoute: z.string().optional(),
+      deviceId: z.string().min(1).optional(), // NEW
     });
 
     const input = schema.parse(req.body);
@@ -772,6 +778,7 @@ app.post("/buses", requireAuth, requireAdmin, async (req, res) => {
         routeId: input.routeId || null,
         forwardRoute: input.forwardRoute || null,
         returnRoute: input.returnRoute || null,
+        deviceId: input.deviceId ? input.deviceId.trim() : null, // NEW
       },
     });
 
@@ -783,6 +790,7 @@ app.post("/buses", requireAuth, requireAdmin, async (req, res) => {
       busType: bus.busType,
       corridor: bus.corridor,
       routeId: bus.routeId,
+      deviceId: bus.deviceId || null, // include in QR payload
     };
 
     const qrUrl = await QRCode.toDataURL(JSON.stringify(payload), {
@@ -827,6 +835,7 @@ app.put("/buses/:id", requireAuth, requireAdmin, async (req, res) => {
       routeId: z.string().optional(),
       forwardRoute: z.string().optional(),
       returnRoute: z.string().optional(),
+      deviceId: z.string().min(1).optional(), // NEW
     });
 
     const input = schema.parse(req.body);
@@ -844,6 +853,11 @@ app.put("/buses/:id", requireAuth, requireAdmin, async (req, res) => {
       ...(input.corridor ? { corridor: input.corridor } : {}),
     };
 
+    // Allow clearing deviceId ("", null)
+    if (input.deviceId !== undefined) {
+      data.deviceId = input.deviceId.trim() || null;
+    }
+
     const bus = await prisma.bus.update({
       where: { id: req.params.id },
       data,
@@ -857,6 +871,7 @@ app.put("/buses/:id", requireAuth, requireAdmin, async (req, res) => {
       busType: bus.busType,
       corridor: bus.corridor,
       routeId: bus.routeId,
+      deviceId: bus.deviceId || null, // NEW
     };
 
     const qrUrl = await QRCode.toDataURL(JSON.stringify(payload), {

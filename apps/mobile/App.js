@@ -30,6 +30,7 @@ import BusScanner from "./screens/BusScanner";
 import DriverTripHistory from "./screens/DriverTripHistory";
 import ForgotPassword from "./screens/ForgotPassword";
 import ResetPassword from "./screens/ResetPassword";
+import RecentTrips from "./screens/RecentTrips";
 
 const Stack = createNativeStackNavigator();
 
@@ -48,6 +49,7 @@ export default function App() {
             <Stack.Screen name="DriverTripHistory" component={DriverTripHistory}/>
             <Stack.Screen name="ForgotPassword" component={ForgotPassword} />
             <Stack.Screen name="ResetPassword" component={ResetPassword} />
+            <Stack.Screen name="RecentTrips" component={RecentTrips} />
 
             {/* Driver */}
             <Stack.Screen

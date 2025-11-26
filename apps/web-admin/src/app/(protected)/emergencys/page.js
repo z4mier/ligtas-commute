@@ -1,9 +1,9 @@
-// apps/web-admin/src/app/(protected)/incidents/page.js
+// apps/web-admin/src/app/(protected)/emergencys/page.js
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { listIncidents, authHeaders } from "@/lib/api";
-import { X as XIcon, Pencil } from "lucide-react";
+import { listEmergencies } from "@/lib/api";
+import { X as XIcon } from "lucide-react";
 import { Poppins } from "next/font/google";
 
 /* ---------- FONT ---------- */
@@ -42,18 +42,32 @@ function inRange(createdAt, from, to) {
   return true;
 }
 
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ||
-  process.env.NEXT_PUBLIC_API ||
-  "http://localhost:4000";
+// small helper: unified location text
+function getLocationText(e) {
+  if (e.locationText) return e.locationText;
 
-export default function IncidentReportsPage() {
+  const lat =
+    e.latitude ??
+    e.lat ??
+    null;
+  const lng =
+    e.longitude ??
+    e.lng ??
+    null;
+
+  if (lat != null && lng != null) {
+    return `${lat}, ${lng}`;
+  }
+  return "";
+}
+
+export default function EmergencyReportsPage() {
   const [loading, setLoading] = useState(false);
   const [flash, setFlash] = useState({ type: "", text: "" });
 
-  const [incidents, setIncidents] = useState([]);
+  const [items, setItems] = useState([]);
 
-  const [fromDate, setFromDate] = useState(""); // yyyy-mm-dd
+  const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [search, setSearch] = useState("");
 
@@ -62,9 +76,6 @@ export default function IncidentReportsPage() {
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
 
-  const [statusDraft, setStatusDraft] = useState("PENDING");
-  const [savingStatus, setSavingStatus] = useState(false);
-
   const maxDate = todayInput();
 
   function showFlash(type, text) {
@@ -72,44 +83,43 @@ export default function IncidentReportsPage() {
     setTimeout(() => setFlash({ type: "", text: "" }), 1600);
   }
 
-  async function loadIncidents() {
+  async function loadEmergencies() {
     try {
       setLoading(true);
-      const res = await listIncidents(); // wire to /admin/incidents or fallback
-      const items = Array.isArray(res?.items)
+      const res = await listEmergencies();
+
+      // flex: support { items: [...] } or plain array
+      const raw = Array.isArray(res?.items)
         ? res.items
         : Array.isArray(res)
         ? res
         : [];
-      setIncidents(items);
+
+      // Only keep resolved emergencies for this page
+      const resolved = raw.filter(
+        (e) => (e.status || "").toUpperCase() === "RESOLVED"
+      );
+
+      setItems(resolved);
       setPage(1);
     } catch (err) {
-      console.error("LOAD INCIDENTS ERROR:", err);
-      showFlash("error", err.message || "Failed to load incidents.");
+      console.error("LOAD EMERGENCIES (reports) ERROR:", err);
+      showFlash("error", err.message || "Failed to load emergency reports.");
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    loadIncidents();
+    loadEmergencies();
   }, []);
 
-  // whenever filter/search changes, reset page
   useEffect(() => {
     setPage(1);
   }, [fromDate, toDate, search]);
 
-  // whenever selected changes, sync statusDraft
-  useEffect(() => {
-    if (selected) {
-      setStatusDraft((selected.status || "PENDING").toUpperCase());
-    }
-  }, [selected]);
-
-  // clamp dates so user cannot select future
   function onFromChange(value) {
-    if (value && value > maxDate) return; // ignore future
+    if (value && value > maxDate) return;
     setFromDate(value);
   }
   function onToChange(value) {
@@ -117,53 +127,47 @@ export default function IncidentReportsPage() {
     setToDate(value);
   }
 
-  // derived filtered list
   const normalizedSearch = search.trim().toLowerCase();
   const fromObj = parseDate(fromDate);
   const toObj = parseDate(toDate);
 
   const filtered = useMemo(() => {
-    let list = incidents;
+    let list = items;
 
-    // date range filter
     if (fromObj || toObj) {
       list = list.filter((item) => inRange(item.createdAt, fromObj, toObj));
     }
 
-    // search filter
     if (normalizedSearch) {
-      list = list.filter((i) => {
-        const categoriesText = Array.isArray(i.categories)
-          ? i.categories
-              .map((c) => (c && (c.name || c)) || "")
-              .filter(Boolean)
-              .join(" ")
-          : "";
+      list = list.filter((e) => {
+        const locationText = getLocationText(e);
 
         const target = [
-          i.driverName,
-          i.busNumber,
-          i.status,
-          i.note,
-          i.reporterName,
-          categoriesText,
+          e.driverName,
+          e.busNumber,
+          e.deviceId,
+          e.status,
+          e.severity,
+          e.code,
+          e.message,
+          locationText,
         ]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
+
         return target.includes(normalizedSearch);
       });
     }
 
-    // default sort: newest first
+    // newest first
     return [...list].sort((a, b) => {
       const ad = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const bd = b.createdAt ? new Date(b.createdAt).getTime() : 0;
       return bd - ad;
     });
-  }, [incidents, normalizedSearch, fromObj, toObj]);
+  }, [items, normalizedSearch, fromObj, toObj]);
 
-  // pagination
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const startIndex = (currentPage - 1) * PAGE_SIZE;
@@ -175,42 +179,41 @@ export default function IncidentReportsPage() {
     setSearch("");
   }
 
-  // Export as CSV (clean for Excel)
   function exportExcel() {
     if (!filtered.length) {
-      showFlash("error", "No reports to export.");
+      showFlash("error", "No emergency reports to export.");
       return;
     }
 
     const header = [
-      "Report ID",
-      "Driver",
+      "Emergency ID",
+      "Device ID",
       "Bus Number",
-      "Reporter",
+      "Driver",
       "Status",
-      "Categories",
-      "Created At",
-      "Note",
+      "Severity",
+      "Code",
+      "Triggered At",
+      "Resolved At",
+      "Location",
+      "Message",
     ];
 
-    const rows = filtered.map((i) => {
-      const categoriesText =
-        Array.isArray(i.categories) && i.categories.length > 0
-          ? i.categories
-              .map((c) => (c && (c.name || c)) || "")
-              .filter(Boolean)
-              .join(" / ")
-          : "";
+    const rows = filtered.map((e) => {
+      const locationText = getLocationText(e);
 
       return [
-        i.id || "",
-        i.driverName || "",
-        i.busNumber || "",
-        i.reporterName || "",
-        i.status || "",
-        categoriesText,
-        i.createdAt ? new Date(i.createdAt).toLocaleString() : "",
-        (i.note || "").replace(/\r?\n/g, " "),
+        e.id || "",
+        e.deviceId || "",
+        e.busNumber || "",
+        e.driverName || "",
+        e.status || "",
+        e.severity || "",
+        e.code || "",
+        e.createdAt ? new Date(e.createdAt).toLocaleString() : "",
+        e.resolvedAt ? new Date(e.resolvedAt).toLocaleString() : "",
+        locationText || "",
+        (e.message || "").replace(/\r?\n/g, " "),
       ];
     });
 
@@ -234,94 +237,11 @@ export default function IncidentReportsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "incident-reports.csv";
+    a.download = "emergency-reports.csv";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }
-
-  // 🔧 HANDLE STATUS (called from modal "Update status" button)
-  async function handleStatusChange(nextStatus) {
-    if (!selected) return;
-
-    const newStatus = (nextStatus || "").toUpperCase();
-    const prevStatus = (selected.status || "PENDING").toUpperCase();
-
-    // if walay actual change, close modal nalang
-    if (!newStatus || newStatus === prevStatus) {
-      setSelected(null);
-      return;
-    }
-
-    try {
-      setSavingStatus(true);
-
-      const id = encodeURIComponent(selected.id);
-      const body = JSON.stringify({ status: newStatus });
-      const headers = {
-        "Content-Type": "application/json",
-        ...(await authHeaders()),
-      };
-
-      // try /:id/status first
-      let res = await fetch(`${API_URL}/admin/incidents/${id}/status`, {
-        method: "PATCH",
-        headers,
-        body,
-      });
-
-      // if 404, try plain /:id (maybe mao ni imo route)
-      if (res.status === 404) {
-        console.warn(
-          "[incidents] /:id/status returned 404, trying /:id instead"
-        );
-        res = await fetch(`${API_URL}/admin/incidents/${id}`, {
-          method: "PATCH",
-          headers,
-          body,
-        });
-      }
-
-      const text = await res.text();
-      if (!res.ok) {
-        console.warn(
-          "UPDATE INCIDENT STATUS ERROR:",
-          res.status,
-          text || "no body"
-        );
-        throw new Error(`Failed to update status (code ${res.status})`);
-      }
-
-      let payload = null;
-      try {
-        payload = text ? JSON.parse(text) : null;
-      } catch {
-        payload = null;
-      }
-
-      const updated =
-        (payload && (payload.incident || payload)) || {
-          ...selected,
-          status: newStatus,
-        };
-
-      // update list
-      setIncidents((prev) =>
-        prev.map((i) => (i.id === updated.id ? updated : i))
-      );
-
-      // flash + close modal
-      showFlash("success", "Status updated.");
-      setSelected(null);
-    } catch (err) {
-      console.warn("UPDATE INCIDENT STATUS ERROR (catch):", err?.message || err);
-      showFlash("error", err?.message || "Failed to update status.");
-      // balik sa previous value sa dropdown
-      setStatusDraft(prevStatus);
-    } finally {
-      setSavingStatus(false);
-    }
   }
 
   const S = styles;
@@ -330,8 +250,10 @@ export default function IncidentReportsPage() {
     <div className={poppins.className} style={S.page}>
       {/* Header */}
       <div>
-        <h1 style={S.title}>Reports</h1>
-        <p style={S.sub}>Review commuter reports.</p>
+        <h1 style={S.title}>Emergency Reports</h1>
+        <p style={S.sub}>
+          View history of resolved emergency alerts from LigtasCommute devices.
+        </p>
       </div>
 
       {/* Filters card */}
@@ -341,7 +263,7 @@ export default function IncidentReportsPage() {
           <div style={S.searchWrapper}>
             <input
               style={S.searchInput}
-              placeholder="Search incidents..."
+              placeholder="Search by bus, device ID, driver, severity, code..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -391,103 +313,99 @@ export default function IncidentReportsPage() {
           </div>
         )}
 
-        {loading && incidents.length === 0 ? (
+        {loading && items.length === 0 ? (
           <div style={S.emptyWrapper}>
-            <div style={S.emptyTitle}>Loading reports…</div>
+            <div style={S.emptyTitle}>Loading emergency reports…</div>
           </div>
         ) : pageItems.length === 0 ? (
           <div style={S.emptyWrapper}>
-            <div style={S.emptyTitle}>No reports found</div>
+            <div style={S.emptyTitle}>No emergency reports found</div>
             <div style={S.emptySub}>Try different filters.</div>
           </div>
         ) : (
           <>
             <div style={S.list}>
-              {pageItems.map((r) => {
-                const categoriesText =
-                  Array.isArray(r.categories) && r.categories.length > 0
-                    ? r.categories
-                        .map((c) => (c && (c.name || c)) || "")
-                        .filter(Boolean)
-                        .join(" / ")
-                    : "";
+              {pageItems.map((e) => {
+                const locationText = getLocationText(e);
 
                 return (
-                  <article key={r.id} style={S.item}>
+                  <article key={e.id} style={S.item}>
                     <div style={S.itemMain}>
-                      {/* header row similar to bus title + status */}
+                      {/* header row similar to incidents */}
                       <div style={S.itemHeaderRow}>
                         <div style={S.itemTitleRow}>
                           <span style={S.itemTitle}>
-                            {r.driverName || "Unknown driver"}
+                            Bus {e.busNumber || "—"}
                           </span>
+                          {e.deviceId && (
+                            <span style={S.deviceTag}>
+                              Device {e.deviceId}
+                            </span>
+                          )}
                         </div>
-                        <div style={S.statusPill(r.status)}>
-                          {r.status || "PENDING"}
+                        <div style={S.statusPill(e.status)}>
+                          {e.status || "RESOLVED"}
                         </div>
                       </div>
 
-                      {/* info grid similar to bus card */}
+                      {/* info grid similar to incidents card */}
                       <div style={S.infoGrid}>
                         <div>
-                          <div style={S.sectionHeader}>REPORT INFORMATION</div>
+                          <div style={S.sectionHeader}>EMERGENCY INFO</div>
                           <div style={S.infoRow}>
                             <span style={S.infoLabel}>Driver</span>
                             <span style={S.infoValue}>
-                              {r.driverName || "Unknown driver"}
+                              {e.driverName || "Unknown driver"}
                             </span>
                           </div>
                           <div style={S.infoRow}>
-                            <span style={S.infoLabel}>Bus number</span>
+                            <span style={S.infoLabel}>Severity</span>
                             <span style={S.infoValue}>
-                              {r.busNumber || "—"}
+                              {e.severity || "—"}
                             </span>
                           </div>
                           <div style={S.infoRow}>
-                            <span style={S.infoLabel}>Reporter</span>
-                            <span style={S.infoValue}>
-                              {r.reporterName || "—"}
-                            </span>
+                            <span style={S.infoLabel}>Code</span>
+                            <span style={S.infoValue}>{e.code || "—"}</span>
                           </div>
                         </div>
 
                         <div>
-                          <div style={S.sectionHeader}>DETAILS</div>
+                          <div style={S.sectionHeader}>TIMELINE & LOCATION</div>
                           <div style={S.infoRow}>
-                            <span style={S.infoLabel}>Filed at</span>
+                            <span style={S.infoLabel}>Triggered at</span>
                             <span style={S.infoValue}>
-                              {r.createdAt
-                                ? new Date(r.createdAt).toLocaleString()
+                              {e.createdAt
+                                ? new Date(e.createdAt).toLocaleString()
                                 : "—"}
                             </span>
                           </div>
                           <div style={S.infoRow}>
-                            <span style={S.infoLabel}>Categories</span>
+                            <span style={S.infoLabel}>Resolved at</span>
                             <span style={S.infoValue}>
-                              {categoriesText || "None"}
+                              {e.resolvedAt
+                                ? new Date(e.resolvedAt).toLocaleString()
+                                : "—"}
                             </span>
                           </div>
                           <div style={S.infoRow}>
-                            <span style={S.infoLabel}>Summary</span>
+                            <span style={S.infoLabel}>Location</span>
                             <span style={S.infoValue}>
-                              {r.note && r.note.trim().length > 0
-                                ? r.note
-                                : "No note provided."}
+                              {locationText || "No location recorded."}
                             </span>
                           </div>
                         </div>
                       </div>
                     </div>
 
-                    {/* footer: explicit Edit button, info not clickable */}
+                    {/* footer: View details */}
                     <div style={S.cardFooter}>
                       <button
                         type="button"
-                        style={S.editBtn}
-                        onClick={() => setSelected(r)}
+                        style={S.viewBtn}
+                        onClick={() => setSelected(e)}
                       >
-                        <Pencil size={14} />
-                        <span>Edit</span>
+                        View details
                       </button>
                     </div>
                   </article>
@@ -521,13 +439,12 @@ export default function IncidentReportsPage() {
         )}
       </section>
 
-      {/* DETAILS MODAL – structured like Edit Driver, only Status editable */}
+      {/* DETAILS MODAL – read-only (reports lang) */}
       {selected && (
         <div style={S.modalBackdrop}>
           <div style={S.modal}>
-            {/* header */}
             <div style={S.modalHeader}>
-              <div style={S.modalTitle}>Report Details</div>
+              <div style={S.modalTitle}>Emergency Details</div>
               <button
                 type="button"
                 style={S.modalClose}
@@ -537,79 +454,90 @@ export default function IncidentReportsPage() {
               </button>
             </div>
 
-            {/* body */}
             <div style={S.modalBody}>
-              {/* 2-column form layout like first screenshot */}
               <div style={S.modalFormGrid}>
                 {/* LEFT COLUMN */}
-                <div style={S.formColumn}>
-                  <ModalField
-                    label="Driver"
-                    value={selected.driverName || "Unknown driver"}
-                  />
-                  <ModalField
-                    label="Reporter"
-                    value={selected.reporterName || "—"}
-                  />
-                  <ModalField
-                    label="Date"
-                    value={
-                      selected.createdAt
-                        ? new Date(selected.createdAt).toLocaleString()
-                        : "—"
-                    }
-                  />
-                </div>
-
-                {/* RIGHT COLUMN */}
                 <div style={S.formColumn}>
                   <ModalField
                     label="Bus"
                     value={selected.busNumber || "—"}
                   />
                   <ModalField
-                    label="Categories"
-                    value={
-                      Array.isArray(selected.categories) &&
-                      selected.categories.length > 0
-                        ? selected.categories
-                            .map((c) => (c && (c.name || c)) || "")
-                            .filter(Boolean)
-                            .join(", ")
-                        : "None"
-                    }
+                    label="Driver"
+                    value={selected.driverName || "Unknown driver"}
                   />
-                  {/* Status – ONLY editable field */}
-                  <div style={S.fieldGroup}>
-                    <label style={S.fieldLabel}>Status</label>
-                    <select
-                      value={statusDraft}
-                      onChange={(e) => setStatusDraft(e.target.value)}
-                      disabled={savingStatus}
-                      style={S.fieldSelect}
-                    >
-                      <option value="PENDING">Pending</option>
-                      <option value="RESOLVED">Resolved</option>
-                    </select>
-                  </div>
+                  <ModalField
+                    label="Device ID"
+                    value={selected.deviceId || "—"}
+                  />
+                </div>
+
+                {/* RIGHT COLUMN */}
+                <div style={S.formColumn}>
+                  <ModalField
+                    label="Status"
+                    value={selected.status || "RESOLVED"}
+                  />
+                  <ModalField
+                    label="Severity"
+                    value={selected.severity || "—"}
+                  />
+                  <ModalField label="Code" value={selected.code || "—"} />
                 </div>
               </div>
 
-              {/* Note – full width (read-only) */}
+              {/* Timeline */}
               <div style={S.noteGroup}>
-                <label style={S.fieldLabel}>Note</label>
+                <label style={S.fieldLabel}>Timeline</label>
                 <textarea
                   readOnly
                   style={S.fieldTextarea}
                   value={
-                    selected.note?.trim()
-                      ? selected.note
-                      : "No note provided."
+                    [
+                      selected.createdAt
+                        ? `Triggered at: ${new Date(
+                            selected.createdAt
+                          ).toLocaleString()}`
+                        : null,
+                      selected.resolvedAt
+                        ? `Resolved at: ${new Date(
+                            selected.resolvedAt
+                          ).toLocaleString()}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join("\n") || "No timestamps recorded."
                   }
                 />
               </div>
 
-              {/* footer buttons */}
+              {/* Message / notes */}
+              <div style={S.noteGroup}>
+                <label style={S.fieldLabel}>Message</label>
+                <textarea
+                  readOnly
+                  style={S.fieldTextarea}
+                  value={
+                    selected.message?.trim()
+                      ? selected.message
+                      : "No additional description provided."
+                  }
+                />
+              </div>
+
+              {/* Location */}
+              <div style={S.noteGroup}>
+                <label style={S.fieldLabel}>Location</label>
+                <textarea
+                  readOnly
+                  style={S.fieldTextarea}
+                  value={
+                    getLocationText(selected) ||
+                    "No location recorded."
+                  }
+                />
+              </div>
+
               <div style={S.modalActions}>
                 <button
                   type="button"
@@ -617,14 +545,6 @@ export default function IncidentReportsPage() {
                   onClick={() => setSelected(null)}
                 >
                   Close
-                </button>
-                <button
-                  type="button"
-                  style={S.modalSave}
-                  onClick={() => handleStatusChange(statusDraft)}
-                  disabled={savingStatus}
-                >
-                  {savingStatus ? "Updating…" : "Update status"}
                 </button>
               </div>
             </div>
@@ -635,23 +555,19 @@ export default function IncidentReportsPage() {
   );
 }
 
-/* small sub components */
-
+/* small sub component */
 function ModalField({ label, value }) {
   const S = styles;
   return (
     <div style={S.fieldGroup}>
       <label style={S.fieldLabel}>{label}</label>
-      <input
-        style={S.fieldInput}
-        value={value ?? "—"}
-        readOnly
-      />
+      <input style={S.fieldInput} value={value ?? "—"} readOnly />
     </div>
   );
 }
 
-/* styles */
+/* ---------- styles (same vibe as incidents) ---------- */
+
 const styles = {
   page: {
     display: "grid",
@@ -662,6 +578,7 @@ const styles = {
   },
   title: { fontSize: 22, fontWeight: 800, margin: 0 },
   sub: { margin: "6px 0 0", color: "var(--muted)" },
+
   card: {
     background: "var(--card)",
     borderRadius: 16,
@@ -751,7 +668,6 @@ const styles = {
   emptyTitle: { fontWeight: 600 },
   emptySub: { marginTop: 4 },
 
-  // scrollable list of cards
   list: {
     display: "grid",
     gap: 10,
@@ -759,7 +675,6 @@ const styles = {
     overflowY: "auto",
     paddingRight: 4,
   },
-
   item: {
     border: "1px solid #E2E8F0",
     borderRadius: 24,
@@ -782,6 +697,15 @@ const styles = {
     flexWrap: "wrap",
   },
   itemTitle: { fontWeight: 800, fontSize: 16, color: "#0D658B" },
+  deviceTag: {
+    padding: "3px 9px",
+    borderRadius: 999,
+    border: "1px solid #BFDBFE",
+    background: "#EFF6FF",
+    fontSize: 11,
+    color: "#1D4ED8",
+    fontWeight: 500,
+  },
 
   infoGrid: {
     marginTop: 6,
@@ -817,11 +741,11 @@ const styles = {
     justifyContent: "flex-end",
     marginTop: 14,
   },
-  editBtn: {
+  viewBtn: {
     display: "inline-flex",
     alignItems: "center",
     gap: 6,
-    padding: "8px 12px",
+    padding: "8px 14px",
     borderRadius: 999,
     border: "1px solid #CBD5F5",
     background: "#FFFFFF",
@@ -832,18 +756,22 @@ const styles = {
   },
 
   statusPill: (status) => {
-    const s = (status || "PENDING").toUpperCase();
+    const s = (status || "RESOLVED").toUpperCase();
     let bg = "#E5E7EB";
     let border = "#CBD5F5";
     let color = "#4B5563";
-    if (s === "PENDING") {
-      bg = "#FEF3C7";
-      border = "#FBBF24";
-      color = "#92400E";
-    } else if (s === "RESOLVED") {
+    if (s === "RESOLVED") {
       bg = "#E8F9F0";
       border = "#86EFAC";
       color = "#166534";
+    } else if (s === "ACTIVE" || s === "PENDING") {
+      bg = "#FEE2E2";
+      border = "#FCA5A5";
+      color = "#B91C1C";
+    } else if (s === "DISMISSED") {
+      bg = "#E5E7EB";
+      border = "#CBD5F5";
+      color = "#4B5563";
     }
     return {
       padding: "4px 10px",
@@ -858,7 +786,6 @@ const styles = {
     };
   },
 
-  // pagination bottom-right with arrows
   paginationBottom: {
     marginTop: 18,
     display: "flex",
@@ -923,8 +850,6 @@ const styles = {
     display: "grid",
     gap: 16,
   },
-
-  // 2-column form layout (same feel as Edit Driver)
   modalFormGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
@@ -953,16 +878,6 @@ const styles = {
     color: "#111827",
     outline: "none",
   },
-  fieldSelect: {
-    width: "100%",
-    borderRadius: 10,
-    border: "1px solid #E5E7EB",
-    padding: "8px 10px",
-    fontSize: 13,
-    background: "#FFFFFF",
-    color: "#111827",
-    outline: "none",
-  },
   fieldTextarea: {
     width: "100%",
     minHeight: 80,
@@ -980,7 +895,6 @@ const styles = {
     display: "grid",
     gap: 4,
   },
-
   modalActions: {
     marginTop: 8,
     display: "flex",
@@ -994,16 +908,6 @@ const styles = {
     background: "#FFFFFF",
     color: "#0F172A",
     cursor: "pointer",
-    fontSize: 13,
-  },
-  modalSave: {
-    borderRadius: 999,
-    padding: "8px 18px",
-    border: "none",
-    background: "#0D658B",
-    color: "#F9FAFB",
-    cursor: "pointer",
-    fontWeight: 600,
     fontSize: 13,
   },
 };

@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { listBuses, createBus, setBusStatus } from "@/lib/api";
+import { listBuses, createBus, setBusStatus, authHeaders } from "@/lib/api";
 import { Pencil, X as XIcon, Eye, Download } from "lucide-react";
 import { Poppins } from "next/font/google";
 
@@ -11,6 +11,12 @@ const poppins = Poppins({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700", "800"],
 });
+
+/* ---------- API URL ---------- */
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API ||
+  "http://localhost:4000";
 
 /* ---------- ROUTES (GROUPED) ---------- */
 const ROUTE_GROUPS = {
@@ -71,7 +77,6 @@ function getAssignedDriver(bus) {
 
   // If backend returns an array of drivers
   if (Array.isArray(bus.drivers) && bus.drivers.length > 0) {
-    // Prefer on-duty or active driver
     const active =
       bus.drivers.find(
         (d) =>
@@ -137,14 +142,11 @@ function friendlyRoute(forwardRoute, returnRoute) {
     if (parts.length === 2) {
       const fromRaw = parts[0] || "";
       const to = parts[1] || "";
-
-      // remove any "(via ...)" from the "from" side so it's just "SBT"
       const baseFrom = fromRaw.split("(")[0].trim();
       return `${baseFrom} — ${to} — ${baseFrom}`;
     }
   }
 
-  // fallback to original
   return `${forwardRoute} — ${returnRoute}`;
 }
 
@@ -168,7 +170,7 @@ export default function BusManagementPage() {
 
   // search / filter / pagination for info tab
   const [search, setSearch] = useState("");
-  const [sortOrder, setSortOrder] = useState("newest"); // "newest" | "oldest"
+  const [sortOrder, setSortOrder] = useState("newest");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 5;
 
@@ -179,6 +181,7 @@ export default function BusManagementPage() {
     number: "",
     plate: "",
     corridor: "",
+    routeId: "",
     forwardRoute: "",
     returnRoute: "",
     status: "",
@@ -239,12 +242,52 @@ export default function BusManagementPage() {
     }));
   }
 
+  /* ---------- EDIT HELPERS ---------- */
+
+  function handleEditCorridorChange(value) {
+    setEditForm((prev) => ({
+      ...prev,
+      corridor: value,
+      routeId: "",
+      forwardRoute: "",
+      returnRoute: "",
+    }));
+  }
+
+  function handleEditRouteChange(routeId) {
+    setEditForm((prev) => {
+      const corridor = prev.corridor;
+      const routes = ROUTE_GROUPS[corridor] || [];
+      const selected = routes.find((r) => r.id === routeId);
+
+      if (!selected) {
+        return {
+          ...prev,
+          routeId: "",
+          forwardRoute: "",
+          returnRoute: "",
+        };
+      }
+
+      const parts = selected.label.split("—").map((p) => p.trim());
+      const forward = parts[0] || "";
+      const back = parts[1] || "";
+
+      return {
+        ...prev,
+        routeId,
+        forwardRoute: forward,
+        returnRoute: back,
+      };
+    });
+  }
+
   /* ---------- load buses from API ---------- */
 
   async function loadBuses() {
     try {
       setLoading(true);
-      const data = await listBuses(); // GET /buses (should include drivers if available)
+      const data = await listBuses(); // GET /buses (includes drivers)
       setBuses(Array.isArray(data) ? data : []);
       setPage(1);
     } catch (err) {
@@ -259,12 +302,11 @@ export default function BusManagementPage() {
     loadBuses();
   }, []);
 
-  // reset page if search / sort changes
   useEffect(() => {
     setPage(1);
   }, [search, sortOrder]);
 
-  /* ---------- derived list (search + sort + paginate) ---------- */
+  /* ---------- derived list ---------- */
 
   const normalizedSearch = search.trim().toLowerCase();
 
@@ -289,7 +331,6 @@ export default function BusManagementPage() {
     return target.includes(normalizedSearch);
   });
 
-  // base only on createdAt, not bus number
   const sorted = [...filtered].sort((a, b) => {
     const aDate = a.createdAt ? new Date(a.createdAt).getTime() : 0;
     const bDate = b.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -317,6 +358,7 @@ export default function BusManagementPage() {
       number: bus.number,
       plate: bus.plate,
       corridor: bus.corridor,
+      routeId: bus.routeId,
       forwardRoute: bus.forwardRoute,
       returnRoute: bus.returnRoute,
     });
@@ -359,7 +401,6 @@ export default function BusManagementPage() {
       setSaving(true);
       const created = await createBus(payload); // POST /buses
 
-      // in-memory list: new bus at top
       setBuses((prev) => [created, ...prev]);
 
       setForm({
@@ -375,7 +416,6 @@ export default function BusManagementPage() {
       showFlash("success", "Bus registered successfully.");
       setTab("info");
 
-      // auto-generate + show QR for the newly registered bus
       await openQr(created);
     } catch (err) {
       console.error("CREATE BUS ERROR (frontend):", err);
@@ -385,11 +425,31 @@ export default function BusManagementPage() {
     }
   }
 
-  /* ---------- update status only (used in edit modal) ---------- */
+  /* ---------- update status only (existing helper) ---------- */
 
   async function updateBusStatus(id, status) {
     const updated = await setBusStatus(id, status);
     return updated;
+  }
+
+  /* ---------- update full bus details (PUT /buses/:id) ---------- */
+
+  async function updateBusDetails(id, body) {
+    const res = await fetch(`${API_URL}/buses/${id}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(),
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data?.message || "Failed to update bus.");
+    }
+
+    return res.json().catch(() => ({}));
   }
 
   /* ---------- edit modal helpers ---------- */
@@ -401,6 +461,7 @@ export default function BusManagementPage() {
       number: bus.number || "",
       plate: bus.plate || "",
       corridor: bus.corridor || "",
+      routeId: bus.routeId || "",
       forwardRoute: bus.forwardRoute || "",
       returnRoute: bus.returnRoute || "",
       status: bus.status || "ACTIVE",
@@ -422,36 +483,51 @@ export default function BusManagementPage() {
     try {
       setSaving(true);
 
-      let updatedBus = {
-        ...editingBus,
+      const detailsBody = {
         busType: editForm.busType,
         number: editForm.number,
         plate: editForm.plate,
         corridor: editForm.corridor,
+        routeId: editForm.routeId,
         forwardRoute: editForm.forwardRoute,
         returnRoute: editForm.returnRoute,
-        status: editForm.status,
       };
 
+      // 1) update main bus fields (PUT /buses/:id)
+      let updatedBus = await updateBusDetails(editingBus.id, detailsBody);
+
+      // 2) if status changed, call existing status endpoint
       if (editingBus.status !== editForm.status) {
         try {
-          const fromApi = await updateBusStatus(editingBus.id, editForm.status);
-          updatedBus = { ...updatedBus, ...fromApi };
+          const statusFromApi = await updateBusStatus(
+            editingBus.id,
+            editForm.status
+          );
+          updatedBus = { ...updatedBus, ...statusFromApi };
         } catch (err) {
           console.error("UPDATE BUS STATUS ERROR:", err);
           showFlash(
             "error",
-            err.message || "Failed to update bus status on server."
+            err.message || "Bus details saved, but status update failed."
           );
         }
       }
 
+      // 3) update local list so refresh not needed
       setBuses((prev) =>
-        prev.map((b) => (b.id === editingBus.id ? updatedBus : b))
-      );
+  prev.map((b) =>
+    b.id === editingBus.id
+      // merge result from API into existing bus object
+      ? { ...b, ...updatedBus }
+      : b
+  )
+);
 
       showFlash("success", "Bus details updated.");
       closeEditModal();
+    } catch (err) {
+      console.error("UPDATE BUS DETAILS ERROR:", err);
+      showFlash("error", err.message || "Failed to update bus.");
     } finally {
       setSaving(false);
     }
@@ -629,7 +705,7 @@ export default function BusManagementPage() {
             <span>Bus Informations</span>
           </div>
 
-          {/* search + sort (pagination moved to bottom-right) */}
+          {/* search + sort */}
           <div style={S.toolbar}>
             <div style={S.searchWrapper}>
               <input
@@ -663,7 +739,7 @@ export default function BusManagementPage() {
                   const driver = getAssignedDriver(b);
                   return (
                     <div key={b.id} style={S.busCard}>
-                      {/* HEADER: Bus title (blue) + status pill beside it */}
+                      {/* HEADER */}
                       <div style={S.busHeader}>
                         <div style={S.busTitleRow}>
                           <span style={S.busTitle}>Bus {b.number}</span>
@@ -673,7 +749,7 @@ export default function BusManagementPage() {
                         </div>
                       </div>
 
-                      {/* BODY: info grid like driver card */}
+                      {/* BODY */}
                       <div style={S.infoGrid}>
                         <div>
                           <div style={S.sectionHeader}>BUS INFORMATION</div>
@@ -726,7 +802,7 @@ export default function BusManagementPage() {
                         </div>
                       </div>
 
-                      {/* FOOTER: bottom-right actions (Edit + View QR only) */}
+                      {/* FOOTER */}
                       <div style={S.busFooter}>
                         <button
                           type="button"
@@ -751,7 +827,7 @@ export default function BusManagementPage() {
                 })}
               </div>
 
-              {/* Bottom-right pagination */}
+              {/* Pagination */}
               <div style={S.paginationBottom}>
                 <button
                   type="button"
@@ -845,32 +921,51 @@ export default function BusManagementPage() {
                   </select>
                 </div>
 
-                {/* Corridor (read-only) */}
+                {/* Corridor */}
                 <div style={S.field}>
                   <label style={S.label}>Corridor</label>
-                  <input
-                    style={{ ...S.input, background: "#F3F4F6" }}
-                    value={corridorLabel(editForm.corridor)}
-                    readOnly
-                  />
+                  <select
+                    style={S.input}
+                    value={editForm.corridor || ""}
+                    onChange={(e) => handleEditCorridorChange(e.target.value)}
+                  >
+                    <option value="">Select corridor</option>
+                    <option value="EAST">EAST (via Oslob)</option>
+                    <option value="WEST">WEST (via Barili)</option>
+                  </select>
                 </div>
 
-                {/* Forward Route (read-only) */}
+                {/* Forward Route */}
                 <div style={S.field}>
                   <label style={S.label}>Forward Route</label>
-                  <input
-                    style={{ ...S.input, background: "#F3F4F6" }}
-                    value={editForm.forwardRoute || "—"}
-                    readOnly
-                  />
+                  <select
+                    style={S.input}
+                    value={editForm.routeId || ""}
+                    onChange={(e) => handleEditRouteChange(e.target.value)}
+                    disabled={!editForm.corridor}
+                  >
+                    <option value="">
+                      {editForm.corridor
+                        ? "Select forward route"
+                        : "Select corridor first"}
+                    </option>
+                    {(ROUTE_GROUPS[editForm.corridor] || []).map((r) => {
+                      const [forward] = r.label.split("—");
+                      return (
+                        <option key={r.id} value={r.id}>
+                          {forward.trim()}
+                        </option>
+                      );
+                    })}
+                  </select>
                 </div>
 
-                {/* Return Route (read-only) */}
+                {/* Return Route (auto-filled) */}
                 <div style={S.field}>
                   <label style={S.label}>Return Route</label>
                   <input
                     style={{ ...S.input, background: "#F3F4F6" }}
-                    value={editForm.returnRoute || "—"}
+                    value={editForm.returnRoute || ""}
                     readOnly
                   />
                 </div>
@@ -1224,7 +1319,7 @@ const styles = {
     background: "var(--card)",
     borderRadius: 20,
     padding: 20,
-    border: "1px solid var(--line)",
+    border: "1px solid " + "var(--line)",
     boxShadow: "0 24px 60px rgba(15,23,42,0.18)",
   },
   modalHeader: {

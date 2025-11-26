@@ -97,6 +97,48 @@ async function getAuthToken() {
   return null;
 }
 
+/* --------- helper: make route pretty like "SBT — Santander / Lilo-an Port — SBT" --------- */
+function prettyRouteLabel(forward, back, rawLabel) {
+  // If backend already gave a nice label, use it
+  if (rawLabel && String(rawLabel).trim()) return String(rawLabel).trim();
+
+  const f = forward ? String(forward).trim() : "";
+  const r = back ? String(back).trim() : "";
+
+  if (!f && !r) return "—";
+  if (f && !r) return f;
+  if (!f && r) return r;
+
+  // Try to split on "→" first (your bus routes use this)
+  const splitSegment = (seg) => {
+    if (!seg) return [];
+    if (seg.includes("→")) {
+      return seg.split("→").map((s) => s.trim());
+    }
+    if (seg.includes("-")) {
+      return seg.split("-").map((s) => s.trim());
+    }
+    return [seg.trim()];
+  };
+
+  const fParts = splitSegment(f); // e.g. ["SBT", "Santander / Lilo-an Port"]
+  const rParts = splitSegment(r); // e.g. ["Santander / Lilo-an Port", "SBT"]
+
+  if (fParts.length >= 2 && rParts.length >= 2) {
+    const start = fParts[0];
+    const mid = fParts[fParts.length - 1];
+    const end = rParts[rParts.length - 1];
+
+    if (start && mid && end) {
+      // If it’s a loop (SBT at both ends) this becomes: SBT — Santander / Lilo-an Port — SBT
+      return `${start} — ${mid} — ${end}`;
+    }
+  }
+
+  // Fallback: just show forward — return raw
+  return `${f} — ${r}`;
+}
+
 export default function BusScanner({ navigation }) {
   const insets = useSafeAreaInsets();
 
@@ -191,6 +233,13 @@ export default function BusScanner({ navigation }) {
       out.route_return ??
       null;
 
+    const routeLabel =
+      out.routeLabel ??
+      out.bus?.routeLabel ??
+      out.bus?.route ??
+      out.route ??
+      null;
+
     const status =
       out.status ??
       out.driverStatus ??
@@ -228,6 +277,7 @@ export default function BusScanner({ navigation }) {
       corridor,
       forwardRoute,
       returnRoute,
+      routeLabel, // 🔹 keep raw route label if backend provides it
 
       status,
       onDuty: !!onDuty,
@@ -319,10 +369,15 @@ export default function BusScanner({ navigation }) {
   const isOnDuty =
     !!driver?.onDuty || driver?.status === "ON_DUTY" || driver?.status === "ACTIVE";
 
-  const routeLine =
-    driver?.forwardRoute && driver?.returnRoute
-      ? `${driver.forwardRoute} — ${driver.returnRoute}`
-      : driver?.forwardRoute || "—";
+  // 🔹 Use same style as drivers page: SBT — Santander / Lilo-an Port — SBT
+  const routeLine = useMemo(() => {
+    if (!driver) return "—";
+    return prettyRouteLabel(
+      driver.forwardRoute,
+      driver.returnRoute,
+      driver.routeLabel
+    );
+  }, [driver]);
 
   /** =============================
    *   PERMISSION / LOADING STATES
@@ -502,8 +557,6 @@ export default function BusScanner({ navigation }) {
                 <MaterialCommunityIcons name="close" size={20} color={C.text} />
               </TouchableOpacity>
             </View>
-
-            {/* (ID row removed) */}
 
             {/* Info sections */}
             <View style={[s.infoBox, { marginTop: 14 }]}>

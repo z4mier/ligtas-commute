@@ -1,7 +1,7 @@
 // apps/api/routes/admin.settings.js
 import express from "express";
 import bcrypt from "bcryptjs";
-import { prisma } from "../src/lib/prisma.js"; // ✅ NAMED IMPORT, not default
+import { prisma } from "../src/lib/prisma.js";
 
 const router = express.Router();
 

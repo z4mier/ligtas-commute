@@ -37,6 +37,42 @@ const shortId = (id) =>
   id ? `DRV-${String(id).slice(-5).padStart(5, "0").toUpperCase()}` : "DRV—";
 const pick = (v, fb = "—") => (v == null || v === "" ? fb : v);
 
+/* Simple condensed route label helper:
+   e.g. forward: "SBT → Santander / Lilo-an Port"
+        return:  "Santander / Lilo-an Port → SBT"
+   => "SBT — Santander / Lilo-an Port — SBT"
+*/
+function simpleRouteLabel(forward, ret, fallback = "—") {
+  const clean = (s) =>
+    (s || "")
+      .split("—")[0] // in case something already has "—"
+      .trim();
+
+  const partsFromArrow = (s) =>
+    clean(s)
+      .split("→")
+      .map((p) => p.trim())
+      .filter(Boolean);
+
+  const f = partsFromArrow(forward);
+  const r = partsFromArrow(ret);
+
+  if (f.length === 2 && r.length === 2) {
+    const [start, mid] = f;
+    const [, end] = r;
+    if (start && mid && end) {
+      return `${start} — ${mid} — ${end}`;
+    }
+  }
+
+  // If parsing fails but we still have forward & return, keep them joined
+  if (forward && ret) {
+    return `${clean(forward)} — ${clean(ret)}`;
+  }
+
+  return fallback || "—";
+}
+
 /* QR helper */
 async function makeQrDataUrl(text) {
   try {
@@ -49,24 +85,41 @@ async function makeQrDataUrl(text) {
   }
 }
 
-/* ---------- NORMALIZE DRIVER (includes route info) ---------- */
+/* ---------- NORMALIZE DRIVER (always use latest BUS route) ---------- */
 function normalizeDriver(p) {
   const bus = p.bus || {};
+
   const statusRaw = (p.status || (p.active ? "ACTIVE" : "INACTIVE") || "")
     .toString()
     .toUpperCase();
 
+  // Always prefer the bus' current corridor/routeSide
   const routeSide = bus.corridor || bus.routeSide || p.routeSide || "";
 
-  const routeLabelFromBus = bus.route || bus.routeLabel || "";
+  // Pull route data from the BUS first
+  const busForward = bus.forwardRoute || "";
+  const busReturn = bus.returnRoute || "";
+  const busSingleRoute = bus.route || bus.routeLabel || "";
 
-  const forwardRoute = bus.forwardRoute || p.forwardRoute || "";
-  const returnRoute = bus.returnRoute || p.returnRoute || "";
+  // Decide raw routeLabel (bus should always win)
+  let rawRouteLabel = "";
+  if (busSingleRoute) {
+    rawRouteLabel = busSingleRoute;
+  } else if (busForward && busReturn) {
+    rawRouteLabel = `${busForward} — ${busReturn}`;
+  } else if (p.routeLabel) {
+    // fallback to whatever was stored on the driver record
+    rawRouteLabel = p.routeLabel;
+  } else if (p.forwardRoute && p.returnRoute) {
+    rawRouteLabel = `${p.forwardRoute} — ${p.returnRoute}`;
+  }
 
-  const routeLabel =
-    p.routeLabel ||
-    routeLabelFromBus ||
-    (forwardRoute && returnRoute ? `${forwardRoute} — ${returnRoute}` : "");
+  // Final condensed label used everywhere in UI
+  const routeLabel = simpleRouteLabel(
+    busForward || p.forwardRoute,
+    busReturn || p.returnRoute,
+    rawRouteLabel || "—"
+  );
 
   return {
     id: p.id,
@@ -82,9 +135,11 @@ function normalizeDriver(p) {
     status: statusRaw || "ACTIVE",
     active: statusRaw === "ACTIVE",
     createdAt: p.createdAt,
+
+    // use latest bus route info
     routeSide,
-    forwardRoute,
-    returnRoute,
+    forwardRoute: busForward || p.forwardRoute || "",
+    returnRoute: busReturn || p.returnRoute || "",
     routeLabel,
   };
 }
@@ -541,7 +596,8 @@ export default function DriverManagementPage() {
       const single = selectedBus.route || selectedBus.routeLabel || "";
 
       if (fwd && ret) {
-        routePayload.routeLabel = `${fwd} — ${ret}`;
+        // store the condensed label: e.g. "SBT — Santander / Lilo-an Port — SBT"
+        routePayload.routeLabel = simpleRouteLabel(fwd, ret, single || "");
       } else if (single) {
         routePayload.routeLabel = single;
       }
@@ -1223,11 +1279,7 @@ export default function DriverManagementPage() {
                       background: "#F3F4F6",
                     }}
                     placeholder="Auto-filled from selected bus"
-                    value={
-                      forwardRoute && returnRoute
-                        ? `${forwardRoute} — ${returnRoute}`
-                        : ""
-                    }
+                    value={simpleRouteLabel(forwardRoute, returnRoute, "")}
                     readOnly
                   />
                 </div>
@@ -1299,11 +1351,11 @@ export default function DriverManagementPage() {
                   {pageItems.map((d, idx) => {
                     const key = d.id || d.email || d.licenseNo || `drv-${idx}`;
 
-                    const routeLabelText =
-                      d.routeLabel ||
-                      (d.forwardRoute && d.returnRoute
-                        ? `${d.forwardRoute} — ${d.returnRoute}`
-                        : "—");
+                    const routeLabelText = simpleRouteLabel(
+                      d.forwardRoute,
+                      d.returnRoute,
+                      d.routeLabel
+                    );
 
                     return (
                       <div key={key} style={S.drvCard}>

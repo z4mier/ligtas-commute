@@ -20,7 +20,7 @@ model User {
   driverProfile      DriverProfile?
   commuterProfile    CommuterProfile?
   emergencyContacts  EmergencyContact[]
-  reportedIncidents  IncidentReport[] @relation("UserReporter")
+  reportedIncidents  IncidentReport[]   @relation("UserReporter")
 }
 
 model DriverProfile {
@@ -49,6 +49,9 @@ model DriverProfile {
   ratings   RideRating[]
   incidents IncidentReport[]
   trips     Trip[]
+
+  // NEW: all IoT emergency incidents tied to this driver (if any)
+  emergencyIncidents EmergencyIncident[] @relation("DriverEmergencyIncidents")
 
   @@index([busId])
   @@index([status, busId])
@@ -94,10 +97,18 @@ model Bus {
   routeId      String?
   forwardRoute String?
   returnRoute  String?
+
+  // NEW: which physical device (ESP32+SIM800L) belongs to this bus
+  // e.g. "LC-3001" — unique per device
+  deviceId     String?         @unique
+
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @default(now()) @updatedAt
   drivers      DriverProfile[] @relation("BusDrivers")
   trips        Trip[]
+
+  // NEW: IoT emergency incidents coming from this bus/device
+  emergencyIncidents EmergencyIncident[] @relation("BusEmergencyIncidents")
 }
 
 model Trip {
@@ -140,7 +151,7 @@ model RideRating {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  driver DriverProfile @relation(fields: [driverId], references: [driverId])
+  driver     DriverProfile @relation(fields: [driverId], references: [driverId])
 
   @@index([driverId, createdAt])
   @@index([commuterId, createdAt])
@@ -159,10 +170,10 @@ model IncidentReport {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  categories IncidentCategory[]
-  driver     DriverProfile @relation(fields: [driverId], references: [driverId])
-  trip       Trip?         @relation(fields: [tripId], references: [id])
-  reporter   User?         @relation("UserReporter", fields: [reporterId], references: [id])
+  categories  IncidentCategory[]
+  driver      DriverProfile @relation(fields: [driverId], references: [driverId])
+  trip        Trip?         @relation(fields: [tripId], references: [id])
+  reporter    User?         @relation("UserReporter", fields: [reporterId], references: [id])
 
   @@index([driverId, createdAt])
   @@index([status, createdAt])
@@ -175,4 +186,41 @@ model IncidentCategory {
   incident   IncidentReport @relation(fields: [incidentId], references: [id], onDelete: Cascade)
 
   @@id([incidentId, category])
+}
+
+//////////////////////
+// NEW: IoT emergencies
+//////////////////////
+
+model EmergencyIncident {
+  id              String   @id @default(cuid())
+
+  // from device
+  deviceId        String
+  code            String        // "YELLOW" | "ORANGE" | "RED"
+  message         String?
+
+  latitude        Float?
+  longitude       Float?
+
+  status          String   @default("PENDING") // PENDING | RESOLVED | DISMISSED
+
+  // link to bus + driver (optional, pero useful sa dashboard)
+  busId           String?
+  driverProfileId String?
+
+  busNumber       String?
+  busPlate        String?
+
+  createdAt       DateTime @default(now())
+  resolvedAt      DateTime?
+
+  // relations
+  bus    Bus?           @relation("BusEmergencyIncidents", fields: [busId], references: [id])
+  driver DriverProfile? @relation("DriverEmergencyIncidents", fields: [driverProfileId], references: [driverId])
+
+  @@index([deviceId, createdAt])
+  @@index([status, createdAt])
+  @@index([busId, createdAt])
+  @@index([driverProfileId, createdAt])
 }

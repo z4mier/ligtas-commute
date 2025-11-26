@@ -8,6 +8,7 @@ import {
   MessageSquare,
   TriangleAlert,
   Settings,
+  History,
 } from "lucide-react";
 import { usePathname } from "next/navigation";
 
@@ -16,6 +17,7 @@ const NAV = [
   { href: "/drivers", label: "Driver Registration", icon: FileUser },
   { href: "/buses", label: "Bus Registration", icon: BusFront },
   { href: "/incidents", label: "Incident Reports", icon: TriangleAlert },
+  { href: "/emergencys", label: "Emergency Reports", icon: History },
   { href: "/feedback", label: "User Feedback", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

@@ -1,4 +1,3 @@
-// apps/web-admin/src/lib/api.js
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   process.env.NEXT_PUBLIC_API ||
@@ -220,6 +219,51 @@ export async function listIncidents(params = {}) {
   }
 }
 
+/* ---------- EMERGENCY REPORTS (RESOLVED HISTORY / IOT ACTIVE) ---------- */
+
+export async function listEmergencies(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+
+  // 1) Try IoT emergencies first (for ESP32 device incidents)
+  try {
+    const data = await request(`/iot/emergencies${qs ? `?${qs}` : ""}`);
+    if (Array.isArray(data?.items)) return data.items;
+    if (Array.isArray(data)) return data;
+    return [];
+  } catch (err) {
+    if (err.status !== 404) {
+      throw err;
+    }
+  }
+
+  // 2) Fallback: admin emergencies endpoint (if exists)
+  try {
+    const data = await request(`/admin/emergencies${qs ? `?${qs}` : ""}`);
+    if (Array.isArray(data?.items)) return data.items;
+    if (Array.isArray(data)) return data;
+    return [];
+  } catch (err2) {
+    if (err2.status !== 404) {
+      throw err2;
+    }
+  }
+
+  // 3) Final fallback: generic emergency-incidents (legacy)
+  try {
+    const data2 = await request(
+      `/emergency-incidents${qs ? `?${qs}` : ""}`
+    );
+    if (Array.isArray(data2?.items)) return data2.items;
+    if (Array.isArray(data2)) return data2;
+    return [];
+  } catch (err3) {
+    if (err3.status === 404) {
+      return [];
+    }
+    throw err3;
+  }
+}
+
 /* ---------- NOTIFICATIONS (ADMIN) ---------- */
 
 export async function listNotifications(params = {}) {
@@ -242,4 +286,19 @@ export async function listNotifications(params = {}) {
     }
     throw err;
   }
+}
+
+/* ---------- IOT EMERGENCIES (ESP32 devices) ---------- */
+
+export async function listIotEmergencies(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  // API route: GET http://localhost:4000/iot/emergencies
+  return request(`/iot/emergencies${qs ? `?${qs}` : ""}`);
+}
+
+export async function resolveEmergency(id) {
+  // API route: POST http://localhost:4000/iot/emergencies/:id/resolve
+  return request(`/iot/emergencies/${id}/resolve`, {
+    method: "POST",
+  });
 }

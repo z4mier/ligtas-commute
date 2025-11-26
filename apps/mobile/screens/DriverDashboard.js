@@ -24,6 +24,13 @@ import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL } from "../constants/config";
 
+/* ---------- Storage keys for local badges ---------- */
+const STORAGE_KEYS = {
+  ratingLastSeen: "DRIVER_RATING_LAST_SEEN_COUNT",
+  reportLastSeen: "DRIVER_REPORT_LAST_SEEN_COUNT",
+  tripLastSeen: "DRIVER_TRIP_LAST_SEEN_COUNT",
+};
+
 /* ---------- Storage key for trip history ---------- */
 const TRIP_HISTORY_KEY = "driverTrips";
 
@@ -41,7 +48,14 @@ const C = {
 };
 
 /* ---------- Tiny helpers ---------- */
-const QuickBox = ({ icon, title, subtitle, variant = "default", onPress }) => {
+const QuickBox = ({
+  icon,
+  title,
+  subtitle,
+  variant = "default",
+  onPress,
+  badgeCount,
+}) => {
   let bg = "#F9FAFB";
   let border = C.border;
   let iconColor = C.sub;
@@ -64,12 +78,25 @@ const QuickBox = ({ icon, title, subtitle, variant = "default", onPress }) => {
     titleColor = "#1D4ED8";
   }
 
+  const hasBadge = !!badgeCount && badgeCount > 0;
+
   return (
     <TouchableOpacity
-      style={[styles.quickBox, { backgroundColor: bg, borderColor: border }]}
+      style={[
+        styles.quickBox,
+        { backgroundColor: bg, borderColor: border },
+      ]}
       activeOpacity={0.85}
       onPress={onPress}
     >
+      {hasBadge && (
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>
+            {badgeCount > 99 ? "99+" : badgeCount}
+          </Text>
+        </View>
+      )}
+
       <View style={styles.quickBoxIconWrap}>
         <MaterialCommunityIcons name={icon} size={20} color={iconColor} />
       </View>
@@ -146,11 +173,18 @@ export default function DriverDashboard({ navigation }) {
   });
 
   const [driver, setDriver] = useState({ fullName: "Driver", avatar: null });
-  const [driverId, setDriverId] = useState(null); // <-- NEW
+  const [driverId, setDriverId] = useState(null);
 
   const [loading, setLoading] = useState(true);
   const [avgRating, setAvgRating] = useState(0);
   const [totalRatings, setTotalRatings] = useState(0);
+  const [totalReports, setTotalReports] = useState(0);
+  const [totalTrips, setTotalTrips] = useState(0);
+
+  const [ratingUnread, setRatingUnread] = useState(0);
+  const [reportUnread, setReportUnread] = useState(0);
+  const [tripUnread, setTripUnread] = useState(0);
+
   const [refreshing, setRefreshing] = useState(false);
 
   // duty status – synced with API (/driver/duty)
@@ -181,7 +215,7 @@ export default function DriverDashboard({ navigation }) {
         Authorization: token ? `Bearer ${token}` : "",
       };
 
-      /* -------- ratings -------- */
+      /* -------- ratings (with unread badge) -------- */
       try {
         const res = await fetch(`${API_URL}/driver/ratings`, { headers });
         const data = await res.json().catch(() => ({}));
@@ -190,12 +224,63 @@ export default function DriverDashboard({ navigation }) {
           throw new Error(data.error || "Failed to load ratings");
         }
 
-        setAvgRating(data.averageScore || 0);
-        setTotalRatings(data.totalRatings || 0);
+        const avg = data.averageScore || 0;
+        const total = data.totalRatings || 0;
+
+        setAvgRating(avg);
+        setTotalRatings(total);
+
+        const stored = await AsyncStorage.getItem(STORAGE_KEYS.ratingLastSeen);
+        const lastSeen = stored ? parseInt(stored, 10) || 0 : 0;
+        setRatingUnread(Math.max(total - lastSeen, 0));
       } catch (e) {
         console.log("[DriverDashboard] load ratings error", e);
         setAvgRating(0);
         setTotalRatings(0);
+        setRatingUnread(0);
+      }
+
+      /* -------- reports (with unread badge) -------- */
+      try {
+        const res = await fetch(`${API_URL}/driver/reports`, { headers });
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to load reports");
+        }
+
+        const list = Array.isArray(data.items) ? data.items : [];
+        const total =
+          typeof data.totalReports === "number"
+            ? data.totalReports
+            : list.length;
+
+        setTotalReports(total);
+
+        const stored = await AsyncStorage.getItem(STORAGE_KEYS.reportLastSeen);
+        const lastSeen = stored ? parseInt(stored, 10) || 0 : 0;
+        setReportUnread(Math.max(total - lastSeen, 0));
+      } catch (e) {
+        console.log("[DriverDashboard] load reports error", e);
+        setTotalReports(0);
+        setReportUnread(0);
+      }
+
+      /* -------- trip history (local) with unread badge -------- */
+      try {
+        const raw = await AsyncStorage.getItem(TRIP_HISTORY_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        const total = Array.isArray(arr) ? arr.length : 0;
+
+        setTotalTrips(total);
+
+        const stored = await AsyncStorage.getItem(STORAGE_KEYS.tripLastSeen);
+        const lastSeen = stored ? parseInt(stored, 10) || 0 : 0;
+        setTripUnread(Math.max(total - lastSeen, 0));
+      } catch (e) {
+        console.log("[DriverDashboard] trip history load error", e);
+        setTotalTrips(0);
+        setTripUnread(0);
       }
 
       /* -------- profile / name + bus + route for header + duty -------- */
@@ -218,7 +303,7 @@ export default function DriverDashboard({ navigation }) {
 
         setDriver({ fullName, avatar });
 
-        // NEW: store driverId for trip history
+        // store driverId for trip history
         setDriverId(driverProfile.id || profileData.id || null);
 
         // sync duty from driverProfile.status
@@ -381,12 +466,28 @@ export default function DriverDashboard({ navigation }) {
             routeLabel: currentTrip.routeLabel || busInfo.routeLabel,
             startedAt: currentTrip.startedAt,
             endedAt,
-            driverId, // <-- tag trip with this driver
+            driverId,
           };
 
           setLastTrip(finishedTrip);
           await saveTripToHistory(finishedTrip);
           setCurrentTrip(null);
+
+          // update counts quickly without waiting for next reload
+          try {
+            const raw = await AsyncStorage.getItem(TRIP_HISTORY_KEY);
+            const arr = raw ? JSON.parse(raw) : [];
+            const total = Array.isArray(arr) ? arr.length : 0;
+            setTotalTrips(total);
+
+            const stored = await AsyncStorage.getItem(
+              STORAGE_KEYS.tripLastSeen
+            );
+            const lastSeen = stored ? parseInt(stored, 10) || 0 : 0;
+            setTripUnread(Math.max(total - lastSeen, 0));
+          } catch (e) {
+            console.log("[DriverDashboard] quick trip count update error", e);
+          }
         },
       },
     ]);
@@ -404,8 +505,48 @@ export default function DriverDashboard({ navigation }) {
     }
   };
 
-  const handleReportIssue = () => {
-    navigation?.navigate?.("DriverReports");
+  /* ---------- Open reports / ratings / trips (clear badges) ---------- */
+
+  const openReports = async () => {
+    try {
+      const total = totalReports || 0;
+      setReportUnread(0);
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.reportLastSeen,
+        String(total)
+      );
+    } catch (e) {
+      console.log("[DriverDashboard] store report lastSeen error", e);
+    } finally {
+      navigation?.navigate?.("DriverReports");
+    }
+  };
+
+  const openRatings = async () => {
+    try {
+      const total = totalRatings || 0;
+      setRatingUnread(0);
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.ratingLastSeen,
+        String(total)
+      );
+    } catch (e) {
+      console.log("[DriverDashboard] store rating lastSeen error", e);
+    } finally {
+      navigation?.navigate?.("DriverRatings");
+    }
+  };
+
+  const openTripHistory = async () => {
+    try {
+      const total = totalTrips || 0;
+      setTripUnread(0);
+      await AsyncStorage.setItem(STORAGE_KEYS.tripLastSeen, String(total));
+    } catch (e) {
+      console.log("[DriverDashboard] store trip lastSeen error", e);
+    } finally {
+      navigation?.navigate?.("DriverTripHistory");
+    }
   };
 
   const hasRatings = totalRatings > 0 && (avgRating || 0) > 0;
@@ -620,28 +761,31 @@ export default function DriverDashboard({ navigation }) {
                 onPress={handleTripAction}
               />
 
-              {/* 3. Passenger Reports */}
+              {/* 3. Passenger Reports (with badge) */}
               <QuickBox
                 icon="alert-circle-outline"
                 title="Passenger reports"
                 subtitle="View issues reported by commuters"
-                onPress={handleReportIssue}
+                onPress={openReports}
+                badgeCount={reportUnread}
               />
 
-              {/* 4. Trip History */}
+              {/* 4. Trip History (with badge) */}
               <QuickBox
                 icon="history"
                 title="Trip history"
                 subtitle="View completed trips"
-                onPress={() => navigation?.navigate?.("DriverTripHistory")}
+                onPress={openTripHistory}
+                badgeCount={tripUnread}
               />
 
-              {/* 5. Ratings */}
+              {/* 5. Ratings (with badge) */}
               <QuickBox
                 icon="star-circle-outline"
                 title="Ratings"
                 subtitle={ratingSubtitle}
-                onPress={() => navigation?.navigate?.("DriverRatings")}
+                onPress={openRatings}
+                badgeCount={ratingUnread}
               />
 
               {/* 6. Profile Settings */}
@@ -772,6 +916,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 12,
+    position: "relative",
   },
   quickBoxIconWrap: {
     width: 30,
@@ -791,5 +936,23 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_400Regular",
     fontSize: 11,
     color: C.sub,
+  },
+
+  badge: {
+    position: "absolute",
+    top: 8,
+    right: 10,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 999,
+    backgroundColor: "#EF4444",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeText: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 10,
+    color: "#FFFFFF",
   },
 });

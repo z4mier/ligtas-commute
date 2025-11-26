@@ -21,6 +21,12 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL } from "../constants/config";
+import {
+  useFonts,
+  Poppins_400Regular,
+  Poppins_600SemiBold,
+  Poppins_700Bold,
+} from "@expo-google-fonts/poppins";
 
 const C = {
   bg: "#F3F4F6",
@@ -40,7 +46,7 @@ const HEADER_H = 48;
 /** Small helper: try reading token from various keys & shapes */
 async function getAuthToken() {
   const tokenKeys = [
-    "authToken",           // pinaka-common sa mobile
+    "authToken", // pinaka-common sa mobile
     "AUTH_TOKEN",
     "LC_COMMUTER_TOKEN",
     "LC_DRIVER_TOKEN",
@@ -86,6 +92,13 @@ async function getAuthToken() {
 
 export default function QRScanner({ navigation }) {
   const insets = useSafeAreaInsets();
+
+  // --------- FONTS (POPPINS) ----------
+  const [fontsLoaded] = useFonts({
+    Poppins_400Regular,
+    Poppins_600SemiBold,
+    Poppins_700Bold,
+  });
 
   // Camera permissions
   const [permission, requestPermission] = useCameraPermissions();
@@ -150,6 +163,32 @@ export default function QRScanner({ navigation }) {
     if (up === "AIRCON") return "Aircon";
     if (up === "NON_AIRCON") return "Non-aircon";
     return t;
+  };
+
+  // ---------- ROUTE FORMATTER (SBT — Santander / Lilo-an Port — SBT) ----------
+  const formatRouteLine = (forwardRoute, returnRoute) => {
+    if (!forwardRoute && !returnRoute) return "—";
+    if (forwardRoute && !returnRoute) return forwardRoute;
+    if (!forwardRoute && returnRoute) return returnRoute;
+
+    // Try to compress A → B and B → A to "A — B — A"
+    const partsF = String(forwardRoute).split("→").map((s) => s.trim());
+    const partsR = String(returnRoute).split("→").map((s) => s.trim());
+
+    if (partsF.length === 2 && partsR.length === 2) {
+      const a = partsF[0]; // e.g., SBT
+      const b = partsF[1]; // e.g., Santander / Lilo-an Port
+      const rFrom = partsR[0]; // e.g., Santander / Lilo-an Port
+      const rTo = partsR[1]; // e.g., SBT
+
+      if (a && b && a === rTo && b === rFrom) {
+        // Symmetric route A → B, B → A
+        return `${a} — ${b} — ${a}`;
+      }
+    }
+
+    // Fallback: standard "forward — return"
+    return `${forwardRoute} — ${returnRoute}`;
   };
 
   /** Build driver object from API response */
@@ -229,7 +268,10 @@ export default function QRScanner({ navigation }) {
     const busId = parsed.busId ?? parsed.bus?.id ?? null;
 
     const corridor =
-      parsed.corridor ?? parsed.bus?.corridor ?? parsed.bus_corridor ?? null;
+      parsed.corridor ??
+      parsed.bus?.corridor ??
+      parsed.bus_corridor ??
+      null;
 
     const forwardRoute =
       parsed.forwardRoute ??
@@ -317,7 +359,7 @@ export default function QRScanner({ navigation }) {
         return;
       }
 
-      /** Fallback: call API for BUS QR (commuter scanning bus) */
+      /** Fallback: call API for BUS QR */
       setLoadingLookup(true);
 
       const token = await getAuthToken();
@@ -388,14 +430,21 @@ export default function QRScanner({ navigation }) {
   const isOnDuty =
     !!driver?.onDuty || driver?.status === "ON_DUTY" || driver?.status === "ACTIVE";
 
-  const routeLine =
-    driver?.forwardRoute && driver?.returnRoute
-      ? `${driver.forwardRoute} — ${driver.returnRoute}`
-      : driver?.forwardRoute || "—";
+  // Use formatted route line (SBT — Santander / Lilo-an Port — SBT style)
+  const routeLine = formatRouteLine(driver?.forwardRoute, driver?.returnRoute);
 
   /** =============================
    *   PERMISSION / LOADING STATES
    *  ============================= */
+
+  if (!fontsLoaded) {
+    return (
+      <SafeAreaView style={[s.screen, s.center]}>
+        <ActivityIndicator />
+        <Text style={s.hint}>Loading fonts…</Text>
+      </SafeAreaView>
+    );
+  }
 
   if (Platform.OS === "web") {
     return (
@@ -679,7 +728,12 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  topTitle: { fontWeight: "700", fontSize: 14, color: C.text },
+  topTitle: {
+    fontWeight: "700",
+    fontSize: 14,
+    color: C.text,
+    fontFamily: "Poppins_700Bold",
+  },
 
   cameraWrap: {
     flex: 1,
@@ -714,6 +768,7 @@ const s = StyleSheet.create({
     textAlign: "center",
     textShadowColor: "rgba(0,0,0,0.6)",
     textShadowRadius: 6,
+    fontFamily: "Poppins_400Regular",
   },
 
   actionsRow: { paddingHorizontal: 14 },
@@ -729,7 +784,12 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.border,
   },
-  secondaryBtnTxt: { color: C.brand, fontSize: 13, fontWeight: "700" },
+  secondaryBtnTxt: {
+    color: C.brand,
+    fontSize: 13,
+    fontWeight: "700",
+    fontFamily: "Poppins_700Bold",
+  },
 
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.18)" },
 
@@ -766,8 +826,18 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  infoTitle: { fontWeight: "700", fontSize: 15, color: C.text },
-  infoSub: { color: C.sub, fontSize: 11, marginTop: 2 },
+  infoTitle: {
+    fontWeight: "700",
+    fontSize: 15,
+    color: C.text,
+    fontFamily: "Poppins_700Bold",
+  },
+  infoSub: {
+    color: C.sub,
+    fontSize: 11,
+    marginTop: 2,
+    fontFamily: "Poppins_400Regular",
+  },
 
   infoBox: {
     borderWidth: 1,
@@ -791,7 +861,11 @@ const s = StyleSheet.create({
     paddingHorizontal: 10,
     backgroundColor: "#fff",
   },
-  badgeTxt: { fontSize: 11, fontWeight: "700" },
+  badgeTxt: {
+    fontSize: 11,
+    fontWeight: "700",
+    fontFamily: "Poppins_600SemiBold",
+  },
 
   statusPill: {
     flexDirection: "row",
@@ -810,12 +884,29 @@ const s = StyleSheet.create({
   statusPillTxt: {
     fontSize: 11,
     fontWeight: "600",
+    fontFamily: "Poppins_600SemiBold",
   },
 
-  sectionTitle: { fontSize: 12, fontWeight: "700", color: C.text },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: C.text,
+    fontFamily: "Poppins_700Bold",
+  },
 
-  label: { fontSize: 11, color: C.sub, marginTop: 2 },
-  value: { fontSize: 13, fontWeight: "600", color: C.text, marginTop: 2 },
+  label: {
+    fontSize: 11,
+    color: C.sub,
+    marginTop: 2,
+    fontFamily: "Poppins_400Regular",
+  },
+  value: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: C.text,
+    marginTop: 2,
+    fontFamily: "Poppins_600SemiBold",
+  },
 
   primaryBtn: {
     backgroundColor: C.brand,
@@ -823,7 +914,17 @@ const s = StyleSheet.create({
     paddingVertical: 12,
     alignItems: "center",
   },
-  primaryBtnTxt: { color: "#fff", fontSize: 13, fontWeight: "700" },
+  primaryBtnTxt: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "700",
+    fontFamily: "Poppins_700Bold",
+  },
 
-  hint: { color: C.hint, fontSize: 13, marginTop: 4 },
+  hint: {
+    color: C.hint,
+    fontSize: 13,
+    marginTop: 4,
+    fontFamily: "Poppins_400Regular",
+  },
 });
