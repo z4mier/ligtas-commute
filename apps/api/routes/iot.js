@@ -6,6 +6,7 @@ import { z } from "zod";
 const router = Router();
 const prisma = new PrismaClient();
 
+/* ---------- Zod schema for incoming IoT payload ---------- */
 const iotIncidentSchema = z.object({
   code: z.string().min(1), // "YELLOW" | "ORANGE" | "RED"
   message: z.string().min(1),
@@ -20,31 +21,42 @@ const iotIncidentSchema = z.object({
   deviceId: z.string().optional(),
 });
 
-/**
- * With app.use("/iot", iotRouter) in index:
- * → this endpoint becomes POST /iot/emergency
- */
+/* =========================================
+   POST /iot/emergency  (ESP32 -> API)
+   ========================================= */
 router.post("/emergency", async (req, res) => {
   try {
     const payload = iotIncidentSchema.parse(req.body || {});
     const codeUpper = payload.code.toUpperCase();
 
     let busId = null;
-    let busNumber = payload.busNumber || null;
-    let busPlate = payload.plateNumber || null;
+    let busNumber = null;
+    let busPlate = null;
     let driverProfileId = null;
+
     let finalDeviceId = payload.deviceId || null;
 
-    if (payload.busNumber || payload.plateNumber) {
+    // 1) PRIORITY: lookup by deviceId (Bus.deviceId)
+    if (finalDeviceId) {
+      const busByDevice = await prisma.bus.findFirst({
+        where: { deviceId: finalDeviceId },
+        select: { id: true, number: true, plate: true },
+      });
+
+      if (busByDevice) {
+        busId = busByDevice.id;
+        busNumber = busByDevice.number;
+        busPlate = busByDevice.plate;
+      }
+    }
+
+    // 2) SECOND: lookup by busNumber / plateNumber
+    if (!busId && (payload.busNumber || payload.plateNumber)) {
       const bus = await prisma.bus.findFirst({
         where: {
           OR: [
-            payload.busNumber
-              ? { number: String(payload.busNumber) }
-              : undefined,
-            payload.plateNumber
-              ? { plate: String(payload.plateNumber) }
-              : undefined,
+            payload.busNumber ? { number: payload.busNumber } : undefined,
+            payload.plateNumber ? { plate: payload.plateNumber } : undefined,
           ].filter(Boolean),
         },
         select: {
@@ -59,25 +71,29 @@ router.post("/emergency", async (req, res) => {
         busId = bus.id;
         busNumber = bus.number;
         busPlate = bus.plate;
+
+        // If IoT omitted deviceId, use the bus.deviceId
         if (!finalDeviceId && bus.deviceId) {
           finalDeviceId = bus.deviceId;
-        }
-
-        const driver = await prisma.driverProfile.findFirst({
-          where: {
-            busId: bus.id,
-            isActive: true,
-          },
-          orderBy: { createdAt: "desc" },
-          select: { driverId: true },
-        });
-
-        if (driver) {
-          driverProfileId = driver.driverId;
         }
       }
     }
 
+    // 3) AUTO-ASSIGN ACTIVE DRIVER OF THIS BUS
+    if (busId) {
+      const driver = await prisma.driverProfile.findFirst({
+        where: { busId, isActive: true },
+        orderBy: { createdAt: "desc" },
+        select: { driverId: true, fullName: true },
+      });
+
+      if (driver) {
+        // FK column sa EmergencyIncident table
+        driverProfileId = driver.driverId;
+      }
+    }
+
+    // 4) Create the incident with the correct links
     const incident = await prisma.emergencyIncident.create({
       data: {
         deviceId: finalDeviceId || "UNKNOWN_DEVICE",
@@ -93,8 +109,8 @@ router.post("/emergency", async (req, res) => {
         busId,
         driverProfileId,
 
-        busNumber: busNumber || null,
-        busPlate: busPlate || null,
+        busNumber,
+        busPlate,
       },
     });
 
@@ -120,21 +136,21 @@ router.post("/emergency", async (req, res) => {
   }
 });
 
-/**
- * With app.use("/iot", iotRouter):
- * → GET /iot/emergencies
- */
-router.get("/emergencies", async (req, res) => {
+/* =========================================
+   GET /iot/emergencies  (Admin dashboard – ACTIVE ONLY)
+   ========================================= */
+router.get("/emergencies", async (_req, res) => {
   try {
-    const items = await prisma.emergencyIncident.findMany({
-      orderBy: { createdAt: "desc" },
-      include: {
-        bus: { select: { number: true, plate: true } },
-        driver: { select: { fullName: true } },
+    const incidents = await prisma.emergencyIncident.findMany({
+      where: {
+        status: {
+          in: ["PENDING", "ACTIVE", "OPEN", "ONGOING"],
+        },
       },
+      orderBy: { createdAt: "desc" },
     });
 
-    return res.json(items);
+    return res.json(incidents);
   } catch (err) {
     console.error("GET /iot/emergencies ERROR:", err);
     return res.status(500).json({
@@ -144,10 +160,33 @@ router.get("/emergencies", async (req, res) => {
   }
 });
 
-/**
- * With app.use("/iot", iotRouter):
- * → POST /iot/emergencies/:id/resolve
- */
+/* =========================================
+   GET /iot/emergencies/history  (Emergency Reports – RESOLVED/CLOSED)
+   ========================================= */
+router.get("/emergencies/history", async (_req, res) => {
+  try {
+    const incidents = await prisma.emergencyIncident.findMany({
+      where: {
+        status: {
+          in: ["RESOLVED", "CLOSED"],
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return res.json(incidents);
+  } catch (err) {
+    console.error("GET /iot/emergencies/history ERROR:", err);
+    return res.status(500).json({
+      ok: false,
+      message: "Failed to load IoT emergency history",
+    });
+  }
+});
+
+/* =========================================
+   POST /iot/emergencies/:id/resolve
+   ========================================= */
 router.post("/emergencies/:id/resolve", async (req, res) => {
   const { id } = req.params;
 
@@ -162,10 +201,12 @@ router.post("/emergencies/:id/resolve", async (req, res) => {
 
     return res.json({
       ok: true,
-      message: "Emergency incident resolved.",
+      message: "Incident marked as resolved.",
       incident,
     });
   } catch (err) {
+    console.error("POST /iot/emergencies/:id/resolve ERROR:", err);
+
     if (err.code === "P2025") {
       return res.status(404).json({
         ok: false,
@@ -173,19 +214,11 @@ router.post("/emergencies/:id/resolve", async (req, res) => {
       });
     }
 
-    console.error("POST /iot/emergencies/:id/resolve ERROR:", err);
     return res.status(500).json({
       ok: false,
-      message: "Failed to resolve emergency incident.",
+      message: "Failed to resolve incident.",
     });
   }
-});
-
-/**
- * GET /iot/ping
- */
-router.get("/ping", (_req, res) => {
-  res.json({ ok: true, message: "IOT route alive" });
 });
 
 export default router;

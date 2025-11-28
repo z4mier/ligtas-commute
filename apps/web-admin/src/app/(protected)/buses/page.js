@@ -21,36 +21,36 @@ const API_URL =
 /* ---------- ROUTES (GROUPED) ---------- */
 const ROUTE_GROUPS = {
   EAST: [
-    { id: "EAST_SBT_OSLOB", label: "SBT → Oslob — Oslob → SBT" },
+    { id: "EAST_CEBU_OSLOB", label: "CEBU → Oslob — Oslob → CEBU" },
     {
-      id: "EAST_SBT_BATO_OSLOB",
-      label: "SBT → Bato (via Oslob) — Bato (via Oslob) → SBT",
+      id: "EAST_CEBU_BATO_OSLOB",
+      label: "CEBU → Bato (via Oslob) — Bato (via Oslob) → CEBU",
     },
     {
-      id: "EAST_SBT_SANTANDER_LILOAN",
-      label: "SBT → Santander / Lilo-an Port — Santander / Lilo-an Port → SBT",
+      id: "EAST_CEBU_SANTANDER_LILOAN",
+      label: "CEBU → Santander / Lilo-an Port — Santander / Lilo-an Port → CEBU",
     },
-    { id: "EAST_SBT_SAMBOAN", label: "SBT → Samboan — Samboan → SBT" },
-    { id: "EAST_SBT_GINATILAN", label: "SBT → Ginatilan — Ginatilan → SBT" },
-    { id: "EAST_SBT_MALABUYOC", label: "SBT → Malabuyoc — Malabuyoc → SBT" },
-    { id: "EAST_SBT_ALEGRIA", label: "SBT → Alegria — Alegria → SBT" },
-    { id: "EAST_SBT_BADIAN", label: "SBT → Badian — Badian → SBT" },
-    { id: "EAST_SBT_MOALBOAL", label: "SBT → Moalboal — Moalboal → SBT" },
+    { id: "EAST_CEBU_SAMBOAN", label: "CEBU → Samboan — Samboan → CEBU" },
+    { id: "EAST_CEBU_GINATILAN", label: "CEBU → Ginatilan — Ginatilan → CEBU" },
+    { id: "EAST_CEBU_MALABUYOC", label: "CEBU → Malabuyoc — Malabuyoc → CEBU" },
+    { id: "EAST_CEBU_ALEGRIA", label: "CEBU → Alegria — Alegria → CEBU" },
+    { id: "EAST_CEBU_BADIAN", label: "CEBU → Badian — Badian → CEBU" },
+    { id: "EAST_CEBU_MOALBOAL", label: "CEBU → Moalboal — Moalboal → CEBU" },
   ],
   WEST: [
     {
-      id: "WEST_SBT_BATO_BARILI",
-      label: "SBT → Bato (via Barili) — Bato (via Barili) → SBT",
+      id: "WEST_CEBU_BATO_BARILI",
+      label: "CEBU → Bato (via Barili) — Bato (via Barili) → CEBU",
     },
     {
-      id: "WEST_SBT_MOALBOAL_BARILI",
-      label: "SBT → Moalboal (via Barili) — Moalboal (via Barili) → SBT",
+      id: "WEST_CEBU_MOALBOAL_BARILI",
+      label: "CEBU → Moalboal (via Barili) — Moalboal (via Barili) → CEBU",
     },
-    { id: "WEST_SBT_BADIAN", label: "SBT → Badian — Badian → SBT" },
-    { id: "WEST_SBT_ALEGRIA", label: "SBT → Alegria — Alegria → SBT" },
-    { id: "WEST_SBT_GINATILAN", label: "SBT → Ginatilan — Ginatilan → SBT" },
-    { id: "WEST_SBT_SAMBOAN", label: "SBT → Samboan — Samboan → SBT" },
-    { id: "WEST_SBT_SANTANDER", label: "SBT → Santander — Santander → SBT" },
+    { id: "WEST_CEBU_BADIAN", label: "CEBU → Badian — Badian → CEBU" },
+    { id: "WEST_CEBU_ALEGRIA", label: "CEBU → Alegria — Alegria → CEBU" },
+    { id: "WEST_CEBU_GINATILAN", label: "CEBU → Ginatilan — Ginatilan → CEBU" },
+    { id: "WEST_CEBU_SAMBOAN", label: "CEBU → Samboan — Samboan → CEBU" },
+    { id: "WEST_CEBU_SANTANDER", label: "CEBU → Santander — Santander → CEBU" },
   ],
 };
 
@@ -162,6 +162,7 @@ export default function BusManagementPage() {
     routeId: "",
     forwardRoute: "",
     returnRoute: "",
+    deviceId: "",
   });
 
   const [loading, setLoading] = useState(false);
@@ -185,6 +186,7 @@ export default function BusManagementPage() {
     forwardRoute: "",
     returnRoute: "",
     status: "",
+    deviceId: "",
   });
 
   // QR modal state
@@ -192,7 +194,11 @@ export default function BusManagementPage() {
   const [qrImg, setQrImg] = useState("");
   const [qrBus, setQrBus] = useState(null);
 
-  const upd = (k, v) => setForm((s) => ({ ...s, [k]: v }));
+  const upd = (k, v) =>
+    setForm((s) => ({
+      ...s,
+      [k]: v,
+    }));
 
   /* ---------- helpers ---------- */
 
@@ -319,6 +325,7 @@ export default function BusManagementPage() {
     const target = [
       b.number,
       b.plate,
+      b.deviceId,
       corridorLabel(b.corridor),
       b.forwardRoute,
       b.returnRoute,
@@ -361,6 +368,7 @@ export default function BusManagementPage() {
       routeId: bus.routeId,
       forwardRoute: bus.forwardRoute,
       returnRoute: bus.returnRoute,
+      deviceId: bus.deviceId || null,
     });
 
     const url = await makeQrDataUrl(payload);
@@ -395,6 +403,7 @@ export default function BusManagementPage() {
       routeId: form.routeId,
       forwardRoute: form.forwardRoute,
       returnRoute: form.returnRoute,
+      deviceId: form.deviceId.trim() || null,
     };
 
     try {
@@ -411,6 +420,7 @@ export default function BusManagementPage() {
         routeId: "",
         forwardRoute: "",
         returnRoute: "",
+        deviceId: "",
       });
 
       showFlash("success", "Bus registered successfully.");
@@ -465,6 +475,7 @@ export default function BusManagementPage() {
       forwardRoute: bus.forwardRoute || "",
       returnRoute: bus.returnRoute || "",
       status: bus.status || "ACTIVE",
+      deviceId: bus.deviceId || "",
     });
   }
 
@@ -491,6 +502,7 @@ export default function BusManagementPage() {
         routeId: editForm.routeId,
         forwardRoute: editForm.forwardRoute,
         returnRoute: editForm.returnRoute,
+        deviceId: editForm.deviceId.trim() || null,
       };
 
       // 1) update main bus fields (PUT /buses/:id)
@@ -515,13 +527,15 @@ export default function BusManagementPage() {
 
       // 3) update local list so refresh not needed
       setBuses((prev) =>
-  prev.map((b) =>
-    b.id === editingBus.id
-      // merge result from API into existing bus object
-      ? { ...b, ...updatedBus }
-      : b
-  )
-);
+        prev.map((b) =>
+          b.id === editingBus.id
+            ? {
+                ...b,
+                ...updatedBus,
+              }
+            : b
+        )
+      );
 
       showFlash("success", "Bus details updated.");
       closeEditModal();
@@ -682,6 +696,17 @@ export default function BusManagementPage() {
                   placeholder="Auto-filled after selecting forward route"
                 />
               </div>
+
+              {/* Device ID */}
+              <div style={S.field}>
+                <label style={S.label}>Device ID</label>
+                <input
+                  style={S.input}
+                  placeholder="e.g. ESP32-DEVICE-001"
+                  value={form.deviceId}
+                  onChange={(e) => upd("deviceId", e.target.value)}
+                />
+              </div>
             </div>
 
             <button type="submit" style={S.btn} disabled={saving}>
@@ -710,7 +735,7 @@ export default function BusManagementPage() {
             <div style={S.searchWrapper}>
               <input
                 style={S.searchInput}
-                placeholder="Search by bus number, plate, corridor, route, driver…"
+                placeholder="Search by bus number, plate, device ID, corridor, route, driver…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -769,6 +794,12 @@ export default function BusManagementPage() {
                             <span style={S.infoLabel}>Plate number</span>
                             <span style={S.infoValue}>
                               {b.plate || "—"}
+                            </span>
+                          </div>
+                          <div style={S.infoRow}>
+                            <span style={S.infoLabel}>Device ID</span>
+                            <span style={S.infoValue}>
+                              {b.deviceId || "—"}
                             </span>
                           </div>
                         </div>
@@ -904,6 +935,16 @@ export default function BusManagementPage() {
                     style={S.input}
                     value={editForm.plate}
                     onChange={(e) => updEdit("plate", e.target.value)}
+                  />
+                </div>
+
+                {/* Device ID */}
+                <div style={S.field}>
+                  <label style={S.label}>Device ID</label>
+                  <input
+                    style={S.input}
+                    value={editForm.deviceId}
+                    onChange={(e) => updEdit("deviceId", e.target.value)}
                   />
                 </div>
 

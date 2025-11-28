@@ -1,8 +1,8 @@
 // apps/web-admin/src/app/(protected)/dashboard/page.js
 "use client";
 
-import { useEffect, useState } from "react";
-import { listIotEmergencies, resolveEmergency } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { listEmergencies, resolveEmergency } from "@/lib/api"; // 🔁 use listEmergencies
 import { Poppins } from "next/font/google";
 
 /* ---------- FONT ---------- */
@@ -54,6 +54,12 @@ export default function EmergencyDashboardPage() {
   const [resolvingId, setResolvingId] = useState(null);
   const [flash, setFlash] = useState({ type: "", text: "" });
 
+  // realtime + modal
+  const [alertIncident, setAlertIncident] = useState(null);
+  const [showAlertModal, setShowAlertModal] = useState(false);
+  const prevIdsRef = useRef(new Set());
+  const hasLoadedRef = useRef(false);
+
   const S = styles;
 
   function showFlash(type, text) {
@@ -61,14 +67,15 @@ export default function EmergencyDashboardPage() {
     setTimeout(() => setFlash({ type: "", text: "" }), 1400);
   }
 
-  async function loadEmergencies() {
+  // quiet=true = used for background polling (no loading spinner / flash)
+  async function loadEmergencies(quiet = false) {
     try {
-      setLoading(true);
+      if (!quiet) setLoading(true);
 
-      // ✅ Get IoT emergencies from /iot/emergencies (via lib/api)
-      const data = await listIotEmergencies({});
+      // 🔁 unified helper – this already tries /iot/emergencies first
+      const data = await listEmergencies({});
 
-      // support both: array or { items: [...] } or { ok, items }
+      // Normalize shape: allow array, {items}, {incidents}
       const arr = Array.isArray(data)
         ? data
         : Array.isArray(data.items)
@@ -77,7 +84,7 @@ export default function EmergencyDashboardPage() {
         ? data.incidents
         : [];
 
-      // PENDING (and similar) = active IoT emergency
+      // (Optional) Filter for still-active incidents
       const active = arr.filter((e) => {
         const st = (e.status || "").toString().toUpperCase();
         return (
@@ -88,17 +95,67 @@ export default function EmergencyDashboardPage() {
         );
       });
 
+      // ---- detect bag-ong incident for modal ----
+      const prevIds = prevIdsRef.current;
+      let newIncident = null;
+      for (const e of active) {
+        const id = e?.id ?? e?.incidentId;
+        if (id && !prevIds.has(id)) {
+          newIncident = e;
+          break;
+        }
+      }
+
+      prevIdsRef.current = new Set(
+        active.map((e) => e?.id ?? e?.incidentId).filter(Boolean)
+      );
+
       setEmergencies(active);
+
+      if (hasLoadedRef.current && newIncident) {
+        setAlertIncident(newIncident);
+        setShowAlertModal(true);
+      }
+      if (!hasLoadedRef.current) {
+        hasLoadedRef.current = true;
+      }
     } catch (err) {
-      console.error("LOAD EMERGENCIES ERROR:", err);
-      showFlash("error", err?.message || "Failed to load emergencies.");
+      const msg = err?.message || String(err || "");
+      const status = err?.status || err?.response?.status;
+
+      // Treat 404 as "no emergencies yet", not as a crash
+      if (
+        status === 404 ||
+        msg.includes("404") ||
+        msg.toLowerCase().includes("not found")
+      ) {
+        setEmergencies([]);
+        prevIdsRef.current = new Set();
+        if (!hasLoadedRef.current) {
+          hasLoadedRef.current = true;
+        }
+        return;
+      }
+
+      console.error("LOAD EMERGENCIES ERROR:", msg);
+      if (!quiet) {
+        showFlash("error", msg || "Failed to load emergencies.");
+      }
     } finally {
-      setLoading(false);
+      if (!quiet) setLoading(false);
     }
   }
 
   useEffect(() => {
-    loadEmergencies();
+    // initial load
+    loadEmergencies(false);
+
+    // 🔁 realtime polling every 5 seconds
+    const intervalId = setInterval(() => {
+      loadEmergencies(true); // quiet = true (no spinner/flash)
+    }, 5000);
+
+    return () => clearInterval(intervalId);
   }, []);
 
   async function handleResolve(incident) {
@@ -111,10 +168,15 @@ export default function EmergencyDashboardPage() {
       setEmergencies((prev) =>
         prev.filter((e) => (e.id ?? e.incidentId) !== id)
       );
+      const nextIds = new Set(prevIdsRef.current);
+      nextIds.delete(id);
+      prevIdsRef.current = nextIds;
+
       showFlash("success", "Incident marked as resolved.");
     } catch (err) {
-      console.error("RESOLVE EMERGENCY ERROR:", err);
-      showFlash("error", err?.message || "Failed to resolve incident.");
+      const msg = err?.message || String(err || "");
+      console.error("RESOLVE EMERGENCY ERROR:", msg);
+      showFlash("error", msg || "Failed to resolve incident.");
     } finally {
       setResolvingId(null);
     }
@@ -122,33 +184,90 @@ export default function EmergencyDashboardPage() {
 
   function severityPill(severityRaw, fallbackCode) {
     const Sx = S;
-    // support both direct severity + derived from code
+
     const baseSeverity =
-      (severityRaw || "").toString().toUpperCase() ||
+      (severityRaw && severityRaw.toString().toUpperCase()) ||
       mapSeverityFromCode(fallbackCode);
 
-    let base = Sx.sevMedium;
-    let label = "MEDIUM";
+    let style;
+    let label;
 
     if (baseSeverity === "LOW") {
-      base = Sx.sevLow;
+      style = Sx.sevLow;
       label = "LOW";
-    } else if (baseSeverity === "HIGH") {
-      base = Sx.sevHigh;
-      label = "HIGH";
-    } else if (baseSeverity === "CRITICAL" || baseSeverity === "CODE_RED") {
-      base = Sx.sevCritical;
-      label = "CRITICAL";
     } else if (baseSeverity === "MEDIUM" || baseSeverity === "MODERATE") {
-      base = Sx.sevMedium;
+      style = Sx.sevMedium;
       label = "MEDIUM";
+    } else if (
+      baseSeverity === "HIGH" ||
+      baseSeverity === "CRITICAL" ||
+      baseSeverity === "CODE_RED"
+    ) {
+      style = Sx.sevHigh;
+      label = "HIGH";
     } else {
-      base = Sx.sevUnknown;
-      label = baseSeverity || "UNKNOWN";
+      style = Sx.sevMedium;
+      label = "MEDIUM";
     }
 
-    return <span style={base}>{label}</span>;
+    return <span style={style}>{label}</span>;
   }
+
+  // small helper to derive fields (reused sa card + modal)
+  function normalizeIncident(e) {
+    if (!e) return null;
+    const id = e?.id ?? e?.incidentId;
+
+    const busNumber =
+      e?.busNumber || e?.bus_no || e?.bus?.number || "Unknown bus";
+
+    const busPlate =
+      e?.busPlate ||
+      e?.bus_plate ||
+      e?.plateNumber ||
+      e?.bus?.plate ||
+      null;
+
+    const driverName =
+      e?.driverName ||
+      e?.driverFullName ||
+      e?.driver?.fullName ||
+      "Unknown driver";
+
+    const deviceId =
+      e?.deviceId ||
+      e?.device_id ||
+      e?.deviceCode ||
+      e?.iotDeviceId ||
+      "N/A";
+
+    const locationLabel =
+      e?.locationLabel ||
+      e?.locationText ||
+      e?.nearestLandmark ||
+      (e?.lat && e?.lng
+        ? `${e.lat}, ${e.lng}`
+        : e?.latitude && e?.longitude
+        ? `${e.latitude}, ${e.longitude}`
+        : "Location not available");
+
+    const createdAt = e?.createdAt || e?.timestamp || e?.reportedAt || null;
+    const severity = e?.severity || mapSeverityFromCode(e?.code);
+
+    return {
+      id,
+      busNumber,
+      busPlate,
+      driverName,
+      deviceId,
+      locationLabel,
+      createdAt,
+      severity,
+      raw: e,
+    };
+  }
+
+  const alertData = normalizeIncident(alertIncident);
 
   return (
     <div className={poppins.className} style={S.page}>
@@ -162,7 +281,7 @@ export default function EmergencyDashboardPage() {
         </p>
       </div>
 
-      {/* top meta row – LIVE FEED only (no last updated) */}
+      {/* top meta row – LIVE FEED */}
       <div style={S.topMetaRow}>
         <div style={S.livePill}>
           <span style={S.liveDot} />
@@ -210,14 +329,6 @@ export default function EmergencyDashboardPage() {
               move to Emergency Reports.
             </div>
           </div>
-          <button
-            type="button"
-            style={S.refreshBtn}
-            onClick={loadEmergencies}
-            disabled={loading}
-          >
-            {loading ? "Refreshing…" : "Refresh"}
-          </button>
         </div>
 
         {loading && emergencies.length === 0 ? (
@@ -235,45 +346,18 @@ export default function EmergencyDashboardPage() {
         ) : (
           <div style={S.incidentList}>
             {emergencies.map((e) => {
-              const id = e?.id ?? e?.incidentId;
-
-              const busNumber =
-                e?.busNumber || e?.bus_no || e?.bus?.number || "Unknown bus";
-
-              const busPlate =
-                e?.busPlate ||
-                e?.bus_plate ||
-                e?.plateNumber ||
-                e?.bus?.plate ||
-                null;
-
-              const driverName =
-                e?.driverName ||
-                e?.driverFullName ||
-                e?.driver?.fullName ||
-                "Unknown driver";
-
-              const deviceId =
-                e?.deviceId ||
-                e?.device_id ||
-                e?.deviceCode ||
-                e?.iotDeviceId ||
-                "N/A";
-
-              const locationLabel =
-                e?.locationLabel ||
-                e?.locationText ||
-                e?.nearestLandmark ||
-                (e?.lat && e?.lng
-                  ? `${e.lat}, ${e.lng}`
-                  : e?.latitude && e?.longitude
-                  ? `${e.latitude}, ${e.longitude}`
-                  : "Location not available");
-
-              const createdAt =
-                e?.createdAt || e?.timestamp || e?.reportedAt || null;
-
-              const severity = e?.severity || mapSeverityFromCode(e?.code);
+              const data = normalizeIncident(e);
+              if (!data) return null;
+              const {
+                id,
+                busNumber,
+                busPlate,
+                driverName,
+                deviceId,
+                locationLabel,
+                createdAt,
+                severity,
+              } = data;
 
               return (
                 <div key={id || Math.random()} style={S.incidentCard}>
@@ -317,9 +401,7 @@ export default function EmergencyDashboardPage() {
                           {busPlate ? "Plate / Incident" : "Incident ID"}
                         </span>
                         <span style={S.infoValue}>
-                          {busPlate
-                            ? `${busPlate} · ${id}`
-                            : id || "Not available"}
+                          {busPlate ? `${busPlate} · ${id}` : id || "N/A"}
                         </span>
                       </div>
                     </div>
@@ -345,12 +427,76 @@ export default function EmergencyDashboardPage() {
           </div>
         )}
       </section>
+
+      {/* 🔔 EMERGENCY ALERT MODAL */}
+      {showAlertModal && alertData && (
+        <div style={S.modalOverlay}>
+          <div style={S.modal}>
+            <div style={S.modalHeader}>
+              <div style={S.modalBadge}>NEW EMERGENCY</div>
+              <button
+                type="button"
+                style={S.modalClose}
+                onClick={() => setShowAlertModal(false)}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={S.modalBody}>
+              <div style={S.modalTitle}>
+                Bus {alertData.busNumber} · {alertData.driverName}
+              </div>
+              <div style={S.modalMetaRow}>
+                {severityPill(alertData.severity, alertData.raw?.code)}
+                <span style={S.modalTime}>{timeAgo(alertData.createdAt)}</span>
+              </div>
+
+              <div style={S.modalInfoGrid}>
+                <div style={S.modalInfoItem}>
+                  <div style={S.modalInfoLabel}>Device ID</div>
+                  <div style={S.modalInfoValue}>{alertData.deviceId}</div>
+                </div>
+                <div style={S.modalInfoItem}>
+                  <div style={S.modalInfoLabel}>Location</div>
+                  <div style={S.modalInfoValue}>
+                    {alertData.locationLabel}
+                  </div>
+                </div>
+                <div style={S.modalInfoItem}>
+                  <div style={S.modalInfoLabel}>Reported at</div>
+                  <div style={S.modalInfoValue}>
+                    {fmtDateTime(alertData.createdAt)}
+                  </div>
+                </div>
+                <div style={S.modalInfoItem}>
+                  <div style={S.modalInfoLabel}>Incident ID</div>
+                  <div style={S.modalInfoValue}>
+                    {alertData.busPlate
+                      ? `${alertData.busPlate} · ${alertData.id}`
+                      : alertData.id || "Not available"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={S.modalFooter}>
+              <button
+                type="button"
+                style={S.modalSecondaryBtn}
+                onClick={() => setShowAlertModal(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 /* ---------- styles ---------- */
-
 const styles = {
   page: {
     display: "grid",
@@ -411,17 +557,6 @@ const styles = {
     background: type === "error" ? "#FEE2E2" : "#DCFCE7",
     border: type === "error" ? "1px solid #FCA5A5" : "1px solid #86EFAC",
   }),
-
-  refreshBtn: {
-    borderRadius: 999,
-    border: "1px solid #D4DBE7",
-    background: "#FFFFFF",
-    padding: "8px 14px",
-    fontSize: 13,
-    cursor: "pointer",
-    color: "#0F172A",
-    fontWeight: 500,
-  },
 
   emptyState: {
     padding: "24px 12px",
@@ -563,5 +698,106 @@ const styles = {
     background: "#E5E7EB",
     color: "#374151",
     border: "1px solid #CBD5F5",
+  },
+
+  /* ---------- modal styles ---------- */
+  modalOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(15,23,42,0.45)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 50,
+    padding: "16px",
+  },
+  modal: {
+    width: "100%",
+    maxWidth: 440,
+    background: "#FFFFFF",
+    borderRadius: 24,
+    boxShadow: "0 25px 60px rgba(15,23,42,0.35)",
+    padding: 20,
+    border: "1px solid #E5E7EB",
+  },
+  modalHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 8,
+  },
+  modalBadge: {
+    fontSize: 11,
+    fontWeight: 700,
+    textTransform: "uppercase",
+    letterSpacing: 0.12,
+    padding: "4px 10px",
+    borderRadius: 999,
+    background: "#FEF2F2",
+    color: "#B91C1C",
+    border: "1px solid #FCA5A5",
+  },
+  modalClose: {
+    border: "none",
+    background: "transparent",
+    fontSize: 20,
+    lineHeight: 1,
+    cursor: "pointer",
+    color: "#4B5563",
+  },
+  modalBody: {
+    marginTop: 4,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 700,
+    color: "#0D658B",
+    marginBottom: 4,
+  },
+  modalMetaRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+  modalTime: {
+    fontSize: 12,
+    color: "#6B7280",
+  },
+  modalInfoGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 14,
+    marginTop: 4,
+  },
+  modalInfoItem: {},
+  modalInfoLabel: {
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.08,
+    color: "#9CA3AF",
+    marginBottom: 2,
+  },
+  modalInfoValue: {
+    fontSize: 13,
+    fontWeight: 500,
+    color: "#111827",
+  },
+  modalFooter: {
+    display: "flex",
+    justifyContent: "flex-end",
+    marginTop: 16,
+    gap: 8,
+  },
+  modalSecondaryBtn: {
+    borderRadius: 999,
+    border: "1px solid #CBD5F5",
+    background: "#F9FAFB",
+    color: "#111827",
+    padding: "8px 16px",
+    fontSize: 13,
+    cursor: "pointer",
+    fontWeight: 500,
   },
 };

@@ -1,3 +1,4 @@
+// apps/web-admin/src/lib/api.js
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   process.env.NEXT_PUBLIC_API ||
@@ -204,9 +205,7 @@ export async function listIncidents(params = {}) {
     if (err.status === 404) {
       // fallback to generic emergency-incidents
       try {
-        return await request(
-          `/emergency-incidents${qs ? `?${qs}` : ""}`
-        );
+        return await request(`/emergency-incidents${qs ? `?${qs}` : ""}`);
       } catch (err2) {
         // if this also doesn't exist, just return empty list
         if (err2.status === 404) {
@@ -219,14 +218,21 @@ export async function listIncidents(params = {}) {
   }
 }
 
-/* ---------- EMERGENCY REPORTS (RESOLVED HISTORY / IOT ACTIVE) ---------- */
+/* ---------- EMERGENCY REPORTS / IOT EMERGENCIES ---------- */
 
+/**
+ * For Emergency Reports page (history).
+ *  - API: GET /iot/emergencies/history  (RESOLVED / CLOSED)
+ *  - Falls back to admin/emergencies and /emergency-incidents if needed.
+ */
 export async function listEmergencies(params = {}) {
   const qs = new URLSearchParams(params).toString();
 
-  // 1) Try IoT emergencies first (for ESP32 device incidents)
+  // 1) IoT emergency history (RESOLVED/CLOSED)
   try {
-    const data = await request(`/iot/emergencies${qs ? `?${qs}` : ""}`);
+    const data = await request(
+      `/iot/emergencies/history${qs ? `?${qs}` : ""}`
+    );
     if (Array.isArray(data?.items)) return data.items;
     if (Array.isArray(data)) return data;
     return [];
@@ -264,6 +270,18 @@ export async function listEmergencies(params = {}) {
   }
 }
 
+/**
+ * For LIVE dashboard (active only – PENDING/ACTIVE/OPEN/ONGOING).
+ *  - API: GET /iot/emergencies
+ */
+export async function listIotEmergencies(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  const data = await request(`/iot/emergencies${qs ? `?${qs}` : ""}`);
+  if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data)) return data;
+  return [];
+}
+
 /* ---------- NOTIFICATIONS (ADMIN) ---------- */
 
 export async function listNotifications(params = {}) {
@@ -288,16 +306,9 @@ export async function listNotifications(params = {}) {
   }
 }
 
-/* ---------- IOT EMERGENCIES (ESP32 devices) ---------- */
-
-export async function listIotEmergencies(params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  // API route: GET http://localhost:4000/iot/emergencies
-  return request(`/iot/emergencies${qs ? `?${qs}` : ""}`);
-}
+/* ---------- RESOLVE EMERGENCY (IOT) ---------- */
 
 export async function resolveEmergency(id) {
-  // API route: POST http://localhost:4000/iot/emergencies/:id/resolve
   return request(`/iot/emergencies/${id}/resolve`, {
     method: "POST",
   });

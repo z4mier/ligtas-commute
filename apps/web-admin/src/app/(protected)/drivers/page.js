@@ -355,6 +355,11 @@ export default function DriverManagementPage() {
   // Confirm modal
   const [confirm, setConfirm] = useState({ open: false, driver: null });
 
+  // 🔽 NEW: driver-created confirmation modal state
+  const [showCreatedModal, setShowCreatedModal] = useState(false);
+  const [createdDriverName, setCreatedDriverName] = useState("");
+  const [createdDriverPhone, setCreatedDriverPhone] = useState("");
+
   const usedBusNumbers = useMemo(() => {
     const set = new Set();
     for (const d of drivers) if (d.active && d.busNo) set.add(String(d.busNo));
@@ -613,7 +618,24 @@ export default function DriverManagementPage() {
       setLoading(true);
       setSubmitting(true);
       const data = await createDriver(payload);
+
+      // 🔽 NEW: prepare and show "Driver registered" modal
+      const fullNameFromPayload = (form.fullName || "").trim();
+      const driverName =
+        data?.fullName ||
+        data?.name ||
+        fullNameFromPayload ||
+        "New driver";
+
+      const driverPhone =
+        data?.phone || form.phone || "";
+
+      setCreatedDriverName(driverName);
+      setCreatedDriverPhone(driverPhone);
+      setShowCreatedModal(true);
+
       setFlash({ type: "success", text: data?.message || "Driver registered." });
+
       setForm({
         fullName: "",
         email: "",
@@ -1506,6 +1528,142 @@ export default function DriverManagementPage() {
               </>
             )}
           </section>
+        )}
+
+        {/* 🔽 NEW: DRIVER CREATED MODAL */}
+        {showCreatedModal && (
+          <div
+            style={S.overlay}
+            onMouseDown={() => setShowCreatedModal(false)}
+          >
+            <div
+              style={{ ...S.modal, width: "min(420px, 94vw)" }}
+              onMouseDown={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+            >
+              <div style={S.modalHeader}>
+                <strong>Driver registered</strong>
+                <button
+                  type="button"
+                  style={S.iconBtn}
+                  onClick={() => setShowCreatedModal(false)}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                  padding: "4px 2px 2px",
+                }}
+              >
+                {/* Icon */}
+                <div
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: "999px",
+                    background: "#ECFDF3",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <span style={{ fontSize: 24 }}>✅</span>
+                </div>
+
+                <p style={{ fontSize: 14, color: "#4B5563", margin: 0 }}>
+                  A new driver account has been created successfully.
+                </p>
+
+                <div
+                  style={{
+                    fontSize: 14,
+                    background: "#F9FAFB",
+                    borderRadius: 12,
+                    padding: 10,
+                    border: "1px solid #E5E7EB",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      color: "#111827",
+                    }}
+                  >
+                    {createdDriverName}
+                  </div>
+                  {createdDriverPhone && (
+                    <div
+                      style={{
+                        color: "#6B7280",
+                        marginTop: 2,
+                      }}
+                    >
+                      {createdDriverPhone}
+                    </div>
+                  )}
+                </div>
+
+                <p
+                  style={{
+                    fontSize: 14,
+                    color: "#111827",
+                    margin: "4px 0 2px",
+                  }}
+                >
+                  Default password for this driver:
+                </p>
+                <div
+                  style={{
+                    fontFamily:
+                      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+                    fontSize: 14,
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                    background: "#F3F4F6",
+                    border: "1px dashed #D1D5DB",
+                  }}
+                >
+                  Driver123!
+                </div>
+
+                <p
+                  style={{
+                    fontSize: 13,
+                    color: "#6B7280",
+                    marginTop: 6,
+                  }}
+                >
+                  Please remind the driver to change this password right after
+                  logging in for the first time.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => setShowCreatedModal(false)}
+                  style={{
+                    marginTop: 10,
+                    width: "100%",
+                    borderRadius: 999,
+                    border: "none",
+                    padding: "10px 14px",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    background: "#0D658B",
+                    color: "#F9FAFB",
+                    cursor: "pointer",
+                  }}
+                >
+                  Got it
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* QR MODAL */}
