@@ -46,14 +46,8 @@ function inRange(createdAt, from, to) {
 function getLocationText(e) {
   if (e.locationText) return e.locationText;
 
-  const lat =
-    e.latitude ??
-    e.lat ??
-    null;
-  const lng =
-    e.longitude ??
-    e.lng ??
-    null;
+  const lat = e.latitude ?? e.lat ?? null;
+  const lng = e.longitude ?? e.lng ?? null;
 
   if (lat != null && lng != null) {
     return `${lat}, ${lng}`;
@@ -95,10 +89,26 @@ export default function EmergencyReportsPage() {
         ? res
         : [];
 
-      // Only keep resolved emergencies for this page
-      const resolved = raw.filter(
-        (e) => (e.status || "").toUpperCase() === "RESOLVED"
-      );
+      // 🔁 Reports page = NON-ACTIVE incidents (history)
+      const resolved = raw.filter((e) => {
+        const st = (e.status || "").toString().toUpperCase();
+
+        // same active statuses as dashboard (PENDING / ACTIVE / OPEN / ONGOING)
+        if (
+          st === "PENDING" ||
+          st === "ACTIVE" ||
+          st === "OPEN" ||
+          st === "ONGOING"
+        ) {
+          return false;
+        }
+
+        // if no status but has resolvedAt, treat as historical
+        if (!st && e.resolvedAt) return true;
+
+        // anything else (RESOLVED, CLOSED, DISMISSED, etc.) goes here
+        return !!st || !!e.resolvedAt;
+      });
 
       setItems(resolved);
       setPage(1);
@@ -532,8 +542,7 @@ export default function EmergencyReportsPage() {
                   readOnly
                   style={S.fieldTextarea}
                   value={
-                    getLocationText(selected) ||
-                    "No location recorded."
+                    getLocationText(selected) || "No location recorded."
                   }
                 />
               </div>

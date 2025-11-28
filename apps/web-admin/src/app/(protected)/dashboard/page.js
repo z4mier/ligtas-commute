@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { listEmergencies, resolveEmergency } from "@/lib/api"; // 🔁 use listEmergencies
+import { listIotEmergencies, resolveEmergency } from "@/lib/api";
 import { Poppins } from "next/font/google";
 
 /* ---------- FONT ---------- */
@@ -38,12 +38,18 @@ function fmtDateTime(d) {
   return dt.toLocaleString();
 }
 
-/* code (YELLOW / ORANGE / RED) -> severity label */
+/* code (YELLOW / ORANGE / RED) -> severity label
+   - YELLOW  -> MINOR
+   - ORANGE  -> MODERATE
+   - RED     -> HIGH
+*/
 function mapSeverityFromCode(codeRaw) {
   const c = (codeRaw || "").toString().toUpperCase();
-  if (c === "RED" || c === "CODE_RED") return "CRITICAL";
-  if (c === "ORANGE") return "HIGH";
-  if (c === "YELLOW") return "MEDIUM";
+
+  if (c === "RED" || c === "CODE_RED") return "HIGH"; // Code Red = High severity
+  if (c === "ORANGE" || c === "CODE_ORANGE") return "MODERATE"; // Code Orange = Moderate
+  if (c === "YELLOW" || c === "CODE_YELLOW") return "MINOR"; // Code Yellow = Minor
+
   return "UNKNOWN";
 }
 
@@ -54,7 +60,7 @@ export default function EmergencyDashboardPage() {
   const [resolvingId, setResolvingId] = useState(null);
   const [flash, setFlash] = useState({ type: "", text: "" });
 
-  // realtime + modal
+  // NEW: for realtime + modal
   const [alertIncident, setAlertIncident] = useState(null);
   const [showAlertModal, setShowAlertModal] = useState(false);
   const prevIdsRef = useRef(new Set());
@@ -72,10 +78,8 @@ export default function EmergencyDashboardPage() {
     try {
       if (!quiet) setLoading(true);
 
-      // 🔁 unified helper – this already tries /iot/emergencies first
-      const data = await listEmergencies({});
+      const data = await listIotEmergencies({});
 
-      // Normalize shape: allow array, {items}, {incidents}
       const arr = Array.isArray(data)
         ? data
         : Array.isArray(data.items)
@@ -84,7 +88,6 @@ export default function EmergencyDashboardPage() {
         ? data.incidents
         : [];
 
-      // (Optional) Filter for still-active incidents
       const active = arr.filter((e) => {
         const st = (e.status || "").toString().toUpperCase();
         return (
@@ -120,26 +123,9 @@ export default function EmergencyDashboardPage() {
         hasLoadedRef.current = true;
       }
     } catch (err) {
-      const msg = err?.message || String(err || "");
-      const status = err?.status || err?.response?.status;
-
-      // Treat 404 as "no emergencies yet", not as a crash
-      if (
-        status === 404 ||
-        msg.includes("404") ||
-        msg.toLowerCase().includes("not found")
-      ) {
-        setEmergencies([]);
-        prevIdsRef.current = new Set();
-        if (!hasLoadedRef.current) {
-          hasLoadedRef.current = true;
-        }
-        return;
-      }
-
-      console.error("LOAD EMERGENCIES ERROR:", msg);
+      console.error("LOAD EMERGENCIES ERROR:", err);
       if (!quiet) {
-        showFlash("error", msg || "Failed to load emergencies.");
+        showFlash("error", err?.message || "Failed to load emergencies.");
       }
     } finally {
       if (!quiet) setLoading(false);
@@ -174,9 +160,8 @@ export default function EmergencyDashboardPage() {
 
       showFlash("success", "Incident marked as resolved.");
     } catch (err) {
-      const msg = err?.message || String(err || "");
-      console.error("RESOLVE EMERGENCY ERROR:", msg);
-      showFlash("error", msg || "Failed to resolve incident.");
+      console.error("RESOLVE EMERGENCY ERROR:", err);
+      showFlash("error", err?.message || "Failed to resolve incident.");
     } finally {
       setResolvingId(null);
     }
@@ -192,22 +177,21 @@ export default function EmergencyDashboardPage() {
     let style;
     let label;
 
-    if (baseSeverity === "LOW") {
+    if (baseSeverity === "MINOR" || baseSeverity === "LOW") {
+      // Code Yellow
       style = Sx.sevLow;
-      label = "LOW";
-    } else if (baseSeverity === "MEDIUM" || baseSeverity === "MODERATE") {
+      label = "MINOR";
+    } else if (baseSeverity === "MODERATE" || baseSeverity === "MEDIUM") {
+      // Code Orange
       style = Sx.sevMedium;
-      label = "MEDIUM";
-    } else if (
-      baseSeverity === "HIGH" ||
-      baseSeverity === "CRITICAL" ||
-      baseSeverity === "CODE_RED"
-    ) {
+      label = "MODERATE";
+    } else if (baseSeverity === "HIGH" || baseSeverity === "CRITICAL") {
+      // Code Red
       style = Sx.sevHigh;
       label = "HIGH";
     } else {
-      style = Sx.sevMedium;
-      label = "MEDIUM";
+      style = Sx.sevUnknown;
+      label = "UNKNOWN";
     }
 
     return <span style={style}>{label}</span>;
@@ -329,6 +313,7 @@ export default function EmergencyDashboardPage() {
               move to Emergency Reports.
             </div>
           </div>
+          {/* Refresh button removed – realtime na via polling */}
         </div>
 
         {loading && emergencies.length === 0 ? (
@@ -401,7 +386,9 @@ export default function EmergencyDashboardPage() {
                           {busPlate ? "Plate / Incident" : "Incident ID"}
                         </span>
                         <span style={S.infoValue}>
-                          {busPlate ? `${busPlate} · ${id}` : id || "N/A"}
+                          {busPlate
+                            ? `${busPlate} · ${id}`
+                            : id || "Not available"}
                         </span>
                       </div>
                     </div>
@@ -497,6 +484,7 @@ export default function EmergencyDashboardPage() {
 }
 
 /* ---------- styles ---------- */
+
 const styles = {
   page: {
     display: "grid",

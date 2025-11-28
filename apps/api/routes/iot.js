@@ -136,6 +136,43 @@ router.post("/emergency", async (req, res) => {
   }
 });
 
+/* helper to normalize incidents (shared by active + history) */
+function mapIncident(i) {
+  // prefer stored columns, fallback to relation
+  const busNumber = i.busNumber || i.bus?.number || null;
+  const busPlate = i.busPlate || i.bus?.plate || null;
+
+  // driver name from DriverProfile relation
+  const driverName = i.driver?.fullName || null;
+
+  return {
+    // base fields from EmergencyIncident
+    id: i.id,
+    deviceId: i.deviceId,
+    code: i.code,
+    message: i.message,
+    latitude: i.latitude,
+    longitude: i.longitude,
+    status: i.status,
+    busId: i.busId,
+    driverProfileId: i.driverProfileId,
+    busNumber,
+    busPlate,
+    createdAt: i.createdAt,
+    resolvedAt: i.resolvedAt,
+
+    // extra nested-ish fields used by frontend
+    driverName, // 🔴 this is what the dashboard reads
+    bus: i.bus
+      ? {
+          id: i.bus.id,
+          number: i.bus.number,
+          plate: i.bus.plate,
+        }
+      : null,
+  };
+}
+
 /* =========================================
    GET /iot/emergencies  (Admin dashboard – ACTIVE ONLY)
    ========================================= */
@@ -148,9 +185,20 @@ router.get("/emergencies", async (_req, res) => {
         },
       },
       orderBy: { createdAt: "desc" },
+      include: {
+        driver: {
+          select: { driverId: true, fullName: true },
+        },
+        bus: {
+          select: { id: true, number: true, plate: true },
+        },
+      },
     });
 
-    return res.json(incidents);
+    // map so we always have driverName / busNumber / busPlate fields
+    const mapped = incidents.map(mapIncident);
+
+    return res.json(mapped);
   } catch (err) {
     console.error("GET /iot/emergencies ERROR:", err);
     return res.status(500).json({
@@ -172,9 +220,19 @@ router.get("/emergencies/history", async (_req, res) => {
         },
       },
       orderBy: { createdAt: "desc" },
+      include: {
+        driver: {
+          select: { driverId: true, fullName: true },
+        },
+        bus: {
+          select: { id: true, number: true, plate: true },
+        },
+      },
     });
 
-    return res.json(incidents);
+    const mapped = incidents.map(mapIncident);
+
+    return res.json(mapped);
   } catch (err) {
     console.error("GET /iot/emergencies/history ERROR:", err);
     return res.status(500).json({
