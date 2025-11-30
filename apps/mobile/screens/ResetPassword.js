@@ -23,6 +23,7 @@ import {
   Poppins_600SemiBold,
   Poppins_700Bold,
 } from "@expo-google-fonts/poppins";
+import { StatusBar } from "expo-status-bar"; // ✅ added
 import { API_URL } from "../constants/config";
 
 const COLORS = {
@@ -141,11 +142,10 @@ export default function ResetPassword({ navigation, route }) {
         general: undefined,
       });
 
-      // give time to read the green message, then go back to login
       setRedirecting(true);
       setTimeout(() => {
         navigation.reset({ index: 0, routes: [{ name: "Login" }] });
-      }, 2500); // 2.5 seconds
+      }, 2500);
     } catch (_e) {
       setErrors({
         code: undefined,
@@ -161,14 +161,17 @@ export default function ResetPassword({ navigation, route }) {
 
   if (!fontsLoaded) {
     return (
-      <SafeAreaView style={styles.loadingBox} edges={["top", "bottom"]}>
+      <SafeAreaView style={styles.loadingBox} edges={["bottom"]}>
         <ActivityIndicator color="#fff" />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
+    <SafeAreaView style={styles.screen} edges={["bottom"]}>
+      {/* ✅ Status bar over hero */}
+      <StatusBar style="light" translucent backgroundColor="transparent" />
+
       {/* Curved hero */}
       <View style={[styles.curveHero, { height: HERO_H }]}>
         <View
@@ -394,7 +397,7 @@ export default function ResetPassword({ navigation, route }) {
               )}
             </TouchableOpacity>
 
-            {/* Back to login (manual) */}
+            {/* Back to login */}
             <TouchableOpacity
               onPress={() =>
                 navigation.reset({ index: 0, routes: [{ name: "Login" }] })
@@ -481,7 +484,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: "100%",
     paddingLeft: 44,
-    paddingRight: 44, // space for eye icon
+    paddingRight: 44,
     fontSize: 14.5,
     color: "#0F1B2B",
   },
@@ -504,7 +507,7 @@ const styles = StyleSheet.create({
   },
   backText: {
     color: COLORS.link,
-    textDecorationLine: "underline",
+    textDecorationLine: "none",
     fontSize: 13.5,
   },
 

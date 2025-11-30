@@ -150,14 +150,19 @@ export default function SignupScreen({ navigation }) {
   return (
     <SafeAreaView style={s.screen}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
         <ScrollView
-          contentContainerStyle={{ paddingBottom: 28 }}
           style={s.bodyPad}
+          contentContainerStyle={{ paddingBottom: 28 }}
+          keyboardShouldPersistTaps="handled"
         >
-          <TouchableOpacity onPress={() => navigation.goBack()} style={s.backRow}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={s.backRow}
+          >
             <Ionicons
               name="chevron-back"
               size={20}
@@ -288,7 +293,7 @@ export default function SignupScreen({ navigation }) {
           <View style={s.footerRow}>
             <Text style={[s.subtle, s.f400]}>Already have an account?</Text>
             <Pressable onPress={() => navigation.replace("Login")} hitSlop={8}>
-              <Text style={[s.linkText, s.f600]}>  Sign in</Text>
+              <Text style={[s.linkText, s.f600]}>Sign in</Text>
             </Pressable>
           </View>
         </ScrollView>
@@ -346,7 +351,11 @@ const s = StyleSheet.create({
   backText: { color: "rgba(255,255,255,0.85)", marginLeft: 6 },
   header: { alignItems: "center", marginTop: 10 },
   h2: { color: "#FFFFFF", fontSize: 22, marginTop: 16 },
-  subtle: { color: "rgba(255,255,255,0.85)", textAlign: "center", marginTop: 4 },
+  subtle: {
+    color: "rgba(255,255,255,0.85)",
+    textAlign: "center",
+    marginTop: 4,
+  },
   label: { color: "#FFFFFF", fontSize: 12.5, marginBottom: 6 },
   inputWrap: {
     height: 48,
@@ -381,12 +390,14 @@ const s = StyleSheet.create({
   footerRow: {
     flexDirection: "row",
     justifyContent: "center",
+    alignItems: "center", 
     marginTop: 16,
     marginBottom: 18,
   },
   linkText: {
     color: COLORS.link,
-    textDecorationLine: "underline",
     fontSize: 13.5,
+    marginLeft: 4, 
+    textDecorationLine: "none", 
   },
 });

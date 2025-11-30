@@ -25,6 +25,7 @@ import {
   Poppins_600SemiBold,
   Poppins_700Bold,
 } from "@expo-google-fonts/poppins";
+import { StatusBar } from "expo-status-bar";
 import { API_URL } from "../constants/config";
 
 export default function LoginScreen({ navigation }) {
@@ -44,7 +45,7 @@ export default function LoginScreen({ navigation }) {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const inFlight = useRef(false); // 🚫 prevents double submit
+  const inFlight = useRef(false);
 
   const [errors, setErrors] = useState({
     email: undefined,
@@ -83,7 +84,6 @@ export default function LoginScreen({ navigation }) {
 
       const data = await res.json().catch(() => ({}));
 
-      // ⛔ Not verified yet → route to OTP screen for this email
       if (res.status === 403 && data?.code === "NOT_ACTIVE") {
         navigation.replace("OtpVerify", { email: key });
         return;
@@ -106,7 +106,6 @@ export default function LoginScreen({ navigation }) {
         return;
       }
 
-      // ✅ Success
       if (data?.token) await AsyncStorage.setItem("token", data.token);
       if (data?.user)
         await AsyncStorage.setItem("user", JSON.stringify(data.user));
@@ -137,15 +136,17 @@ export default function LoginScreen({ navigation }) {
 
   if (!fontsLoaded) {
     return (
-      <SafeAreaView style={styles.loadingBox} edges={["top", "bottom"]}>
+      <SafeAreaView style={styles.loadingBox} edges={["bottom"]}>
         <ActivityIndicator color="#fff" />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
-      {/* Curved hero with bigger logo */}
+    <SafeAreaView style={styles.screen} edges={["bottom"]}>
+      <StatusBar style="light" translucent backgroundColor="transparent" />
+
+      {/* Curved hero */}
       <View style={[styles.curveHero, { height: HERO_H }]}>
         <View
           style={[
@@ -275,7 +276,7 @@ export default function LoginScreen({ navigation }) {
               ) : null}
             </View>
 
-            {/* 👉 Forgot password link (right-aligned) */}
+            {/* Forgot password link */}
             <View style={styles.forgotRow}>
               <TouchableOpacity
                 onPress={() => navigation.navigate("ForgotPassword")}
@@ -304,28 +305,22 @@ export default function LoginScreen({ navigation }) {
               {loading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text
-                  style={[styles.primaryBtnText, styles.f600]}
-                >
+                <Text style={[styles.primaryBtnText, styles.f600]}>
                   Sign in
                 </Text>
               )}
             </TouchableOpacity>
 
+            {/* Footer: Sign up */}
             <View style={styles.footerRow}>
-              <Text
-                style={[styles.smallText, styles.subtle, styles.f400]}
-              >
+              <Text style={[styles.smallText, styles.subtle, styles.f400]}>
                 Don’t have an account?
               </Text>
               <Pressable
                 onPress={() => navigation.navigate("Signup")}
                 hitSlop={8}
               >
-                <Text style={[styles.linkText, styles.f600]}>
-                  {"  "}
-                  Sign up
-                </Text>
+                <Text style={[styles.linkText, styles.f600]}>Sign up</Text>
               </Pressable>
             </View>
           </ScrollView>
@@ -404,7 +399,6 @@ const styles = StyleSheet.create({
     color: "#0F1B2B",
   },
 
-  /* Forgot password row */
   forgotRow: {
     width: "100%",
     alignItems: "flex-end",
@@ -414,7 +408,7 @@ const styles = StyleSheet.create({
   forgotText: {
     fontSize: 11.5,
     color: "#FFFFFF",
-    textDecorationLine: "underline",
+    textDecorationLine: "none", 
   },
 
   primaryBtn: {
@@ -430,12 +424,14 @@ const styles = StyleSheet.create({
   footerRow: {
     flexDirection: "row",
     justifyContent: "center",
+    alignItems: "center", 
     marginTop: 16,
   },
   smallText: { fontSize: 12.5 },
   linkText: {
     color: COLORS.link,
-    textDecorationLine: "underline",
     fontSize: 13.5,
+    marginLeft: 4, 
+    textDecorationLine: "none", 
   },
 });

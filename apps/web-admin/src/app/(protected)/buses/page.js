@@ -491,18 +491,31 @@ export default function BusManagementPage() {
     e.preventDefault();
     if (!editingBus) return;
 
+    // basic front-end validation para di ka ma-"Invalid input"
+    if (!editForm.busType || !editForm.number || !editForm.plate) {
+      showFlash(
+        "error",
+        "Bus type, bus number, and plate number are required."
+      );
+      return;
+    }
+    if (!editForm.corridor || !editForm.routeId) {
+      showFlash("error", "Please select a corridor and route.");
+      return;
+    }
+
     try {
       setSaving(true);
 
       const detailsBody = {
         busType: editForm.busType,
-        number: editForm.number,
-        plate: editForm.plate,
+        number: (editForm.number || "").trim(),
+        plate: (editForm.plate || "").trim(),
         corridor: editForm.corridor,
         routeId: editForm.routeId,
-        forwardRoute: editForm.forwardRoute,
-        returnRoute: editForm.returnRoute,
-        deviceId: editForm.deviceId.trim() || null,
+        forwardRoute: editForm.forwardRoute || "",
+        returnRoute: editForm.returnRoute || "",
+        deviceId: (editForm.deviceId || "").trim() || null,
       };
 
       // 1) update main bus fields (PUT /buses/:id)
@@ -910,9 +923,10 @@ export default function BusManagementPage() {
                   <label style={S.label}>Bus Type</label>
                   <select
                     style={S.input}
-                    value={editForm.busType}
+                    value={editForm.busType || ""}
                     onChange={(e) => updEdit("busType", e.target.value)}
                   >
+                    <option value="">Select bus type</option>
                     <option value="AIRCON">AIRCON</option>
                     <option value="NON_AIRCON">NON_AIRCON</option>
                   </select>
@@ -1093,7 +1107,6 @@ export default function BusManagementPage() {
 }
 
 /* ---------- LIGHT THEME STYLES ---------- */
-
 const styles = {
   page: {
     display: "grid",
@@ -1161,7 +1174,10 @@ const styles = {
     fontSize: 14,
     color: type === "error" ? "#B91C1C" : "#166534",
     background: type === "error" ? "#FEE2E2" : "#DCFCE7",
-    border: type === "error" ? "1px solid #FCA5A5" : "1px solid #86EFAC",
+    border:
+      type === "error"
+        ? "1px solid #FCA5A5"
+        : "1px solid #86EFAC", // ✅ fixed quotes
   }),
 
   toolbar: {
@@ -1276,7 +1292,7 @@ const styles = {
       color = "#166534";
     } else if (isMaint) {
       bg = "#FEF3C7";
-      border = "1px solid #FBBF24";
+      border = "1px solid #FBBF24"; // ✅ fixed quotes
       color = "#92400E";
     } else {
       bg = "#E5E7EB";
@@ -1360,7 +1376,7 @@ const styles = {
     background: "var(--card)",
     borderRadius: 20,
     padding: 20,
-    border: "1px solid " + "var(--line)",
+    border: "1px solid var(--line)",
     boxShadow: "0 24px 60px rgba(15,23,42,0.18)",
   },
   modalHeader: {

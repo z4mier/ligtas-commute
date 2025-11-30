@@ -20,6 +20,12 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  useFonts,
+  Poppins_400Regular,
+  Poppins_600SemiBold,
+  Poppins_700Bold,
+} from "@expo-google-fonts/poppins";
 import { API_URL } from "../constants/config";
 
 const C = {
@@ -40,14 +46,10 @@ const HEADER_H = 48;
 /** Try reading token from various keys & shapes */
 async function getAuthToken() {
   const tokenKeys = [
-    "authToken", // previous main commuter key
+    "authToken",
     "AUTH_TOKEN",
     "LC_COMMUTER_TOKEN",
-
-    // 🔥 actual key from your Login screen
     "token",
-
-    // other possible keys we might reuse
     "lc_user",
     "lc_token",
     "lc_admin",
@@ -64,7 +66,6 @@ async function getAuthToken() {
 
       const trimmed = String(raw).trim();
 
-      // JSON stored: { token: "...", role: "COMMUTER" }
       if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
         try {
           const obj = JSON.parse(trimmed);
@@ -85,7 +86,6 @@ async function getAuthToken() {
           );
         }
       } else {
-        // plain string token
         console.log("[BusScanner] using raw token under key =", key);
         return trimmed;
       }
@@ -99,7 +99,6 @@ async function getAuthToken() {
 
 /* --------- helper: make route pretty like "SBT — Santander / Lilo-an Port — SBT" --------- */
 function prettyRouteLabel(forward, back, rawLabel) {
-  // If backend already gave a nice label, use it
   if (rawLabel && String(rawLabel).trim()) return String(rawLabel).trim();
 
   const f = forward ? String(forward).trim() : "";
@@ -109,7 +108,6 @@ function prettyRouteLabel(forward, back, rawLabel) {
   if (f && !r) return f;
   if (!f && r) return r;
 
-  // Try to split on "→" first (your bus routes use this)
   const splitSegment = (seg) => {
     if (!seg) return [];
     if (seg.includes("→")) {
@@ -121,8 +119,8 @@ function prettyRouteLabel(forward, back, rawLabel) {
     return [seg.trim()];
   };
 
-  const fParts = splitSegment(f); // e.g. ["SBT", "Santander / Lilo-an Port"]
-  const rParts = splitSegment(r); // e.g. ["Santander / Lilo-an Port", "SBT"]
+  const fParts = splitSegment(f);
+  const rParts = splitSegment(r);
 
   if (fParts.length >= 2 && rParts.length >= 2) {
     const start = fParts[0];
@@ -130,19 +128,45 @@ function prettyRouteLabel(forward, back, rawLabel) {
     const end = rParts[rParts.length - 1];
 
     if (start && mid && end) {
-      // If it’s a loop (SBT at both ends) this becomes: SBT — Santander / Lilo-an Port — SBT
       return `${start} — ${mid} — ${end}`;
     }
   }
 
-  // Fallback: just show forward — return raw
   return `${f} — ${r}`;
+}
+
+/** Friendlier message for invalid QR errors */
+function prettyScanError(raw) {
+  if (!raw) {
+    return "We couldn’t read this QR code. Please try again.";
+  }
+
+  const lower = String(raw).toLowerCase();
+
+  if (lower.includes("bus number missing")) {
+    return "This QR code is missing the bus number. Please scan the official LigtasCommute QR sticker inside the registered bus.";
+  }
+
+  if (lower.includes("invalid qr")) {
+    return "This QR code is not recognized by LigtasCommute. Please scan the bus QR provided by the system.";
+  }
+
+  if (lower.includes("unauthorized") || lower.includes("token")) {
+    return "Your session expired. Please log in again and try scanning the bus QR once more.";
+  }
+
+  return raw;
 }
 
 export default function BusScanner({ navigation }) {
   const insets = useSafeAreaInsets();
 
-  // Camera permissions
+  const [fontsLoaded] = useFonts({
+    Poppins_400Regular,
+    Poppins_600SemiBold,
+    Poppins_700Bold,
+  });
+
   const [permission, requestPermission] = useCameraPermissions();
   const hasPermission = !!permission?.granted;
 
@@ -153,6 +177,7 @@ export default function BusScanner({ navigation }) {
   const [infoOpen, setInfoOpen] = useState(false);
   const [loadingLookup, setLoadingLookup] = useState(false);
   const [error, setError] = useState("");
+  const [errorModalVisible, setErrorModalVisible] = useState(false);
 
   useEffect(() => {
     if (!permission) {
@@ -166,6 +191,7 @@ export default function BusScanner({ navigation }) {
     scanLock.current = false;
     setScanning(true);
     setError("");
+    setErrorModalVisible(false);
   }, []);
 
   /** Close screen */
@@ -176,8 +202,6 @@ export default function BusScanner({ navigation }) {
     navigation.goBack();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  /* -------------- HELPERS -------------- */
 
   const corridorLabel = (c) => {
     if (!c) return "—";
@@ -234,11 +258,7 @@ export default function BusScanner({ navigation }) {
       null;
 
     const routeLabel =
-      out.routeLabel ??
-      out.bus?.routeLabel ??
-      out.bus?.route ??
-      out.route ??
-      null;
+      out.routeLabel ?? out.bus?.routeLabel ?? out.bus?.route ?? out.route ?? null;
 
     const status =
       out.status ??
@@ -277,7 +297,7 @@ export default function BusScanner({ navigation }) {
       corridor,
       forwardRoute,
       returnRoute,
-      routeLabel, // 🔹 keep raw route label if backend provides it
+      routeLabel,
 
       status,
       onDuty: !!onDuty,
@@ -291,7 +311,6 @@ export default function BusScanner({ navigation }) {
     try {
       console.log("[BusScanner] scanned data =", data);
 
-      // Decode QR payload. For bus QR we expect JSON from backend.
       let parsed = null;
       try {
         parsed = JSON.parse(String(data));
@@ -333,13 +352,15 @@ export default function BusScanner({ navigation }) {
       setDriver(obj);
       setInfoOpen(true);
     } catch (err) {
-      console.error("[BusScanner] handlePayload ERROR:", err);
-      setError(err.message || "Scan failed. Try again.");
+      // 🔹 use console.log so Expo doesn't show the red LogBox toast
+      console.log("[BusScanner] handlePayload ERROR:", err?.message || err);
 
-      setTimeout(() => {
-        scanLock.current = false;
-        setScanning(true);
-      }, 1500);
+      const msg = prettyScanError(err?.message || "Scan failed. Try again.");
+      setError(msg);
+      setErrorModalVisible(true);
+
+      scanLock.current = true;
+      setScanning(false);
     }
   };
 
@@ -354,7 +375,6 @@ export default function BusScanner({ navigation }) {
     handlePayload(data);
   };
 
-  /** Time text for modal */
   const timeText = useMemo(() => {
     if (!driver?.scannedAt) return "";
     const d = driver.scannedAt;
@@ -369,7 +389,6 @@ export default function BusScanner({ navigation }) {
   const isOnDuty =
     !!driver?.onDuty || driver?.status === "ON_DUTY" || driver?.status === "ACTIVE";
 
-  // 🔹 Use same style as drivers page: SBT — Santander / Lilo-an Port — SBT
   const routeLine = useMemo(() => {
     if (!driver) return "—";
     return prettyRouteLabel(
@@ -383,11 +402,19 @@ export default function BusScanner({ navigation }) {
    *   PERMISSION / LOADING STATES
    *  ============================= */
 
+  if (!fontsLoaded) {
+    return (
+      <SafeAreaView style={[s.screen, s.center]}>
+        <ActivityIndicator />
+      </SafeAreaView>
+    );
+  }
+
   if (Platform.OS === "web") {
     return (
       <SafeAreaView style={[s.screen, s.center]}>
         <MaterialCommunityIcons name="web" size={34} color={C.hint} />
-        <Text style={s.hint}>Camera not available on web</Text>
+        <Text style={[s.hint, s.f400]}>Camera not available on web</Text>
       </SafeAreaView>
     );
   }
@@ -396,7 +423,7 @@ export default function BusScanner({ navigation }) {
     return (
       <SafeAreaView style={[s.screen, s.center]}>
         <ActivityIndicator />
-        <Text style={s.hint}>Requesting camera permission…</Text>
+        <Text style={[s.hint, s.f400]}>Requesting camera permission…</Text>
       </SafeAreaView>
     );
   }
@@ -404,9 +431,9 @@ export default function BusScanner({ navigation }) {
   if (!hasPermission) {
     return (
       <SafeAreaView style={[s.screen, s.center]}>
-        <Text style={s.hint}>Camera permission required</Text>
+        <Text style={[s.hint, s.f400]}>Camera permission required</Text>
         <TouchableOpacity style={s.primaryBtn} onPress={requestPermission}>
-          <Text style={s.primaryBtnTxt}>Enable</Text>
+          <Text style={[s.primaryBtnTxt, s.f600]}>Enable</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
@@ -430,7 +457,7 @@ export default function BusScanner({ navigation }) {
         <TouchableOpacity style={s.iconBtn} onPress={closeAndBack}>
           <MaterialCommunityIcons name="arrow-left" size={22} color={C.text} />
         </TouchableOpacity>
-        <Text style={s.topTitle}>Scan Bus QR</Text>
+        <Text style={[s.topTitle, s.f600]}>Scan Bus QR</Text>
         <View style={{ width: 36 }} />
       </View>
 
@@ -448,7 +475,7 @@ export default function BusScanner({ navigation }) {
             {loadingLookup ? (
               <>
                 <ActivityIndicator />
-                <Text style={[s.hint, { marginTop: 8 }]}>
+                <Text style={[s.hint, s.f400, { marginTop: 8 }]}>
                   Looking up driver and bus…
                 </Text>
               </>
@@ -459,8 +486,14 @@ export default function BusScanner({ navigation }) {
                   size={34}
                   color={C.hint}
                 />
-                <Text style={[s.hint, { marginTop: 8 }]}>
-                  {error || "Processing…"}
+                <Text
+                  style={[
+                    s.hint,
+                    s.f400,
+                    { marginTop: 8, textAlign: "center" },
+                  ]}
+                >
+                  {errorModalVisible ? "" : error || "Processing…"}
                 </Text>
               </>
             )}
@@ -470,15 +503,17 @@ export default function BusScanner({ navigation }) {
         {/* Scan frame */}
         <View pointerEvents="none" style={s.overlay}>
           <View style={s.frame} />
-          <Text style={s.overlayHint}>Align QR inside the frame</Text>
+          <Text style={[s.overlayHint, s.f400]}>
+            Align QR inside the frame
+          </Text>
         </View>
       </View>
 
-      {/* RESCAN */}
+      {/* RESCAN BUTTON (manual) */}
       <View style={[s.actionsRow, { paddingBottom: 14 + insets.bottom }]}>
         <TouchableOpacity style={s.secondaryBtn} onPress={resetScan}>
           <MaterialCommunityIcons name="reload" size={18} color={C.brand} />
-          <Text style={s.secondaryBtnTxt}>Rescan</Text>
+          <Text style={[s.secondaryBtnTxt, s.f600]}>Rescan</Text>
         </TouchableOpacity>
       </View>
 
@@ -497,7 +532,13 @@ export default function BusScanner({ navigation }) {
           <View style={s.infoCard}>
             {/* Header */}
             <View style={s.infoHeader}>
-              <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  flex: 1,
+                }}
+              >
                 <View style={s.avatarCircle}>
                   <MaterialCommunityIcons
                     name="account"
@@ -506,7 +547,6 @@ export default function BusScanner({ navigation }) {
                   />
                 </View>
                 <View style={{ marginLeft: 10, flex: 1 }}>
-                  {/* Name + status pill on the same row */}
                   <View
                     style={{
                       flexDirection: "row",
@@ -514,7 +554,7 @@ export default function BusScanner({ navigation }) {
                       flexWrap: "wrap",
                     }}
                   >
-                    <Text style={s.infoTitle}>
+                    <Text style={[s.infoTitle, s.f600]}>
                       {driver?.name ?? "Unknown Driver"}
                     </Text>
                     <View
@@ -536,6 +576,7 @@ export default function BusScanner({ navigation }) {
                       <Text
                         style={[
                           s.statusPillTxt,
+                          s.f600,
                           { color: isOnDuty ? C.green : C.sub },
                         ]}
                       >
@@ -544,7 +585,9 @@ export default function BusScanner({ navigation }) {
                     </View>
                   </View>
 
-                  {!!timeText && <Text style={s.infoSub}>{timeText}</Text>}
+                  {!!timeText && (
+                    <Text style={[s.infoSub, s.f400]}>{timeText}</Text>
+                  )}
                 </View>
               </View>
 
@@ -560,57 +603,61 @@ export default function BusScanner({ navigation }) {
 
             {/* Info sections */}
             <View style={[s.infoBox, { marginTop: 14 }]}>
-              {/* Bus */}
               <View style={{ flexDirection: "row", alignItems: "center" }}>
                 <MaterialCommunityIcons
                   name="bus-side"
                   size={20}
                   color={C.brand}
                 />
-                <Text style={[s.sectionTitle, { marginLeft: 6 }]}>
+                <Text style={[s.sectionTitle, s.f600, { marginLeft: 6 }]}>
                   Assigned Bus
                 </Text>
               </View>
 
               <View style={{ marginTop: 8 }}>
-                <Text style={s.label}>Bus Number</Text>
-                <Text style={s.value}>{driver?.busNumber ?? "—"}</Text>
+                <Text style={[s.label, s.f400]}>Bus Number</Text>
+                <Text style={[s.value, s.f600]}>
+                  {driver?.busNumber ?? "—"}
+                </Text>
               </View>
 
               <View style={{ marginTop: 8 }}>
-                <Text style={s.label}>Plate Number</Text>
-                <Text style={s.value}>{driver?.plateNumber ?? "—"}</Text>
+                <Text style={[s.label, s.f400]}>Plate Number</Text>
+                <Text style={[s.value, s.f600]}>
+                  {driver?.plateNumber ?? "—"}
+                </Text>
               </View>
 
               <View style={{ marginTop: 8 }}>
-                <Text style={s.label}>Bus Type</Text>
-                <Text style={s.value}>
+                <Text style={[s.label, s.f400]}>Bus Type</Text>
+                <Text style={[s.value, s.f600]}>
                   {busTypeLabel(driver?.busType) ?? "—"}
                 </Text>
               </View>
             </View>
 
             <View style={[s.infoBox, { marginTop: 10 }]}>
-              {/* Route */}
               <View style={{ flexDirection: "row", alignItems: "center" }}>
                 <MaterialCommunityIcons
                   name="map-marker-path"
                   size={20}
                   color={C.brand}
                 />
-                <Text style={[s.sectionTitle, { marginLeft: 6 }]}>
+                <Text style={[s.sectionTitle, s.f600, { marginLeft: 6 }]}>
                   Route & Corridor
                 </Text>
               </View>
 
               <View style={{ marginTop: 8 }}>
-                <Text style={s.label}>Corridor</Text>
-                <Text style={s.value}>{corridorLabel(driver?.corridor)}</Text>
+                <Text style={[s.label, s.f400]}>Corridor</Text>
+                <Text style={[s.value, s.f600]}>
+                  {corridorLabel(driver?.corridor)}
+                </Text>
               </View>
 
               <View style={{ marginTop: 8 }}>
-                <Text style={s.label}>Route</Text>
-                <Text style={s.value}>{routeLine}</Text>
+                <Text style={[s.label, s.f400]}>Route</Text>
+                <Text style={[s.value, s.f600]}>{routeLine}</Text>
               </View>
             </View>
 
@@ -626,7 +673,40 @@ export default function BusScanner({ navigation }) {
                 });
               }}
             >
-              <Text style={s.primaryBtnTxt}>Start Tracking</Text>
+              <Text style={[s.primaryBtnTxt, s.f600]}>Start Tracking</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* INVALID QR MODAL */}
+      <Modal
+        visible={errorModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={resetScan}
+      >
+        <View style={s.modalBg} />
+        <View style={s.infoCardWrap}>
+          <View style={s.errorCard}>
+            <View style={s.errorIconCircle}>
+              <MaterialCommunityIcons
+                name="alert-circle-outline"
+                size={26}
+                color={C.redDark}
+              />
+            </View>
+            <Text style={[s.errorTitle, s.f700]}>Invalid QR code</Text>
+            <Text style={[s.errorMsg, s.f400]}>{error}</Text>
+            <Text style={[s.errorHint, s.f400]}>
+              Only scan QR codes from buses registered in LigtasCommute.
+            </Text>
+
+            <TouchableOpacity
+              style={[s.primaryBtn, { marginTop: 16 }]}
+              onPress={resetScan}
+            >
+              <Text style={[s.primaryBtnTxt, s.f600]}>Scan again</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -639,6 +719,10 @@ export default function BusScanner({ navigation }) {
  *  STYLES
  *  ============================= */
 const s = StyleSheet.create({
+  f400: { fontFamily: "Poppins_400Regular" },
+  f600: { fontFamily: "Poppins_600SemiBold" },
+  f700: { fontFamily: "Poppins_700Bold" },
+
   screen: { flex: 1, backgroundColor: C.bg },
   center: { alignItems: "center", justifyContent: "center" },
 
@@ -660,7 +744,7 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  topTitle: { fontWeight: "700", fontSize: 14, color: C.text },
+  topTitle: { fontSize: 14, color: C.text },
 
   cameraWrap: {
     flex: 1,
@@ -710,7 +794,7 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.border,
   },
-  secondaryBtnTxt: { color: C.brand, fontSize: 13, fontWeight: "700" },
+  secondaryBtnTxt: { color: C.brand, fontSize: 13 },
 
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.18)" },
 
@@ -747,7 +831,7 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  infoTitle: { fontWeight: "700", fontSize: 15, color: C.text },
+  infoTitle: { fontSize: 15, color: C.text },
   infoSub: { color: C.sub, fontSize: 11, marginTop: 2 },
 
   infoBox: {
@@ -757,22 +841,6 @@ const s = StyleSheet.create({
     padding: 12,
     backgroundColor: "#FAFAFA",
   },
-
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-
-  badge: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: C.border,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    backgroundColor: "#fff",
-  },
-  badgeTxt: { fontSize: 11, fontWeight: "700" },
 
   statusPill: {
     flexDirection: "row",
@@ -790,21 +858,62 @@ const s = StyleSheet.create({
   },
   statusPillTxt: {
     fontSize: 11,
-    fontWeight: "600",
   },
 
-  sectionTitle: { fontSize: 12, fontWeight: "700", color: C.text },
+  sectionTitle: { fontSize: 12, color: C.text },
 
   label: { fontSize: 11, color: C.sub, marginTop: 2 },
-  value: { fontSize: 13, fontWeight: "600", color: C.text, marginTop: 2 },
+  value: { fontSize: 13, color: C.text, marginTop: 2 },
 
   primaryBtn: {
     backgroundColor: C.brand,
     borderRadius: 10,
     paddingVertical: 12,
     alignItems: "center",
+    paddingHorizontal: 18,
   },
-  primaryBtnTxt: { color: "#fff", fontSize: 13, fontWeight: "700" },
+  primaryBtnTxt: { color: "#fff", fontSize: 13 },
 
   hint: { color: C.hint, fontSize: 13, marginTop: 4 },
+
+  /* Error modal */
+  errorCard: {
+    width: "100%",
+    maxWidth: 380,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: "center",
+  },
+  errorIconCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 1,
+    borderColor: "rgba(185,28,28,0.18)",
+    backgroundColor: "rgba(248,113,113,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  errorTitle: {
+    fontSize: 16,
+    color: C.redDark,
+    marginTop: 4,
+  },
+  errorMsg: {
+    fontSize: 13,
+    color: C.text,
+    textAlign: "center",
+    marginTop: 8,
+  },
+  errorHint: {
+    fontSize: 11,
+    color: C.sub,
+    textAlign: "center",
+    marginTop: 6,
+  },
 });

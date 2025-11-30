@@ -82,10 +82,7 @@ const QuickBox = ({
 
   return (
     <TouchableOpacity
-      style={[
-        styles.quickBox,
-        { backgroundColor: bg, borderColor: border },
-      ]}
+      style={[styles.quickBox, { backgroundColor: bg, borderColor: border }]}
       activeOpacity={0.85}
       onPress={onPress}
     >
@@ -149,22 +146,6 @@ function formatTimeLabel(isoString) {
   });
 }
 
-/* Save finished trip to local history (AsyncStorage) */
-async function saveTripToHistory(trip) {
-  try {
-    const raw = await AsyncStorage.getItem(TRIP_HISTORY_KEY);
-    const arr = raw ? JSON.parse(raw) : [];
-
-    // unshift so latest appears on top
-    arr.unshift(trip);
-
-    await AsyncStorage.setItem(TRIP_HISTORY_KEY, JSON.stringify(arr));
-    console.log("[DriverDashboard] Trip saved to local history", trip);
-  } catch (e) {
-    console.log("[DriverDashboard] Failed to save trip history", e);
-  }
-}
-
 export default function DriverDashboard({ navigation }) {
   const [fontsLoaded] = useFonts({
     Poppins_400Regular,
@@ -191,11 +172,12 @@ export default function DriverDashboard({ navigation }) {
   const [isOnDuty, setIsOnDuty] = useState(false);
   const [dutyUpdating, setDutyUpdating] = useState(false);
 
-  // bus + route info for header
+  // bus + route info for header (+ optional preset destination from DB)
   const [busInfo, setBusInfo] = useState({
     number: null,
     plate: null,
     routeLabel: null, // "SBT → Alegria → SBT"
+    presetDest: null, // { latitude, longitude, name } if destLat/destLng exist in DB
   });
 
   // current trip session (local for now)
@@ -304,7 +286,9 @@ export default function DriverDashboard({ navigation }) {
         setDriver({ fullName, avatar });
 
         // store driverId for trip history
-        setDriverId(driverProfile.id || profileData.id || null);
+        setDriverId(
+          driverProfile.driverId || driverProfile.id || profileData.id || null
+        );
 
         // sync duty from driverProfile.status
         const rawStatus = (driverProfile.status || "").toUpperCase();
@@ -318,6 +302,7 @@ export default function DriverDashboard({ navigation }) {
         let number = null;
         let plate = null;
         let routeLabel = null;
+        let presetDest = null;
 
         if (bus) {
           number = bus.number || bus.busNumber || null;
@@ -327,16 +312,54 @@ export default function DriverDashboard({ navigation }) {
             bus.routeLabel ||
             bus.route ||
             buildLoopRouteLabel(bus.forwardRoute, bus.returnRoute);
+
+          // 1) Try DB coordinates first (if gi-set nimo sa admin side)
+          const rawLat =
+            typeof bus.destLat === "number"
+              ? bus.destLat
+              : typeof bus.destLatitude === "number"
+              ? bus.destLatitude
+              : null;
+          const rawLng =
+            typeof bus.destLng === "number"
+              ? bus.destLng
+              : typeof bus.destLongitude === "number"
+              ? bus.destLongitude
+              : null;
+
+          if (
+            typeof rawLat === "number" &&
+            typeof rawLng === "number" &&
+            !Number.isNaN(rawLat) &&
+            !Number.isNaN(rawLng)
+          ) {
+            presetDest = {
+              latitude: rawLat,
+              longitude: rawLng,
+              name:
+                bus.destName ||
+                bus.destinationName ||
+                routeLabel ||
+                "Assigned destination",
+            };
+          }
+          // ❌ No more fallback to ROUTE_PRESETS (file removed)
         }
 
         setBusInfo({
           number,
           plate,
           routeLabel,
+          presetDest,
         });
       } catch (e) {
         console.log("[DriverDashboard] load driver profile error", e);
-        setBusInfo({ number: null, plate: null, routeLabel: null });
+        setBusInfo({
+          number: null,
+          plate: null,
+          routeLabel: null,
+          presetDest: null,
+        });
       }
     } catch (e) {
       console.log("[DriverDashboard] reload error", e);
@@ -431,8 +454,9 @@ export default function DriverDashboard({ navigation }) {
     );
   };
 
-  /* ---------- Trip handlers (local + saved to history) ---------- */
+  /* ---------- Trip handlers (local, history saved from DriverTracking) ---------- */
 
+  // Start trip → open DriverTracking screen
   const startTripSession = () => {
     if (!busInfo.routeLabel) {
       Alert.alert("No route", "Ask the admin to set up your bus route first.");
@@ -442,11 +466,26 @@ export default function DriverDashboard({ navigation }) {
     const now = new Date();
     const id = `${now.getTime()}`;
 
-    setCurrentTrip({
+    const trip = {
       id,
       routeLabel: busInfo.routeLabel,
       startedAt: now.toISOString(),
       passengers: 0,
+      driverId,
+    };
+
+    setCurrentTrip(trip);
+
+    // 👉 Start trip: open tracking. Driver can pin/select start + destination.
+    // If the bus has destLat/destLng, we still pass presetDest so map can auto-fill it.
+    navigation?.navigate?.("DriverTracking", {
+      trip,
+      busInfo,
+      presetDest: busInfo.presetDest || null,
+      driver: {
+        id: driverId,
+        name: driver?.fullName || "Driver",
+      },
     });
   };
 
@@ -469,25 +508,10 @@ export default function DriverDashboard({ navigation }) {
             driverId,
           };
 
+          // ❌ No saving to TRIP_HISTORY here anymore.
+          // This only updates the "Last trip" display in Live status.
           setLastTrip(finishedTrip);
-          await saveTripToHistory(finishedTrip);
           setCurrentTrip(null);
-
-          // update counts quickly without waiting for next reload
-          try {
-            const raw = await AsyncStorage.getItem(TRIP_HISTORY_KEY);
-            const arr = raw ? JSON.parse(raw) : [];
-            const total = Array.isArray(arr) ? arr.length : 0;
-            setTotalTrips(total);
-
-            const stored = await AsyncStorage.getItem(
-              STORAGE_KEYS.tripLastSeen
-            );
-            const lastSeen = stored ? parseInt(stored, 10) || 0 : 0;
-            setTripUnread(Math.max(total - lastSeen, 0));
-          } catch (e) {
-            console.log("[DriverDashboard] quick trip count update error", e);
-          }
         },
       },
     ]);
@@ -511,10 +535,7 @@ export default function DriverDashboard({ navigation }) {
     try {
       const total = totalReports || 0;
       setReportUnread(0);
-      await AsyncStorage.setItem(
-        STORAGE_KEYS.reportLastSeen,
-        String(total)
-      );
+      await AsyncStorage.setItem(STORAGE_KEYS.reportLastSeen, String(total));
     } catch (e) {
       console.log("[DriverDashboard] store report lastSeen error", e);
     } finally {
@@ -526,10 +547,7 @@ export default function DriverDashboard({ navigation }) {
     try {
       const total = totalRatings || 0;
       setRatingUnread(0);
-      await AsyncStorage.setItem(
-        STORAGE_KEYS.ratingLastSeen,
-        String(total)
-      );
+      await AsyncStorage.setItem(STORAGE_KEYS.ratingLastSeen, String(total));
     } catch (e) {
       console.log("[DriverDashboard] store rating lastSeen error", e);
     } finally {
@@ -543,7 +561,7 @@ export default function DriverDashboard({ navigation }) {
       setTripUnread(0);
       await AsyncStorage.setItem(STORAGE_KEYS.tripLastSeen, String(total));
     } catch (e) {
-      console.log("[DriverDashboard] store trip lastSeen error", e);
+      console.log("[DriverDashboard] store tripLastSeen error", e);
     } finally {
       navigation?.navigate?.("DriverTripHistory");
     }
@@ -633,11 +651,7 @@ export default function DriverDashboard({ navigation }) {
           <View style={styles.section}>
             <View style={styles.sectionHead}>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <MaterialCommunityIcons
-                  name="radar"
-                  size={18}
-                  color={C.text}
-                />
+                <MaterialCommunityIcons name="radar" size={18} color={C.text} />
                 <Text style={styles.sectionTitle}>  Live status</Text>
               </View>
             </View>
@@ -662,9 +676,17 @@ export default function DriverDashboard({ navigation }) {
                       : "Waiting for assigned route"}
                   </Text>
                   <Text style={styles.liveMeta}>
-                    You are available for trips. Tap "Start trip" once you are
-                    ready to depart.
+                    You are available for trips. Tap "Start trip" to open the
+                    map. Set your current location and destination before
+                    starting navigation.
                   </Text>
+
+                  {busInfo.presetDest && (
+                    <Text style={styles.liveMeta}>
+                      This bus has an assigned destination. It may auto-fill on
+                      the map, but you can still change it anytime.
+                    </Text>
+                  )}
 
                   {lastTrip && (
                     <View style={{ marginTop: 10 }}>
@@ -755,7 +777,7 @@ export default function DriverDashboard({ navigation }) {
                     ? "Start duty first"
                     : hasActiveTrip
                     ? "Finish current trip"
-                    : "Begin trip session"
+                    : "Open map and set route"
                 }
                 variant="accent"
                 onPress={handleTripAction}

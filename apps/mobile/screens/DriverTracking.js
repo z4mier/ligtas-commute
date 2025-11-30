@@ -1,4 +1,6 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 // apps/mobile/screens/DriverTracking.js
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
@@ -22,8 +24,9 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { API_URL } from "../constants/config";
 import { WebView } from "react-native-webview";
 import { useNavigation } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
-/* ---------- theme ---------- */
+/* ---------- THEME ---------- */
 const C = {
   brand: "#0B132B",
   text: "#111827",
@@ -35,16 +38,21 @@ const C = {
   border: "#E5E7EB",
   blueTrail: "#60A5FA",
   darkGlass: "rgba(17,24,39,0.92)",
-  tealDot: "#10B981",
+  // 🔵 light blue instead of green
+  tealDot: "#38BDF8",
   destPin: "#E11D48",
   blue: "#2563EB",
 };
+
+/* ---------- Local trip history key (must match dashboard) ---------- */
+const TRIP_HISTORY_KEY = "driverTrips";
 
 /* DEV – show Sim button */
 const SHOW_SIM = true;
 
 /* Street View (via JS API inside WebView) */
 const GMAPS_JS_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_JS_KEY || "";
+const ENABLE_STREET_VIEW = false; // disabled for now to avoid black screen issues
 
 /* ---------- Background tracking task ---------- */
 const BG_TASK = "LC_TRACK_TASK_DRIVER";
@@ -90,7 +98,7 @@ async function stopBackgroundTracking() {
   } catch {}
 }
 
-/* ---------- utils ---------- */
+/* ---------- UTILS ---------- */
 function decodePolyline(str) {
   let index = 0,
     lat = 0,
@@ -120,6 +128,7 @@ function decodePolyline(str) {
   }
   return coordinates;
 }
+
 const haversine = (a, b) => {
   const R = 6371e3;
   const φ1 = (a.latitude * Math.PI) / 180;
@@ -132,6 +141,7 @@ const haversine = (a, b) => {
   return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 };
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
 const cleanPlaceName = (s) => {
   if (!s) return "";
   let t = s
@@ -144,6 +154,7 @@ const cleanPlaceName = (s) => {
     .trim();
   return t;
 };
+
 function bearingTo(a, b) {
   const φ1 = (a.latitude * Math.PI) / 180;
   const φ2 = (b.latitude * Math.PI) / 180;
@@ -156,6 +167,9 @@ function bearingTo(a, b) {
   if (θ < 0) θ += 360;
   return θ;
 }
+
+const cleanInstruction = (html) =>
+  (html || "").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim();
 
 /* Street View HTML for WebView */
 function streetViewHTML(apiKey) {
@@ -207,15 +221,33 @@ document.addEventListener('message',e=>{try{const m=JSON.parse(e.data||'{}');if(
 </html>`;
 }
 
-/* ---------- screen ---------- */
+/* ---------- SCREEN ---------- */
 export default function DriverTracking({ route }) {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
 
+  const params = route?.params || {};
+
+  // ✅ Preset destination from DriverDashboard (OUTBOUND leg)
+  const presetDestFromRoute = params?.presetDest || null;
+
+  // ✅ Bus route label for context/fallback
+  const busRouteLabel =
+    params?.busInfo?.routeLabel || params?.trip?.routeLabel || null;
+
   const mapRef = useRef(null);
   const watchRef = useRef(null);
 
-  const [search, setSearch] = useState("");
+  // 🔹 separate text for start + destination
+  const [originInput, setOriginInput] = useState("");
+  const [destInput, setDestInput] = useState("");
+
+  // which field is active: "start" | "dest" | null
+  const [activeField, setActiveField] = useState(null);
+
+  // query used for autocomplete
+  const [searchQuery, setSearchQuery] = useState("");
+
   const [suggestions, setSuggestions] = useState([]);
   const [fetching, setFetching] = useState(false);
   const [showSuggest, setShowSuggest] = useState(false);
@@ -258,13 +290,14 @@ export default function DriverTracking({ route }) {
   const [showStreet, setShowStreet] = useState(false);
   const webRef = useRef(null);
   const streetHTML = useMemo(() => streetViewHTML(GMAPS_JS_KEY), []);
+
   const sendToStreet = (payload) => {
     try {
       webRef.current?.postMessage(JSON.stringify(payload));
     } catch {}
   };
 
-  /* ---------- ANIM: pulsing dot (nav on) ---------- */
+  /* ---------- ANIM: flowing pulsing dot when navMode ---------- */
   const pulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (navMode) {
@@ -292,27 +325,41 @@ export default function DriverTracking({ route }) {
 
   const pulseStyle = {
     transform: [
-      { scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 2.2] }) },
+      {
+        scale: pulse.interpolate({
+          inputRange: [0, 1],
+          outputRange: [1, 2.4],
+        }),
+      },
     ],
-    opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.6, 0] }),
+    opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] }),
   };
 
-  /* ---------- camera helpers ---------- */
+  /* ---------- CAMERA HELPERS (3D-like follow) ---------- */
   const lastCameraAt = useRef(0);
   const lastCamCenter = useRef(null);
-  function animateCameraFollow(center, hdg = 0, zoom = 18.2) {
+
+  function animateCameraFollow(center, hdg = 0, zoom = 18.5) {
     const now = Date.now();
     if (now - lastCameraAt.current < 600) return;
+
     const movedEnough =
       !lastCamCenter.current || haversine(lastCamCenter.current, center) > 6;
     const headingDiff =
       typeof hdg === "number" && typeof animateCameraFollow._h === "number"
         ? Math.abs(hdg - animateCameraFollow._h)
         : 999;
+
     if (!movedEnough && headingDiff < 10) return;
 
     mapRef.current?.animateCamera(
-      { center, heading: Number.isFinite(hdg) ? hdg : 0, pitch: 65, zoom },
+      {
+        center,
+        heading: Number.isFinite(hdg) ? hdg : 0,
+        // 🎥 3D tilt like Waze/Grab
+        pitch: navMode ? 70 : 50,
+        zoom,
+      },
       { duration: 450 }
     );
     lastCamCenter.current = center;
@@ -332,90 +379,19 @@ export default function DriverTracking({ route }) {
     );
   };
 
-  /* ---------- geo helpers ---------- */
+  /* ---------- GEO HELPERS ---------- */
   const reverseGeocode = async (coord) => {
     try {
       const list = await Location.reverseGeocodeAsync(coord);
       if (!list?.length) return null;
       const a = list[0];
-      return [a.name, a.street, a.subregion, a.city]
-        .filter(Boolean)
-        .join(", ");
+      return [a.name, a.street, a.subregion, a.city].filter(Boolean).join(", ");
     } catch {
       return null;
     }
   };
 
-  /* ---------- init ---------- */
-  useEffect(() => {
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        setError("Location permission denied.");
-        setOriginText("Permission required");
-        return;
-      }
-      const pos = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      const cur = {
-        latitude: pos.coords.latitude,
-        longitude: pos.coords.longitude,
-      };
-      setDevicePos(cur);
-      setHeading(pos.coords.heading ?? 0);
-      const label = (await reverseGeocode(cur)) || "Current location";
-      setOrigin({ ...cur, name: label });
-      setOriginText(label);
-      animateTo(cur);
-    })();
-  }, []);
-
-  /* ---------- autocomplete ---------- */
-  useEffect(() => {
-    if (!showSuggest) return;
-    if (search.trim().length < 2) {
-      setSuggestions([]);
-      return;
-    }
-    const t = setTimeout(async () => {
-      try {
-        setFetching(true);
-        const r = await fetch(
-          `${API_URL}/maps/autocomplete?q=${encodeURIComponent(search)}`
-        );
-        const j = await r.json();
-        if (j?.status && j.status !== "OK")
-          setError(j?.error_message || j?.status);
-        setSuggestions(j?.predictions || []);
-      } catch {
-        setError("Autocomplete failed.");
-      } finally {
-        setFetching(false);
-      }
-    }, 250);
-    return () => clearTimeout(t);
-  }, [search, showSuggest]);
-
-  const fetchPlace = async (place) => {
-    try {
-      const r = await fetch(
-        `${API_URL}/maps/place?id=${encodeURIComponent(place.place_id)}`
-      );
-    const j = await r.json();
-      const l = j?.location;
-      if (!l) return null;
-      return {
-        latitude: l.lat,
-        longitude: l.lng,
-        name: j?.name || place.description,
-      };
-    } catch {
-      setError("Failed to fetch location details.");
-      return null;
-    }
-  };
-
+  /* ---------- DIRECTIONS ---------- */
   const fitRoute = (o, d, coords) => {
     if (!o || !d) return;
     const pts = coords?.length ? coords : [o, d];
@@ -425,7 +401,6 @@ export default function DriverTracking({ route }) {
     });
   };
 
-  /* Throttled directions */
   const lastDirectionsAt = useRef(0);
   const fetchDirections = async (o, d, force = false) => {
     const now = Date.now();
@@ -453,6 +428,7 @@ export default function DriverTracking({ route }) {
       setEta({
         durationText: leg0?.duration?.text || "—",
         distanceText: leg0?.distance?.text || "—",
+        seconds: leg0?.duration?.value || null,
       });
 
       const rawSteps = leg0?.steps || [];
@@ -477,11 +453,109 @@ export default function DriverTracking({ route }) {
     }
   };
 
-  /* ---------- navigation ---------- */
-  const startNavigation = async () => {
-    if (!dest) return;
+  /* ---------- INIT: CURRENT LOCATION + PRESET DEST ---------- */
+  useEffect(() => {
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        setError("Location permission denied.");
+        setOriginText("Permission required");
+        setOriginInput("Permission required");
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const cur = {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      };
+      setDevicePos(cur);
+      setHeading(pos.coords.heading ?? 0);
+      const label = (await reverseGeocode(cur)) || "Current location";
+      setOrigin({ ...cur, name: label });
+      setOriginText(label);
+      setOriginInput(label);
+      animateCameraFollow(cur, pos.coords.heading ?? 0, 17.8);
 
-    let startFrom = devicePos;
+      // ✅ If dashboard passed preset destination – OUTBOUND leg
+      const preset = presetDestFromRoute;
+      if (
+        preset &&
+        typeof preset.latitude === "number" &&
+        typeof preset.longitude === "number"
+      ) {
+        const destObj = {
+          latitude: preset.latitude,
+          longitude: preset.longitude,
+          name: preset.name || "Assigned destination",
+        };
+        setDest(destObj);
+
+        const cleanedName = cleanPlaceName(destObj.name) || destObj.name || "";
+        setDestInput(cleanedName);
+        setSearchQuery("");
+
+        await fetchDirections(cur, destObj, true);
+      }
+    })();
+  }, [presetDestFromRoute]);
+
+  /* ---------- AUTOCOMPLETE (for start OR destination) ---------- */
+  useEffect(() => {
+    if (!showSuggest) return;
+    const q = (searchQuery || "").trim();
+
+    if (q.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+
+    const t = setTimeout(async () => {
+      try {
+        setFetching(true);
+        const r = await fetch(
+          `${API_URL}/maps/autocomplete?q=${encodeURIComponent(q)}`
+        );
+        const j = await r.json();
+        if (j?.status && j.status !== "OK")
+          setError(j?.error_message || j?.status);
+        setSuggestions(j?.predictions || []);
+      } catch {
+        setError("Autocomplete failed.");
+      } finally {
+        setFetching(false);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [searchQuery, showSuggest, activeField, recents.length]);
+
+  const fetchPlace = async (place) => {
+    try {
+      const r = await fetch(
+        `${API_URL}/maps/place?id=${encodeURIComponent(place.place_id)}`
+      );
+      const j = await r.json();
+      const l = j?.location;
+      if (!l) return null;
+      return {
+        latitude: l.lat,
+        longitude: l.lng,
+        name: j?.name || place.description,
+      };
+    } catch {
+      setError("Failed to fetch location details.");
+      return null;
+    }
+  };
+
+  /* ---------- START / END NAVIGATION ---------- */
+  const startNavigation = async (overrideDest = null) => {
+    const target = overrideDest || dest;
+    if (!target) return;
+
+    // 👇 Start from chosen origin if available; fallback to devicePos
+    let startFrom = origin || devicePos;
     if (!startFrom) {
       const pos = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
@@ -493,13 +567,19 @@ export default function DriverTracking({ route }) {
       setDevicePos(startFrom);
       setHeading(pos.coords.heading ?? 0);
     }
-    const label = (await reverseGeocode(startFrom)) || "Current location";
-    setOrigin({ ...startFrom, name: label });
+    const label =
+      origin?.name ||
+      (await reverseGeocode(startFrom)) ||
+      originInput ||
+      "Current location";
+    const originObj = { ...startFrom, name: label };
+    setOrigin(originObj);
     setOriginText(label);
+    if (!originInput) setOriginInput(label);
 
-    animateCameraFollow(startFrom, heading, 18.2);
+    animateCameraFollow(startFrom, heading, 18.5);
 
-    await fetchDirections(startFrom, dest, true);
+    await fetchDirections(startFrom, target, true);
     setNavMode(true);
     setTripStartAt(Date.now());
     setTripDistance(0);
@@ -509,10 +589,10 @@ export default function DriverTracking({ route }) {
 
     startBackgroundTracking().catch(() => {});
 
-    if (GMAPS_JS_KEY) {
+    if (ENABLE_STREET_VIEW && GMAPS_JS_KEY) {
       setShowStreet(true);
       setTimeout(() => {
-        const hdgToDest = dest ? bearingTo(startFrom, dest) : heading || 0;
+        const hdgToDest = target ? bearingTo(startFrom, target) : heading || 0;
         sendToStreet({
           type: "init",
           lat: startFrom.latitude,
@@ -543,7 +623,7 @@ export default function DriverTracking({ route }) {
         const now = Date.now();
         if ((!Number.isFinite(s) || s === null) && lastPoint && lastUpdateAt) {
           const dt = (now - lastUpdateAt) / 1000;
-          if (dt > 0) s = haversine(lastPoint, cur) / dt; // m/s
+          if (dt > 0) s = haversine(lastPoint, cur) / dt;
         }
         const kmh =
           Number.isFinite(s) && s !== null
@@ -552,21 +632,22 @@ export default function DriverTracking({ route }) {
         setSpeedKmh(kmh);
         setLastUpdateAt(now);
 
+        // 🔵 Live GPS (blue dot)
         setDevicePos(cur);
         setHeading(hdg);
-        setOrigin((prev) => ({ ...(prev || {}), ...cur }));
         setBreadcrumbs((p) => [...p.slice(-120), cur]);
 
         if (lastPoint) setTripDistance((d) => d + haversine(lastPoint, cur));
         setLastPoint(cur);
 
         const stopped = kmh !== null ? kmh < 2 : false;
-        animateCameraFollow(cur, hdg, stopped ? 18.0 : 18.2);
+        animateCameraFollow(cur, hdg, stopped ? 18.2 : 18.8);
 
-        fetchDirections(cur, dest);
+        // directions follow current GPS → destination
+        fetchDirections(cur, target);
 
-        if (showStreet && dest) {
-          const hdgToDest = bearingTo(cur, dest);
+        if (showStreet && target) {
+          const hdgToDest = bearingTo(cur, target);
           sendToStreet({
             type: "update",
             lat: cur.latitude,
@@ -575,7 +656,7 @@ export default function DriverTracking({ route }) {
           });
         }
 
-        const d = haversine(cur, dest);
+        const d = haversine(cur, target);
         if (d < 50) endNavigation(true);
       }
     );
@@ -592,7 +673,91 @@ export default function DriverTracking({ route }) {
     setShowStreet(false);
   };
 
-  /* reset everything and go driver dashboard */
+  /* ---------- TRIP HISTORY SAVE (only when modal Close is pressed) ---------- */
+  const [savingHistory, setSavingHistory] = useState(false);
+
+  const durationMins = tripStartAt
+    ? Math.max(0, Math.round((Date.now() - tripStartAt) / 60000))
+    : 0;
+  const distanceKm = (tripDistance / 1000).toFixed(1);
+  const avgSpeed =
+    durationMins > 0
+      ? Math.round(tripDistance / 1000 / (durationMins / 60))
+      : 0;
+
+  const arrivalTimeStr = (() => {
+    if (!eta?.seconds) return null;
+    const dt = new Date(Date.now() + eta.seconds * 1000);
+    let h = dt.getHours();
+    const m = dt.getMinutes();
+    const ampm = h >= 12 ? "pm" : "am";
+    h = h % 12;
+    if (h === 0) h = 12;
+    const mm = m < 10 ? `0${m}` : String(m);
+    return `${h}:${mm} ${ampm}`;
+  })();
+
+  const saveTripHistory = async () => {
+    if (!tripStartAt || !dest || savingHistory) return;
+
+    try {
+      setSavingHistory(true);
+      const token = await AsyncStorage.getItem("token");
+
+      const nowIso = new Date().toISOString();
+
+      // 🔹 Base trip object from dashboard (for id, startedAt, driverId)
+      const baseTrip = params?.trip || {};
+
+      const finishedTripLocal = {
+        id: baseTrip.id || `${Date.now()}`,
+        routeLabel:
+          busRouteLabel || baseTrip.routeLabel || "Completed trip",
+        startedAt: baseTrip.startedAt || new Date(tripStartAt).toISOString(),
+        endedAt: nowIso,
+        driverId: baseTrip.driverId || null,
+      };
+
+      // 1) Optional: send to API (if endpoint exists)
+      try {
+        await fetch(`${API_URL}/driver/trips/history`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            tripId: finishedTripLocal.id,
+            routeLabel: finishedTripLocal.routeLabel,
+            destinationName: dest.name || null,
+            durationMinutes: durationMins,
+            distanceKm: Number(distanceKm),
+            avgSpeedKmh: avgSpeed,
+            startedAt: finishedTripLocal.startedAt,
+            endedAt: finishedTripLocal.endedAt,
+          }),
+        });
+      } catch (_apiErr) {
+        // API fail is ok, we still keep local history
+      }
+
+      // 2) Always update local AsyncStorage for dashboard badges & TripHistory
+      try {
+        const raw = await AsyncStorage.getItem(TRIP_HISTORY_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        arr.unshift(finishedTripLocal);
+        await AsyncStorage.setItem(TRIP_HISTORY_KEY, JSON.stringify(arr));
+        console.log("[DriverTracking] Local trip saved", finishedTripLocal);
+      } catch (e) {
+        console.log("[DriverTracking] failed to update local trip history", e);
+      }
+    } catch (_e) {
+      // optional toast
+    } finally {
+      setSavingHistory(false);
+    }
+  };
+
   const resetTrackingState = () => {
     try {
       watchRef.current?.remove?.();
@@ -603,11 +768,18 @@ export default function DriverTracking({ route }) {
     setShowStreet(false);
     setSimulating(false);
     setDest(null);
+    setDestInput("");
     setRouteCoords([]);
     setEta(null);
     setSteps([]);
     setStepIdx(0);
+    setTripStartAt(null);
+    setTripDistance(0);
+    setLastPoint(null);
+    setLastUpdateAt(null);
+    setSpeedKmh(null);
   };
+
   const goDashboard = () => {
     resetTrackingState();
     navigation.reset({ index: 0, routes: [{ name: "DriverDashboard" }] });
@@ -615,19 +787,22 @@ export default function DriverTracking({ route }) {
 
   const recenterToUser = async () => {
     let cur = devicePos;
+    let hdg = heading;
     if (!cur) {
       const pos = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
       cur = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      hdg = pos.coords.heading ?? heading ?? 0;
       setDevicePos(cur);
-      setHeading(pos.coords.heading ?? heading ?? 0);
+      setHeading(hdg);
     }
     const label = (await reverseGeocode(cur)) || "Current location";
     setOrigin({ ...cur, name: label });
     setOriginText(label);
-    if (navMode) animateCameraFollow(cur, heading, 18.2);
-    else animateTo(cur);
+    if (!originInput) setOriginInput(label);
+
+    animateCameraFollow(cur, hdg, 18.8);
 
     if (showStreet && dest) {
       const hdgToDest = bearingTo(cur, dest);
@@ -651,32 +826,70 @@ export default function DriverTracking({ route }) {
     const coord = e.nativeEvent.coordinate;
     const pinned = { ...coord, name: "Pinned destination" };
     setDest(pinned);
-    setSearch(pinned.name);
+    setDestInput(pinned.name);
     setShowSuggest(false);
+    setSearchQuery("");
     fetchDirections(origin || devicePos || pinned, pinned, true);
   };
 
-  const onSelectSuggestion = async (item) => {
+  /* ---------- SELECT SUGGESTION (START) ---------- */
+  const onSelectStartSuggestion = async (item) => {
     setSuggestions([]);
     setShowSuggest(false);
-    setSearch(item.description);
+    setActiveField(null);
     Keyboard.dismiss();
     const chosen = await fetchPlace(item);
     if (!chosen) return;
-    setDest(chosen);
+    const name = cleanPlaceName(chosen.name) || chosen.name || item.description;
+    const originObj = { ...chosen, name };
+    setOrigin(originObj);
+    setOriginText(name);
+    setOriginInput(name);
+
+    // ✅ center map on chosen start point & pin it
+    animateTo(chosen, { latitudeDelta: 0.06, longitudeDelta: 0.06 });
+
+    if (dest) await fetchDirections(originObj, dest, true);
+  };
+
+  /* ---------- SELECT SUGGESTION (DEST) ---------- */
+  const onSelectDestSuggestion = async (item) => {
+    setSuggestions([]);
+    setShowSuggest(false);
+    setActiveField(null);
+    Keyboard.dismiss();
+    const chosen = await fetchPlace(item);
+    if (!chosen) return;
+    const name = cleanPlaceName(chosen.name) || chosen.name || item.description;
+    setDest({ ...chosen, name });
+    setDestInput(name);
     setRecents((prev) => {
-      const next = [item, ...prev.filter((x) => x.place_id !== item.place_id)];
+      const next = [
+        item,
+        ...prev.filter((x) => x.place_id !== item.place_id),
+      ];
       return next.slice(0, 6);
     });
     animateTo(chosen, { latitudeDelta: 0.06, longitudeDelta: 0.06 });
-    if (origin) await fetchDirections(origin, chosen, true);
+    if (origin || devicePos) {
+      await fetchDirections(origin || devicePos, { ...chosen, name }, true);
+    }
+  };
+
+  const clearOrigin = () => {
+    setOrigin(null);
+    setOriginText("Choose start point");
+    setOriginInput("");
+    setSearchQuery("");
+    setShowSuggest(false);
   };
 
   const clearDestination = () => {
     setDest(null);
-    setSearch("");
+    setDestInput("");
     setSuggestions([]);
     setShowSuggest(false);
+    setSearchQuery("");
     setRouteCoords([]);
     setEta(null);
     setSteps([]);
@@ -692,11 +905,14 @@ export default function DriverTracking({ route }) {
 
   const openSuggest = () => {
     setShowSuggest(true);
-    if (search.trim().length < 2) setSuggestions([]);
+    if ((searchQuery || "").trim().length < 2) setSuggestions([]);
   };
 
+  /* ---------- DIRECTION BANNER ---------- */
   const nextStep = steps[stepIdx] || null;
-  const bannerText = (() => {
+  const currentManeuver = nextStep?.maneuver || "";
+
+  const banner = (() => {
     if (!nextStep) return null;
     const m = nextStep.maneuver || "";
     const title = m.includes("left")
@@ -708,13 +924,20 @@ export default function DriverTracking({ route }) {
       : m.includes("roundabout")
       ? "At roundabout"
       : "Continue";
-    return `${title} • ${nextStep.distanceText || ""}`;
+    return {
+      distance: nextStep.distanceText || eta?.distanceText || "",
+      primary: cleanInstruction(nextStep.html) || title,
+      road: nextStep.road || "",
+    };
   })();
 
+  /* ---------- ROUTE TITLE ---------- */
   const routeTitle = (() => {
     const a = cleanPlaceName(origin?.name || originText);
     const b = cleanPlaceName(dest?.name);
-    if (!a || !b) return null;
+    if (!a || !b) {
+      return busRouteLabel || "Your route";
+    }
     if (a.toLowerCase() === b.toLowerCase()) return "Your route";
     const pickShort = (t) => {
       const parts = t
@@ -723,19 +946,10 @@ export default function DriverTracking({ route }) {
         .filter(Boolean);
       return parts.length > 1 ? parts[0] : t;
     };
-    return `${pickShort(a)} → ${pickShort(b)}`;
+    return `${pickShort(a)} \u2192 ${pickShort(b)}`;
   })();
 
-  const durationMins = tripStartAt
-    ? Math.max(0, Math.round((Date.now() - tripStartAt) / 60000))
-    : 0;
-  const distanceKm = (tripDistance / 1000).toFixed(1);
-  const avgSpeed =
-    durationMins > 0
-      ? Math.round(tripDistance / 1000 / (durationMins / 60))
-      : 0;
-
-  /* ---------- DEV simulate ---------- */
+  /* ---------- DEV SIMULATE ---------- */
   async function simulateAlongRoute() {
     if (!dest) return;
     let coords = routeCoords;
@@ -744,14 +958,12 @@ export default function DriverTracking({ route }) {
       coords = [
         start,
         {
-          latitude:
-            start.latitude + (dest.latitude - start.latitude) * 0.33,
+          latitude: start.latitude + (dest.latitude - start.latitude) * 0.33,
           longitude:
             start.longitude + (dest.longitude - start.longitude) * 0.33,
         },
         {
-          latitude:
-            start.latitude + (dest.latitude - start.latitude) * 0.66,
+          latitude: start.latitude + (dest.latitude - start.latitude) * 0.66,
           longitude:
             start.longitude + (dest.longitude - start.longitude) * 0.66,
         },
@@ -759,31 +971,37 @@ export default function DriverTracking({ route }) {
       ];
       setRouteCoords(coords);
     }
-    if (!navMode) {
+    if (!navMode && start) {
       setNavMode(true);
       setTripStartAt(Date.now());
       setTripDistance(0);
-      setLastPoint(start ?? coords[0]);
+      setLastPoint(start);
       startBackgroundTracking().catch(() => {});
     }
+    if (!start) return;
+
     setSimulating(true);
     simRef.current = true;
+    let prevPoint = start;
     for (let i = 0; i < coords.length; i++) {
       if (!simRef.current) break;
       const cur = coords[i];
       setDevicePos(cur);
       setBreadcrumbs((p) => [...p.slice(-120), cur]);
-      if (lastPoint) setTripDistance((d) => d + haversine(lastPoint, cur));
-      setLastPoint(cur);
+      if (prevPoint) {
+        setTripDistance((d) => d + haversine(prevPoint, cur));
+      }
+      prevPoint = cur;
       setSpeedKmh(20);
-      animateCameraFollow(cur, heading, 18.2);
-      if (showStreet && dest)
+      animateCameraFollow(cur, heading, 18.8);
+      if (showStreet && dest) {
         sendToStreet({
           type: "update",
           lat: cur.latitude,
           lng: cur.longitude,
           heading: bearingTo(cur, dest),
         });
+      }
       await delay(700);
     }
     setSimulating(false);
@@ -791,28 +1009,35 @@ export default function DriverTracking({ route }) {
     endNavigation(true);
   }
 
-  /* ---------- render ---------- */
+  /* ---------- RENDER ---------- */
   return (
-    <SafeAreaView style={[s.safe, { paddingTop: insets.top }]}>
-      {/* Direction banner */}
-      {navMode && bannerText && (
-        <View style={[s.banner, { top: 10 + insets.top }]}>
+    <SafeAreaView style={[styles.safe, { paddingTop: insets.top }]}>
+      {/* Turn banner */}
+      {navMode && banner && (
+        <View style={[styles.banner, { top: 10 + insets.top }]}>
           <MaterialCommunityIcons
             name={
-              (nextStep?.maneuver || "").includes("left")
+              currentManeuver.includes("left")
                 ? "arrow-left"
-                : (nextStep?.maneuver || "").includes("right")
+                : currentManeuver.includes("right")
                 ? "arrow-right"
                 : "arrow-up"
             }
-            size={22}
+            size={26}
             color={C.white}
-            style={{ marginRight: 6 }}
+            style={{ marginRight: 10 }}
           />
           <View style={{ flex: 1 }}>
-            <Text style={s.bannerTitle}>{bannerText}</Text>
-            {!!nextStep?.road && (
-              <Text style={s.bannerSub}>{nextStep.road}</Text>
+            {!!banner.distance && (
+              <Text style={styles.bannerDistance}>{banner.distance}</Text>
+            )}
+            <Text style={styles.bannerTitle} numberOfLines={2}>
+              {banner.primary}
+            </Text>
+            {!!banner.road && (
+              <Text style={styles.bannerSub} numberOfLines={1}>
+                {banner.road}
+              </Text>
             )}
           </View>
         </View>
@@ -822,12 +1047,21 @@ export default function DriverTracking({ route }) {
         ref={mapRef}
         style={StyleSheet.absoluteFill}
         provider={PROVIDER_GOOGLE}
+        mapType="standard"
+        pitchEnabled
+        rotateEnabled
         showsUserLocation={false}
         showsCompass={false}
         showsMyLocationButton={false}
         toolbarEnabled={false}
         zoomControlEnabled={false}
         onLongPress={onLongPress}
+        mapPadding={{
+          top: navMode ? 120 : 120,
+          bottom: navMode ? 130 : 180,
+          left: 0,
+          right: 0,
+        }}
         initialRegion={{
           latitude: origin?.latitude || 10.3157,
           longitude: origin?.longitude || 123.8854,
@@ -835,31 +1069,57 @@ export default function DriverTracking({ route }) {
           longitudeDelta: 0.08,
         }}
       >
-        {/* Destination */}
-        {dest && (
+        {/* ✅ Start point marker (pickup)
+            Hide if overlapping with current devicePos (Waze-style) */}
+        {origin && !(devicePos && haversine(origin, devicePos) < 20) && (
           <Marker
-            coordinate={dest}
-            title={dest.name || "Destination"}
-          />
-        )}
-
-        {/* Driver location */}
-        {devicePos && (
-          <Marker coordinate={devicePos} title="You" description={originText}>
-            <View style={{ alignItems: "center", justifyContent: "center" }}>
-              {navMode && <Animated.View style={[s.pulse, pulseStyle]} />}
-              <View style={s.blueDot} />
+            coordinate={origin}
+            title={origin.name || "Start point"}
+            description="Pickup location"
+          >
+            <View style={{ alignItems: "center" }}>
+              <MaterialCommunityIcons
+                name="map-marker"
+                size={30}
+                color={C.tealDot}
+              />
             </View>
           </Marker>
         )}
 
+        {/* Destination */}
+        {dest && (
+          <Marker coordinate={dest} title={dest.name || "Destination"}>
+            <MaterialCommunityIcons
+              name="map-marker"
+              size={32}
+              color={C.destPin}
+            />
+          </Marker>
+        )}
+
+        {/* Driver location (blue dot with flowing ripple) */}
+        {devicePos && (
+          <Marker coordinate={devicePos} title="You" description={originText}>
+            <View style={{ alignItems: "center", justifyContent: "center" }}>
+              {navMode && (
+                <Animated.View style={[styles.pulse, pulseStyle]} />
+              )}
+              <View style={styles.blueDot} />
+            </View>
+          </Marker>
+        )}
+
+        {/* Main route */}
         {routeCoords.length > 0 && (
           <Polyline
             coordinates={routeCoords}
-            strokeWidth={6}
-            strokeColor={C.brand}
+            strokeWidth={7}
+            strokeColor="#16A34A"
           />
         )}
+
+        {/* Breadcrumb trail */}
         {breadcrumbs.length > 1 && (
           <Polyline
             coordinates={breadcrumbs}
@@ -869,7 +1129,7 @@ export default function DriverTracking({ route }) {
         )}
       </MapView>
 
-      {/* DEV Sim */}
+      {/* DEV SIM */}
       {SHOW_SIM && dest && (
         <TouchableOpacity
           onPress={() => {
@@ -880,7 +1140,10 @@ export default function DriverTracking({ route }) {
             }
             simulateAlongRoute();
           }}
-          style={[s.simBtn, { top: (navMode ? 110 : 160) + insets.top, right: 16 }]}
+          style={[
+            styles.simBtn,
+            { top: (navMode ? 110 : 160) + insets.top, right: 16 },
+          ]}
           activeOpacity={0.9}
         >
           <MaterialCommunityIcons
@@ -896,43 +1159,84 @@ export default function DriverTracking({ route }) {
 
       {/* Search card (pre-nav) */}
       {!navMode && (
-        <View style={[s.searchWrap, { top: 10 + insets.top }]}>
-          <View style={s.searchCard}>
-            <View style={s.timeline}>
-              <View style={s.circleOuter}>
-                <View style={s.circleInner} />
+        <View style={[styles.searchWrap, { top: 10 + insets.top }]}>
+          <View style={styles.searchCard}>
+            <View style={styles.timeline}>
+              <View style={styles.circleOuter}>
+                <View style={styles.circleInner} />
               </View>
-              <View style={s.line} />
-              <View
-                style={[s.circleOuter, { borderColor: C.destPin }]}
-              >
+              <View style={styles.line} />
+              <View style={[styles.circleOuter, { borderColor: C.destPin }]}>
                 <View
-                  style={[s.circleInnerSmall, { backgroundColor: C.destPin }]}
+                  style={[
+                    styles.circleInnerSmall,
+                    { backgroundColor: C.destPin },
+                  ]}
                 />
               </View>
             </View>
 
             <View style={{ flex: 1 }}>
-              <View style={s.row}>
-                <Text style={s.rowLabel}>Start point</Text>
-                <Text numberOfLines={1} style={s.rowValue}>
-                  {originText}
-                </Text>
-              </View>
-              <View style={s.rowDivider} />
-              <View style={s.row}>
-                <Text style={s.rowLabel}>Destination</Text>
-                <View style={s.inputWrap}>
+              {/* START POINT */}
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Start point</Text>
+                <View style={styles.inputWrap}>
                   <TextInput
-                    style={s.input}
-                    placeholder="Search destination"
+                    style={styles.input}
+                    placeholder="Choose start location"
                     placeholderTextColor={C.hint}
-                    value={search}
-                    onChangeText={setSearch}
-                    onFocus={openSuggest}
+                    value={originInput}
+                    onFocus={() => {
+                      setActiveField("start");
+                      setSearchQuery(originInput || "");
+                      openSuggest();
+                    }}
+                    onChangeText={(txt) => {
+                      setOriginInput(txt);
+                      setActiveField("start");
+                      setSearchQuery(txt);
+                    }}
                     returnKeyType="search"
                   />
-                  {(search.length > 0 || dest) && (
+                  {originInput.length > 0 && (
+                    <TouchableOpacity
+                      onPress={clearOrigin}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <MaterialCommunityIcons
+                        name="close-circle"
+                        size={18}
+                        color={C.hint}
+                      />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.rowDivider} />
+
+              {/* DESTINATION */}
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Destination</Text>
+                <View style={styles.inputWrap}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Search destination"
+                    placeholderTextColor={C.hint}
+                    value={destInput}
+                    onFocus={() => {
+                      setActiveField("dest");
+                      setSearchQuery(destInput || "");
+                      openSuggest();
+                    }}
+                    onChangeText={(txt) => {
+                      setDestInput(txt);
+                      setActiveField("dest");
+                      setSearchQuery(txt);
+                    }}
+                    returnKeyType="search"
+                  />
+                  {(destInput.length > 0 || dest) && (
                     <TouchableOpacity
                       onPress={clearDestination}
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -947,65 +1251,46 @@ export default function DriverTracking({ route }) {
                 </View>
               </View>
 
+              {/* SUGGESTIONS DROPDOWN */}
               {showSuggest && (
-                <View style={s.suggestBox}>
-                  {search.trim().length < 2 && recents.length > 0 ? (
-                    <View>
-                      <View style={s.suggestHdr}>
-                        <Text style={s.suggestHdrTxt}>Recent</Text>
-                      </View>
-                      {recents.map((r) => (
-                        <TouchableOpacity
-                          key={r.place_id}
-                          style={s.suggestRow}
-                          onPress={() => onSelectSuggestion(r)}
-                        >
-                          <MaterialCommunityIcons
-                            name="history"
-                            size={18}
-                            color={C.text}
-                          />
-                          <Text numberOfLines={2} style={s.suggestText}>
-                            {r.description}
+                <View style={styles.suggestBox}>
+                  <FlatList
+                    keyboardShouldPersistTaps="handled"
+                    data={suggestions}
+                    keyExtractor={(it) => String(it.place_id)}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity
+                        style={styles.suggestRow}
+                        onPress={() =>
+                          activeField === "start"
+                            ? onSelectStartSuggestion(item)
+                            : onSelectDestSuggestion(item)
+                        }
+                      >
+                        <MaterialCommunityIcons
+                          name="map-marker-outline"
+                          size={18}
+                          color={C.text}
+                        />
+                        <Text numberOfLines={2} style={styles.suggestText}>
+                          {item.description}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                    ListEmptyComponent={
+                      fetching ? (
+                        <View style={{ padding: 12, alignItems: "center" }}>
+                          <ActivityIndicator size="small" />
+                        </View>
+                      ) : (
+                        <View style={{ padding: 12 }}>
+                          <Text style={{ color: C.sub, textAlign: "center" }}>
+                            No results
                           </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  ) : (
-                    <FlatList
-                      keyboardShouldPersistTaps="handled"
-                      data={suggestions}
-                      keyExtractor={(it) => String(it.place_id)}
-                      renderItem={({ item }) => (
-                        <TouchableOpacity
-                          style={s.suggestRow}
-                          onPress={() => onSelectSuggestion(item)}
-                        >
-                          <MaterialCommunityIcons
-                            name="map-marker-outline"
-                            size={18}
-                            color={C.text}
-                          />
-                          <Text numberOfLines={2} style={s.suggestText}>
-                            {item.description}
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-                      ListEmptyComponent={
-                        fetching ? (
-                          <View style={{ padding: 12, alignItems: "center" }}>
-                            <ActivityIndicator size="small" />
-                          </View>
-                        ) : (
-                          <View style={{ padding: 12 }}>
-                            <Text style={{ color: C.sub, textAlign: "center" }}>
-                              No results
-                            </Text>
-                          </View>
-                        )
-                      }
-                    />
-                  )}
+                        </View>
+                      )
+                    }
+                  />
                 </View>
               )}
             </View>
@@ -1013,21 +1298,23 @@ export default function DriverTracking({ route }) {
         </View>
       )}
 
-      {/* Bottom sheet (pre-nav) */}
+      {/* Bottom sheet (pre-nav) – route + ETA + Start icon */}
       {!navMode && dest && routeCoords.length > 0 && eta && (
-        <View style={[s.sheetWrap, { paddingBottom: 12 + insets.bottom }]}>
-          <View style={s.sheetCard}>
+        <View
+          style={[styles.sheetWrap, { paddingBottom: 12 + insets.bottom }]}
+        >
+          <View style={styles.sheetCard}>
             <View style={{ flex: 1 }}>
-              <Text style={s.routeTitle} numberOfLines={1}>
+              <Text style={styles.routeTitle} numberOfLines={1}>
                 {routeTitle || "Your route"}
               </Text>
-              <Text style={s.sheetEta}>
+              <Text style={styles.sheetEta}>
                 {eta.durationText} • {eta.distanceText}
               </Text>
             </View>
             <TouchableOpacity
-              style={s.startPill}
-              onPress={startNavigation}
+              style={styles.startPill}
+              onPress={() => startNavigation()}
               activeOpacity={0.9}
             >
               <MaterialCommunityIcons
@@ -1040,23 +1327,38 @@ export default function DriverTracking({ route }) {
         </View>
       )}
 
-      {/* Bottom during nav (ETA only) */}
+      {/* Bottom during nav (ETA + destination) */}
       {navMode && (
-        <View style={[s.bottomBar, { paddingBottom: 12 + insets.bottom }]}>
-          <View style={s.navBottom}>
+        <View
+          style={[styles.bottomBar, { paddingBottom: 12 + insets.bottom }]}
+        >
+          <View style={styles.navBottom}>
             <View style={{ flex: 1 }}>
-              <Text style={s.arriveEtaTitle}>Arrive in</Text>
-              <Text style={s.arriveEtaValue}>
+              {arrivalTimeStr && (
+                <>
+                  <Text style={styles.arriveEtaTitle}>Arrive at</Text>
+                  <Text style={styles.arriveEtaClock}>{arrivalTimeStr}</Text>
+                </>
+              )}
+              <Text style={styles.arriveEtaSub}>
                 {eta?.durationText || "—"} • {eta?.distanceText || "—"}
               </Text>
+              {!!dest && (
+                <Text style={styles.arriveEtaDest} numberOfLines={1}>
+                  {cleanPlaceName(dest.name) || "Destination"}
+                </Text>
+              )}
             </View>
           </View>
         </View>
       )}
 
-      {/* Crosshairs (recenter) */}
+      {/* Recenter FAB */}
       <TouchableOpacity
-        style={[s.locFab, { bottom: (navMode ? 170 : 148) + insets.bottom }]}
+        style={[
+          styles.locFab,
+          { bottom: (navMode ? 170 : 148) + insets.bottom },
+        ]}
         onPress={recenterToUser}
         activeOpacity={0.9}
       >
@@ -1067,173 +1369,204 @@ export default function DriverTracking({ route }) {
         />
       </TouchableOpacity>
 
-      {/* Speed bubble – during nav */}
+      {/* Speed bubble (moved higher + solid) */}
       {navMode && (
-        <View style={[s.speedBubble, { bottom: 96 + insets.bottom }]}>
-          <Text style={s.speedValue}>
+        <View style={[styles.speedBubble, { bottom: 132 + insets.bottom }]}>
+          <Text style={styles.speedValue}>
             {speedKmh === null ? "--" : String(speedKmh)}
           </Text>
-          <Text style={s.speedUnit}>km/h</Text>
+          <Text style={styles.speedUnit}>km/h</Text>
         </View>
       )}
 
-      {/* Arrived sheet (no rating, no report) */}
+      {/* Arrived sheet – Close saves trip history */}
       {arrivedSheet && (
-        <View style={[s.arrivedWrap, { paddingBottom: 16 + insets.bottom }]}>
-          <View style={s.arrivedCard}>
-            <View style={s.arrivedPin}>
-              <MaterialCommunityIcons name="map-marker" size={18} color="#fff" />
+        <View
+          style={[styles.arrivedWrap, { paddingBottom: 16 + insets.bottom }]}
+        >
+          <View style={styles.arrivedCard}>
+            <View style={styles.arrivedPin}>
+              <MaterialCommunityIcons
+                name="map-marker"
+                size={18}
+                color="#fff"
+              />
             </View>
 
-            <Text style={s.arrivedTitle}>Destination Reached</Text>
-            <Text style={s.arrivedPlace} numberOfLines={2}>
+            <Text style={styles.arrivedTitle}>Destination Reached</Text>
+            <Text style={styles.arrivedPlace} numberOfLines={2}>
               {cleanPlaceName(dest?.name) || "Destination"}
             </Text>
 
-            <View style={s.statsRow}>
-              <View style={s.statBox}>
+            <View style={styles.statsRow}>
+              <View style={styles.statBox}>
                 <MaterialCommunityIcons
                   name="clock-outline"
                   size={18}
                   color={C.sub}
                 />
-                <Text style={s.statVal}>{durationMins} mins</Text>
-                <Text style={s.statLbl}>Duration</Text>
+                <Text style={styles.statVal}>{durationMins} mins</Text>
+                <Text style={styles.statLbl}>Duration</Text>
               </View>
-              <View style={s.statBox}>
+              <View style={styles.statBox}>
                 <MaterialCommunityIcons
                   name="map-marker-distance"
                   size={18}
                   color={C.sub}
                 />
-                <Text style={s.statVal}>{distanceKm} km</Text>
-                <Text style={s.statLbl}>Distance</Text>
+                <Text style={styles.statVal}>{distanceKm} km</Text>
+                <Text style={styles.statLbl}>Distance</Text>
               </View>
-              <View style={s.statBox}>
+              <View style={styles.statBox}>
                 <MaterialCommunityIcons
                   name="speedometer"
                   size={18}
                   color={C.sub}
                 />
-                <Text style={s.statVal}>{avgSpeed} km/h</Text>
-                <Text style={s.statLbl}>Avg Speed</Text>
+                <Text style={styles.statVal}>{avgSpeed} km/h</Text>
+                <Text style={styles.statLbl}>Avg Speed</Text>
               </View>
             </View>
 
-            <View style={s.arrivedActions}>
+            <View style={styles.arrivedActions}>
               <TouchableOpacity
-                style={s.primaryBtn}
-                onPress={() => {
+                style={[
+                  styles.primaryBtn,
+                  savingHistory && { opacity: 0.7 },
+                ]}
+                onPress={async () => {
+                  // ✅ Only here we save trip history (API + local AsyncStorage)
+                  await saveTripHistory();
                   setArrivedSheet(false);
                   goDashboard();
                 }}
                 activeOpacity={0.9}
+                disabled={savingHistory}
               >
-                <Text style={s.primaryBtnTxt}>Close</Text>
+                <Text style={styles.primaryBtnTxt}>
+                  {savingHistory ? "Saving..." : "Close"}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       )}
 
-      {/* Street View */}
-      <Modal
-        visible={showStreet}
-        animationType="slide"
-        onRequestClose={() => setShowStreet(false)}
-      >
-        <SafeAreaView style={{ flex: 1, backgroundColor: "#000" }}>
-          <View
-            style={{
-              position: "absolute",
-              zIndex: 10,
-              top: 8 + insets.top,
-              left: 12,
-              right: 12,
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
+      {/* Street View modal (disabled by default) */}
+      {ENABLE_STREET_VIEW && (
+        <Modal
+          visible={showStreet}
+          animationType="slide"
+          onRequestClose={() => setShowStreet(false)}
+        >
+          <SafeAreaView style={{ flex: 1, backgroundColor: "#000" }}>
             <View
               style={{
+                position: "absolute",
+                zIndex: 10,
+                top: 8 + insets.top,
+                left: 12,
+                right: 12,
                 flexDirection: "row",
+                justifyContent: "space-between",
                 alignItems: "center",
-                gap: 8,
-                backgroundColor: "rgba(0,0,0,0.45)",
-                paddingVertical: 6,
-                paddingHorizontal: 10,
-                borderRadius: 10,
               }}
             >
-              <MaterialCommunityIcons name="street-view" size={18} color="#fff" />
-              <Text style={{ color: "#fff", fontWeight: "800" }} numberOfLines={1}>
-                {cleanPlaceName(dest?.name) || "Street View"}
-              </Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                  backgroundColor: "rgba(0,0,0,0.45)",
+                  paddingVertical: 6,
+                  paddingHorizontal: 10,
+                  borderRadius: 10,
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="street-view"
+                  size={18}
+                  color="#fff"
+                />
+                <Text
+                  style={{ color: "#fff", fontWeight: "800" }}
+                  numberOfLines={1}
+                >
+                  {cleanPlaceName(dest?.name) || "Street View"}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowStreet(false)}
+                style={{
+                  backgroundColor: "rgba(0,0,0,0.45)",
+                  paddingVertical: 6,
+                  paddingHorizontal: 10,
+                  borderRadius: 999,
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="chevron-down"
+                  size={22}
+                  color="#fff"
+                />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              onPress={() => setShowStreet(false)}
-              style={{
-                backgroundColor: "rgba(0,0,0,0.45)",
-                paddingVertical: 6,
-                paddingHorizontal: 10,
-                borderRadius: 999,
-              }}
-            >
-              <MaterialCommunityIcons name="chevron-down" size={22} color="#fff" />
-            </TouchableOpacity>
-          </View>
 
-          {GMAPS_JS_KEY ? (
-            <WebView
-              ref={webRef}
-              originWhitelist={["*"]}
-              source={{ html: streetHTML }}
-              javaScriptEnabled
-              allowFileAccess
-              allowUniversalAccessFromFileURLs
-              onMessage={() => {}}
-              androidLayerType={Platform.OS === "android" ? "hardware" : "none"}
-              style={{ flex: 1, backgroundColor: "#000" }}
-            />
-          ) : (
-            <View
-              style={{
-                flex: 1,
-                backgroundColor: "#000",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: 20,
-              }}
-            >
-              <Text style={{ color: "#fff", textAlign: "center" }}>
-                Set EXPO_PUBLIC_GOOGLE_MAPS_JS_KEY to enable Street View.
-              </Text>
-            </View>
-          )}
-        </SafeAreaView>
-      </Modal>
+            {GMAPS_JS_KEY ? (
+              <WebView
+                ref={webRef}
+                originWhitelist={["*"]}
+                source={{ html: streetHTML }}
+                javaScriptEnabled
+                allowFileAccess
+                allowUniversalAccessFromFileURLs
+                onMessage={() => {}}
+                androidLayerType={
+                  Platform.OS === "android" ? "hardware" : "none"
+                }
+                style={{ flex: 1, backgroundColor: "#000" }}
+              />
+            ) : (
+              <View
+                style={{
+                  flex: 1,
+                  backgroundColor: "#000",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 20,
+                }}
+              >
+                <Text style={{ color: "#fff", textAlign: "center" }}>
+                  Set EXPO_PUBLIC_GOOGLE_MAPS_JS_KEY to enable Street View.
+                </Text>
+              </View>
+            )}
+          </SafeAreaView>
+        </Modal>
+      )}
 
       {!!error && (
-        <View style={[s.errToast, { bottom: 72 + insets.bottom }]}>
-          <Text style={s.errTxt}>{error}</Text>
+        <View style={[styles.errToast, { bottom: 72 + insets.bottom }]}>
+          <Text style={styles.errTxt}>{error}</Text>
         </View>
       )}
     </SafeAreaView>
   );
 }
 
-/* ---------- styles ---------- */
-const s = StyleSheet.create({
+/* ---------- STYLES ---------- */
+const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.page },
 
-  /* pulsing user dot */
+  /* flowing pulsing user dot */
   pulse: {
     position: "absolute",
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: C.blue,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#2563EB33", // soft blue glow
+    borderWidth: 1.5,
+    borderColor: "#2563EB66",
   },
   blueDot: {
     width: 14,
@@ -1268,7 +1601,7 @@ const s = StyleSheet.create({
     borderColor: C.tealDot,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#ECFDF5",
+    backgroundColor: "#EFF6FF",
   },
   circleInner: {
     width: 8,
@@ -1292,7 +1625,6 @@ const s = StyleSheet.create({
 
   row: { paddingHorizontal: 8, paddingVertical: 6 },
   rowLabel: { color: C.sub, fontWeight: "600", fontSize: 12, marginBottom: 2 },
-  rowValue: { color: C.text, fontWeight: "600" },
   rowDivider: { height: 1, backgroundColor: C.border, marginHorizontal: 8 },
 
   inputWrap: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -1309,14 +1641,6 @@ const s = StyleSheet.create({
     zIndex: 25,
     elevation: 8,
   },
-  suggestHdr: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: "#F9FAFB",
-    borderBottomWidth: 1,
-    borderBottomColor: C.border,
-  },
-  suggestHdrTxt: { color: C.sub, fontWeight: "700", fontSize: 12 },
   suggestRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1329,7 +1653,13 @@ const s = StyleSheet.create({
   suggestText: { color: C.text, flex: 1 },
 
   /* Bottom sheet */
-  sheetWrap: { position: "absolute", left: 12, right: 12, bottom: 12, zIndex: 10 },
+  sheetWrap: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    bottom: 12,
+    zIndex: 10,
+  },
   sheetCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -1365,32 +1695,53 @@ const s = StyleSheet.create({
   },
 
   /* Nav bottom */
-  bottomBar: { position: "absolute", left: 12, right: 12, bottom: 12, zIndex: 10 },
+  bottomBar: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    bottom: 12,
+    zIndex: 10,
+  },
   navBottom: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: C.border,
+    backgroundColor: "rgba(11,19,43,0.94)",
+    borderWidth: 0,
     borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 12,
     shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
   },
-  arriveEtaTitle: { color: C.sub, fontSize: 12 },
-  arriveEtaValue: { color: C.text, fontWeight: "800" },
+  arriveEtaTitle: { color: "#E5E7EB", fontSize: 12 },
+  arriveEtaClock: {
+    color: "#F9FAFB",
+    fontWeight: "800",
+    fontSize: 16,
+    marginTop: 2,
+  },
+  arriveEtaSub: {
+    color: "#CBD5F5",
+    fontSize: 12,
+    marginTop: 2,
+    fontWeight: "600",
+  },
+  arriveEtaDest: {
+    color: "#E5E7EB",
+    fontSize: 12,
+    marginTop: 2,
+  },
 
   /* Turn banner */
   banner: {
     position: "absolute",
     left: 12,
     right: 12,
-    backgroundColor: C.darkGlass,
+    backgroundColor: "rgba(11,19,43,0.94)",
     borderRadius: 12,
     padding: 12,
     flexDirection: "row",
@@ -1398,8 +1749,14 @@ const s = StyleSheet.create({
     gap: 10,
     zIndex: 25,
   },
+  bannerDistance: {
+    color: "#F9FAFB",
+    fontWeight: "800",
+    fontSize: 16,
+    marginBottom: 2,
+  },
   bannerTitle: { color: C.white, fontWeight: "800", fontSize: 14 },
-  bannerSub: { color: "#D1D5DB", fontSize: 12 },
+  bannerSub: { color: "#D1D5DB", fontSize: 12, marginTop: 2 },
 
   /* Sim button */
   simBtn: {
@@ -1417,7 +1774,7 @@ const s = StyleSheet.create({
     elevation: 3,
   },
 
-  /* FABs */
+  /* FAB */
   locFab: {
     position: "absolute",
     right: 16,
@@ -1433,14 +1790,14 @@ const s = StyleSheet.create({
     zIndex: 15,
   },
 
-  /* Speed bubble (bottom-left) */
+  /* Speed bubble */
   speedBubble: {
     position: "absolute",
     left: 16,
     width: 68,
     height: 68,
     borderRadius: 34,
-    backgroundColor: C.card,
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: C.border,
     alignItems: "center",
@@ -1452,11 +1809,22 @@ const s = StyleSheet.create({
     elevation: 6,
     zIndex: 15,
   },
-  speedValue: { fontSize: 18, fontWeight: "800", color: C.text, marginBottom: 2 },
+  speedValue: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: C.text,
+    marginBottom: 2,
+  },
   speedUnit: { fontSize: 12, fontWeight: "700", color: C.sub },
 
   /* Arrived sheet */
-  arrivedWrap: { position: "absolute", left: 12, right: 12, bottom: 12, zIndex: 20 },
+  arrivedWrap: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    bottom: 12,
+    zIndex: 20,
+  },
   arrivedCard: {
     backgroundColor: C.card,
     borderColor: C.border,
@@ -1495,7 +1863,12 @@ const s = StyleSheet.create({
   statVal: { color: C.text, fontWeight: "800", marginTop: 4 },
   statLbl: { color: C.sub, fontSize: 12 },
 
-  arrivedActions: { width: "100%", flexDirection: "row", gap: 10, marginTop: 16 },
+  arrivedActions: {
+    width: "100%",
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 16,
+  },
   primaryBtn: {
     flex: 1,
     backgroundColor: C.brand,

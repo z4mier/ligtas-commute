@@ -98,16 +98,16 @@ model Bus {
   forwardRoute String?
   returnRoute  String?
 
-  // NEW: which physical device (ESP32+SIM800L) belongs to this bus
-  // e.g. "LC-3001" — unique per device
-  deviceId     String?         @unique
+  /// NEW: preset destination for Start Trip (Google Maps)
+  destLabel    String?   // e.g. "Oslob Bus Stop" or "South Bus Terminal"
+  destLat      Float?
+  destLng      Float?
 
+  deviceId     String?         @unique
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @default(now()) @updatedAt
   drivers      DriverProfile[] @relation("BusDrivers")
   trips        Trip[]
-
-  // NEW: IoT emergency incidents coming from this bus/device
   emergencyIncidents EmergencyIncident[] @relation("BusEmergencyIncidents")
 }
 

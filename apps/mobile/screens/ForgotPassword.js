@@ -23,6 +23,7 @@ import {
   Poppins_600SemiBold,
   Poppins_700Bold,
 } from "@expo-google-fonts/poppins";
+import { StatusBar } from "expo-status-bar"; // ✅ added
 import { API_URL } from "../constants/config";
 
 const COLORS = {
@@ -84,15 +85,12 @@ export default function ForgotPassword({ navigation }) {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        // 400 from backend = invalid email format
         if (res.status === 400) {
           setErrors((prev) => ({
             ...prev,
             email: "Enter a valid email address.",
           }));
-        }
-        // 404 from backend = email not found
-        else if (res.status === 404) {
+        } else if (res.status === 404) {
           setErrors((prev) => ({
             ...prev,
             email: "Email not registered.",
@@ -106,7 +104,7 @@ export default function ForgotPassword({ navigation }) {
         return;
       }
 
-      // ✅ Success: email exists, reset code sent → go to ResetPassword screen
+      // ✅ Success
       navigation.navigate("ResetPassword", { email: key });
       return;
     } catch (_e) {
@@ -122,14 +120,17 @@ export default function ForgotPassword({ navigation }) {
 
   if (!fontsLoaded) {
     return (
-      <SafeAreaView style={styles.loadingBox} edges={["top", "bottom"]}>
+      <SafeAreaView style={styles.loadingBox} edges={["bottom"]}>
         <ActivityIndicator color="#fff" />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
+    <SafeAreaView style={styles.screen} edges={["bottom"]}>
+      {/* ✅ status bar floats on top of hero */}
+      <StatusBar style="light" translucent backgroundColor="transparent" />
+
       {/* Curved hero */}
       <View style={[styles.curveHero, { height: HERO_H }]}>
         <View
@@ -353,7 +354,7 @@ const styles = StyleSheet.create({
   },
   backText: {
     color: COLORS.link,
-    textDecorationLine: "underline",
+    textDecorationLine: "none",
     fontSize: 13.5,
   },
 });

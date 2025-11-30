@@ -31,6 +31,8 @@ import { addIncidentSubmitted } from "../lib/notify";
 /* ---------- theme ---------- */
 const C = {
   brand: "#0B132B",
+
+  // Text & surfaces
   text: "#111827",
   sub: "#6B7280",
   hint: "#9CA3AF",
@@ -38,12 +40,17 @@ const C = {
   card: "#FFFFFF",
   page: "#FFFFFF",
   border: "#E5E7EB",
-  tealDot: "#10B981",
-  destPin: "#E11D48",
-  blue: "#2563EB",
-  blueTrail: "#60A5FA",
+
+  // Map markers
+  tealDot: "#22C55E",     
+  destPin: "#F43F5E",     
+  blue: "#1D4ED8",        
+  blueTrail: "#60A5FA",    
+  breadcrumb: "rgba(37,99,235,0.85)", 
+
   darkGlass: "rgba(17,24,39,0.92)",
 };
+
 
 /* DEV – show Sim button */
 const SHOW_SIM = true;
@@ -275,11 +282,7 @@ export default function MapTracking({ route }) {
             d.driver?.id ||
             null;
 
-          const busId =
-            d.busId ||
-            d.bus?.id ||
-            d.busId ||
-            null;
+          const busId = d.busId || d.bus?.id || d.busId || null;
 
           const normalized = {
             ...d,
@@ -310,7 +313,11 @@ export default function MapTracking({ route }) {
   const mapRef = useRef(null);
   const watchRef = useRef(null);
 
-  const [search, setSearch] = useState("");
+  // 🔹 Separate search for starting point & destination
+  const [pickupSearch, setPickupSearch] = useState("");
+  const [destSearch, setDestSearch] = useState("");
+
+  const [activeField, setActiveField] = useState("dest"); // "pickup" or "dest"
   const [suggestions, setSuggestions] = useState([]);
   const [fetching, setFetching] = useState(false);
   const [showSuggest, setShowSuggest] = useState(false);
@@ -326,8 +333,8 @@ export default function MapTracking({ route }) {
   const [eta, setEta] = useState(null);
   const [breadcrumbs, setBreadcrumbs] = useState([]);
   const [navMode, setNavMode] = useState(false);
-  const [steps, setSteps] = useState([]);
-  const [stepIdx, setStepIdx] = useState(0);
+  const [, setSteps] = useState([]);
+  const [, setStepIdx] = useState(0);
   const [error, setError] = useState("");
 
   // Speed (km/h)
@@ -466,8 +473,7 @@ export default function MapTracking({ route }) {
   /* ---------- init ---------- */
   useEffect(() => {
     (async () => {
-      const { status } =
-        await Location.requestForegroundPermissionsAsync();
+      const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
         setError("Location permission denied.");
         setOriginText("Permission required");
@@ -482,26 +488,31 @@ export default function MapTracking({ route }) {
       };
       setDevicePos(cur);
       setHeading(pos.coords.heading ?? 0);
-      const label =
-        (await reverseGeocode(cur)) || "Current location";
+      const label = (await reverseGeocode(cur)) || "Current location";
       setOrigin({ ...cur, name: label });
       setOriginText(label);
+      setPickupSearch(label); // 🔹 show in Starting point input
       animateTo(cur);
     })();
   }, []);
 
-  /* ---------- autocomplete ---------- */
+  /* ---------- autocomplete (per active field) ---------- */
   useEffect(() => {
     if (!showSuggest) return;
-    if (search.trim().length < 2) {
+
+    const query =
+      activeField === "pickup" ? pickupSearch : destSearch;
+
+    if (query.trim().length < 2) {
       setSuggestions([]);
       return;
     }
+
     const t = setTimeout(async () => {
       try {
         setFetching(true);
         const r = await fetch(
-          `${API_URL}/maps/autocomplete?q=${encodeURIComponent(search)}`
+          `${API_URL}/maps/autocomplete?q=${encodeURIComponent(query)}`
         );
         const j = await r.json();
         if (j?.status && j.status !== "OK")
@@ -513,8 +524,9 @@ export default function MapTracking({ route }) {
         setFetching(false);
       }
     }, 250);
+
     return () => clearTimeout(t);
-  }, [search, showSuggest]);
+  }, [pickupSearch, destSearch, activeField, showSuggest]);
 
   const fetchPlace = async (place) => {
     try {
@@ -556,14 +568,47 @@ export default function MapTracking({ route }) {
         `${API_URL}/maps/directions?origin=${o.latitude},${o.longitude}&destination=${d.latitude},${d.longitude}&mode=driving`
       );
       const data = await r.json();
+
+      // 🔹 FRIENDLY HANDLING FOR ZERO_RESULTS + OTHER STATUSES
       if (data?.status && data.status !== "OK") {
-        setError(data?.error_message || data?.status);
+        let msg =
+          "Directions are not available for this route right now. Please adjust your starting point or destination.";
+
+        switch (data.status) {
+          case "ZERO_RESULTS":
+            msg =
+              "We couldn’t find a driving route between your selected starting point and destination. Try choosing locations that are closer together or adjust your route.";
+            break;
+          case "NOT_FOUND":
+            msg =
+              "We couldn’t find one of the locations you entered. Please try searching again.";
+            break;
+          case "OVER_QUERY_LIMIT":
+          case "RESOURCE_EXHAUSTED":
+            msg =
+              "Map requests are temporarily limited. Please try again in a few moments.";
+            break;
+          case "REQUEST_DENIED":
+            msg =
+              "The maps request was denied. Please contact the LigtasCommute team if this keeps happening.";
+            break;
+          case "INVALID_REQUEST":
+            msg =
+              "Something is wrong with the route request. Please try again.";
+            break;
+          default:
+            if (data.error_message) msg = data.error_message;
+            break;
+        }
+
+        setError(msg);
         setRouteCoords([]);
         setEta(null);
         setSteps([]);
         setStepIdx(0);
         return;
       }
+
       const route0 = data?.routes?.[0];
       const leg0 = route0?.legs?.[0];
       const encoded = route0?.overview_polyline?.points;
@@ -598,121 +643,113 @@ export default function MapTracking({ route }) {
 
       if (!navMode) fitRoute(o, d, coords);
     } catch {
-      setError("Directions failed.");
+      setError("Directions failed. Please check your internet connection and try again.");
     }
   };
 
-/* ---------- trips: start / complete on backend ---------- */
-const startTripOnServer = async (startFrom) => {
-  try {
-    console.log("[trip] starting at", startFrom);
-    console.log("[trip] using driver =", driver);
+  /* ---------- trips: start / complete on backend ---------- */
+  const startTripOnServer = async (startFrom) => {
+    try {
+      console.log("[trip] starting at", startFrom);
+      console.log("[trip] using driver =", driver);
 
-    // 🔎 Try all possible driver IDs from the scanned object
-    const resolvedDriverId =
-      driver?.driverProfileId ||
-      driver?.driverId ||
-      driver?.id ||
-      driver?.driver?.driverId ||
-      driver?.driver?.id ||
-      null;
+      // 🔎 Try all possible driver IDs from the scanned object
+      const resolvedDriverId =
+        driver?.driverProfileId ||
+        driver?.driverId ||
+        driver?.id ||
+        driver?.driver?.driverId ||
+        driver?.driver?.id ||
+        null;
 
-    // 🔎 Try to resolve bus id
-    const resolvedBusId =
-      driver?.busId ||
-      driver?.bus?.id ||
-      null;
+      // 🔎 Try to resolve bus id
+      const resolvedBusId = driver?.busId || driver?.bus?.id || null;
 
-    // 🧾 Snapshot fields — para ma-display sa TripDetails maski walay real FK
-    const snapshotDriverName =
-      driver?.name ||
-      driver?.fullName ||
-      driver?.driver?.name ||
-      driver?.driver?.fullName ||
-      null;
+      // 🧾 Snapshot fields — para ma-display sa TripDetails maski walay real FK
+      const snapshotDriverName =
+        driver?.name ||
+        driver?.fullName ||
+        driver?.driver?.name ||
+        driver?.driver?.fullName ||
+        null;
 
-    const snapshotBusNumber =
-      driver?.busNumber ||
-      driver?.bus?.number ||
-      null;
+      const snapshotBusNumber =
+        driver?.busNumber || driver?.bus?.number || null;
 
-    const snapshotBusPlate =
-      driver?.plateNumber ||
-      driver?.bus?.plate ||
-      null;
+      const snapshotBusPlate =
+        driver?.plateNumber || driver?.bus?.plate || null;
 
-    const payload = {
-      driverProfileId: resolvedDriverId,
-      busId: resolvedBusId,
-      originLat: startFrom.latitude,
-      originLng: startFrom.longitude,
-      originLabel: origin?.name || originText || "Current location",
+      const payload = {
+        driverProfileId: resolvedDriverId,
+        busId: resolvedBusId,
+        originLat: startFrom.latitude,
+        originLng: startFrom.longitude,
+        originLabel: origin?.name || originText || "Current location",
 
-      // 🆕 snapshot fields
-      driverName: snapshotDriverName,
-      busNumber: snapshotBusNumber,
-      busPlate: snapshotBusPlate,
-    };
+        // 🆕 snapshot fields
+        driverName: snapshotDriverName,
+        busNumber: snapshotBusNumber,
+        busPlate: snapshotBusPlate,
+      };
 
-    console.log("[trip.start] payload =", payload);
+      console.log("[trip.start] payload =", payload);
 
-    const res = await authFetch("/commuter/trips/start", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+      const res = await authFetch("/commuter/trips/start", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
 
-    const body = await res.json().catch(() => ({}));
+      const body = await res.json().catch(() => ({}));
 
-    if (!res.ok) {
-      console.log("[trip] startTrip error:", res.status, body);
-      setError(
-        body.error ||
-          "Failed to start trip. Please make sure a driver & bus are selected."
-      );
+      if (!res.ok) {
+        console.log("[trip] startTrip error:", res.status, body);
+        setError(
+          body.error ||
+            "Failed to start trip. Please make sure a driver & bus are selected."
+        );
+        return null;
+      }
+
+      const id = body?.trip?.id || body?.id || null;
+      console.log("[trip] started id =", id, "resp body =", body);
+      return id;
+    } catch (e) {
+      console.log("[trip] startTrip exception:", e);
+      setError("Network error while starting trip.");
       return null;
     }
+  };
 
-    const id = body?.trip?.id || body?.id || null;
-    console.log("[trip] started id =", id, "resp body =", body);
-    return id;
-  } catch (e) {
-    console.log("[trip] startTrip exception:", e);
-    setError("Network error while starting trip.");
-    return null;
-  }
-};
+  const completeTripOnServer = async () => {
+    try {
+      console.log("[trip] completing trip", { tripId, dest });
 
-const completeTripOnServer = async () => {
-  try {
-    console.log("[trip] completing trip", { tripId, dest });
+      const res = await authFetch("/commuter/trips/complete", {
+        method: "POST",
+        body: JSON.stringify({
+          tripId: tripId || undefined,
+          destLat: dest?.latitude ?? null,
+          destLng: dest?.longitude ?? null,
+          destLabel: dest?.name || null,
+        }),
+      });
 
-    const res = await authFetch("/commuter/trips/complete", {
-      method: "POST",
-      body: JSON.stringify({
-        tripId: tripId || undefined,
-        destLat: dest?.latitude ?? null,
-        destLng: dest?.longitude ?? null,
-        destLabel: dest?.name || null,
-      }),
-    });
+      const body = await res.json().catch(() => ({}));
 
-    const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        console.log("[trip] completeTrip error:", res.status, body);
+        setError(body.error || "Could not complete trip.");
+        return;
+      }
 
-    if (!res.ok) {
-      console.log("[trip] completeTrip error:", res.status, body);
-      setError(body.error || "Could not complete trip.");
-      return;
+      const id = body?.trip?.id || body?.id || null;
+      console.log("[trip] completed id =", id, "resp body =", body);
+      setTripId(id);
+    } catch (e) {
+      console.log("[trip] completeTrip exception:", e);
+      setError("Network error while completing trip.");
     }
-
-    const id = body?.trip?.id || body?.id || null;
-    console.log("[trip] completed id =", id, "resp body =", body);
-    setTripId(id);
-  } catch (e) {
-    console.log("[trip] completeTrip exception:", e);
-    setError("Network error while completing trip.");
-  }
-};
-
+  };
 
   /* ---------- navigation ---------- */
   const startNavigation = async () => {
@@ -720,7 +757,8 @@ const completeTripOnServer = async () => {
 
     setError("");
 
-    let startFrom = devicePos;
+    let startFrom = origin || devicePos;
+
     if (!startFrom) {
       const pos = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
@@ -731,11 +769,11 @@ const completeTripOnServer = async () => {
       };
       setDevicePos(startFrom);
       setHeading(pos.coords.heading ?? 0);
+      const label = (await reverseGeocode(startFrom)) || "Current location";
+      setOrigin({ ...startFrom, name: label });
+      setOriginText(label);
+      setPickupSearch(label);
     }
-    const label =
-      (await reverseGeocode(startFrom)) || "Current location";
-    setOrigin({ ...startFrom, name: label });
-    setOriginText(label);
 
     setBreadcrumbs([]);
 
@@ -792,11 +830,11 @@ const completeTripOnServer = async () => {
 
         setDevicePos(cur);
         setHeading(hdg);
-        setOrigin((prev) => ({ ...(prev || {}), ...cur }));
+        // ❌ origin should NOT move with device anymore
+        // setOrigin((prev) => ({ ...(prev || {}), ...cur }));
         setBreadcrumbs((p) => [...p.slice(-120), cur]);
 
-        if (lastPoint)
-          setTripDistance((d) => d + haversine(lastPoint, cur));
+        if (lastPoint) setTripDistance((d) => d + haversine(lastPoint, cur));
         setLastPoint(cur);
 
         const stopped = kmh !== null ? kmh < 2 : false;
@@ -843,6 +881,7 @@ const completeTripOnServer = async () => {
     setReportOpen(false);
     setSimulating(false);
     setDest(null);
+    setDestSearch("");
     setRouteCoords([]);
     setEta(null);
     setSteps([]);
@@ -874,10 +913,10 @@ const completeTripOnServer = async () => {
       setDevicePos(cur);
       setHeading(pos.coords.heading ?? heading ?? 0);
     }
-    const label =
-      (await reverseGeocode(cur)) || "Current location";
+    const label = (await reverseGeocode(cur)) || "Current location";
     setOrigin({ ...cur, name: label });
     setOriginText(label);
+    setPickupSearch(label); // 🔹 update Starting point field
     if (navMode) animateCameraFollow(cur, heading, 18.2);
     else animateTo(cur);
 
@@ -892,6 +931,12 @@ const completeTripOnServer = async () => {
     }
   };
 
+  // 🔹 Explicit "use current location as starting point" icon
+  const setCurrentLocationAsOrigin = async () => {
+    await recenterToUser();
+    setShowSuggest(false);
+  };
+
   useEffect(
     () => () => {
       if (watchRef.current) watchRef.current.remove?.();
@@ -903,7 +948,7 @@ const completeTripOnServer = async () => {
     const coord = e.nativeEvent.coordinate;
     const pinned = { ...coord, name: "Pinned destination" };
     setDest(pinned);
-    setSearch(pinned.name);
+    setDestSearch(pinned.name);
     setShowSuggest(false);
     fetchDirections(origin || devicePos || pinned, pinned, true);
   };
@@ -911,28 +956,48 @@ const completeTripOnServer = async () => {
   const onSelectSuggestion = async (item) => {
     setSuggestions([]);
     setShowSuggest(false);
-    setSearch(item.description);
     Keyboard.dismiss();
+
     const chosen = await fetchPlace(item);
     if (!chosen) return;
-    setDest(chosen);
-    setRecents((prev) => {
-      const next = [
-        item,
-        ...prev.filter((x) => x.place_id !== item.place_id),
-      ];
-      return next.slice(0, 6);
-    });
-    animateTo(chosen, {
-      latitudeDelta: 0.06,
-      longitudeDelta: 0.06,
-    });
-    if (origin) await fetchDirections(origin, chosen, true);
+
+    if (activeField === "pickup") {
+      const label = chosen.name || item.description;
+      setOrigin(chosen);
+      setOriginText(label);
+      setPickupSearch(label);
+
+      animateTo(chosen, {
+        latitudeDelta: 0.06,
+        longitudeDelta: 0.06,
+      });
+
+      if (dest) {
+        await fetchDirections(chosen, dest, true);
+      }
+    } else {
+      const label = chosen.name || item.description;
+      setDest(chosen);
+      setDestSearch(label);
+      setRecents((prev) => {
+        const next = [item, ...prev.filter((x) => x.place_id !== item.place_id)];
+        return next.slice(0, 6);
+      });
+
+      animateTo(chosen, {
+        latitudeDelta: 0.06,
+        longitudeDelta: 0.06,
+      });
+
+      if (origin || devicePos) {
+        await fetchDirections(origin || devicePos, chosen, true);
+      }
+    }
   };
 
   const clearDestination = () => {
     setDest(null);
-    setSearch("");
+    setDestSearch("");
     setSuggestions([]);
     setShowSuggest(false);
     setRouteCoords([]);
@@ -948,26 +1013,17 @@ const completeTripOnServer = async () => {
     stopBackgroundTracking().catch(() => {});
   };
 
-  const openSuggest = () => {
-    setShowSuggest(true);
-    if (search.trim().length < 2) setSuggestions([]);
+  const clearOrigin = () => {
+    setOrigin(null);
+    setOriginText("Starting point");
+    setPickupSearch("");
+    setSuggestions([]);
+    setShowSuggest(false);
   };
 
-  const nextStep = steps[stepIdx] || null;
-  const bannerText = (() => {
-    if (!nextStep) return null;
-    const m = nextStep.maneuver || "";
-    const title = m.includes("left")
-      ? "Turn left"
-      : m.includes("right")
-      ? "Turn right"
-      : m.includes("straight")
-      ? "Go straight"
-      : m.includes("roundabout")
-      ? "At roundabout"
-      : "Continue";
-    return `${title} • ${nextStep.distanceText || ""}`;
-  })();
+  const openSuggest = () => {
+    setShowSuggest(true);
+  };
 
   const routeTitle = (() => {
     const a = cleanPlaceName(origin?.name || originText);
@@ -990,9 +1046,7 @@ const completeTripOnServer = async () => {
   const distanceKm = (tripDistance / 1000).toFixed(1);
   const avgSpeed =
     durationMins > 0
-      ? Math.round(
-          (tripDistance / 1000) / (durationMins / 60)
-        )
+      ? Math.round((tripDistance / 1000) / (durationMins / 60))
       : 0;
 
   /* ---------- DEV simulate ---------- */
@@ -1004,20 +1058,12 @@ const completeTripOnServer = async () => {
       coords = [
         start,
         {
-          latitude:
-            start.latitude +
-            (dest.latitude - start.latitude) * 0.33,
-          longitude:
-            start.longitude +
-            (dest.longitude - start.longitude) * 0.33,
+          latitude: start.latitude + (dest.latitude - start.latitude) * 0.33,
+          longitude: start.longitude + (dest.longitude - start.longitude) * 0.33,
         },
         {
-          latitude:
-            start.latitude +
-            (dest.latitude - start.latitude) * 0.66,
-          longitude:
-            start.longitude +
-            (dest.longitude - start.longitude) * 0.66,
+          latitude: start.latitude + (dest.latitude - start.latitude) * 0.66,
+          longitude: start.longitude + (dest.longitude - start.longitude) * 0.66,
         },
         dest,
       ];
@@ -1095,33 +1141,12 @@ const completeTripOnServer = async () => {
     }
   };
 
+  const query =
+    activeField === "pickup" ? pickupSearch : destSearch;
+
   /* ---------- render ---------- */
   return (
     <SafeAreaView style={[s.safe, { paddingTop: insets.top }]}>
-      {/* Direction banner */}
-      {navMode && bannerText && (
-        <View style={[s.banner, { top: 10 + insets.top }]}>
-          <MaterialCommunityIcons
-            name={
-              (nextStep?.maneuver || "").includes("left")
-                ? "arrow-left"
-                : (nextStep?.maneuver || "").includes("right")
-                ? "arrow-right"
-                : "arrow-up"
-            }
-            size={22}
-            color={C.white}
-            style={{ marginRight: 6 }}
-          />
-          <View style={{ flex: 1 }}>
-            <Text style={s.bannerTitle}>{bannerText}</Text>
-            {!!nextStep?.road && (
-              <Text style={s.bannerSub}>{nextStep.road}</Text>
-            )}
-          </View>
-        </View>
-      )}
-
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFill}
@@ -1139,46 +1164,54 @@ const completeTripOnServer = async () => {
           longitudeDelta: 0.08,
         }}
       >
-        {/* Destination */}
-        {dest && (
+        {/* Start point marker – blue bus */}
+        {origin && !(devicePos && haversine(origin, devicePos) < 20) && (
           <Marker
-            coordinate={dest}
-            title={dest.name || "Destination"}
-          />
+            coordinate={origin}
+            title={origin.name || "Starting point"}
+            description="Pickup location"
+          >
+            <View style={{ alignItems: "center", justifyContent: "center" }}>
+              <MaterialCommunityIcons name="bus" size={30} color={C.blue} />
+            </View>
+          </Marker>
+        )}
+
+        {/* Destination – pink/red bus */}
+        {dest && (
+          <Marker coordinate={dest} title={dest.name || "Destination"}>
+            <View style={{ alignItems: "center", justifyContent: "center" }}>
+              <MaterialCommunityIcons name="bus" size={28} color={C.destPin} />
+            </View>
+          </Marker>
         )}
 
         {/* Your location */}
         {devicePos && (
-          <Marker
-            coordinate={devicePos}
-            title="You"
-            description={originText}
-          >
-            <View
-              style={{ alignItems: "center", justifyContent: "center" }}
-            >
-              {navMode && (
-                <Animated.View style={[s.pulse, pulseStyle]} />
-              )}
+          <Marker coordinate={devicePos} title="You" description={originText}>
+            <View style={{ alignItems: "center", justifyContent: "center" }}>
+              {navMode && <Animated.View style={[s.pulse, pulseStyle]} />}
               <View style={s.blueDot} />
             </View>
           </Marker>
         )}
 
         {routeCoords.length > 0 && (
-          <Polyline
-            coordinates={routeCoords}
-            strokeWidth={6}
-            strokeColor={C.brand}
-          />
-        )}
-        {breadcrumbs.length > 1 && (
-          <Polyline
-            coordinates={breadcrumbs}
-            strokeWidth={3}
-            strokeColor={C.blueTrail}
-          />
-        )}
+      <Polyline
+        coordinates={routeCoords}
+        strokeWidth={6}
+        strokeColor={C.blueTrail} 
+      />
+    )}
+
+    {breadcrumbs.length > 1 && (
+      <Polyline
+        coordinates={breadcrumbs}
+        strokeWidth={3}
+        strokeColor={C.breadcrumb}
+      />
+    )}
+
       </MapView>
 
       {/* DEV Sim */}
@@ -1234,16 +1267,55 @@ const completeTripOnServer = async () => {
             </View>
 
             <View style={{ flex: 1 }}>
+              {/* STARTING POINT (editable) */}
               <View style={s.row}>
-                <Text style={s.rowLabel}>Pickup point</Text>
-                <Text
-                  numberOfLines={1}
-                  style={s.rowValue}
-                >
-                  {originText}
-                </Text>
+                <Text style={s.rowLabel}>Starting point</Text>
+                <View style={s.inputWrap}>
+                  <TextInput
+                    style={s.input}
+                    placeholder="Search starting point"
+                    placeholderTextColor={C.hint}
+                    value={pickupSearch}
+                    onFocus={() => {
+                      setActiveField("pickup");
+                      setShowSuggest(true);
+                    }}
+                    onChangeText={(txt) => {
+                      setActiveField("pickup");
+                      setPickupSearch(txt);
+                    }}
+                    returnKeyType="search"
+                  />
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    {pickupSearch.length > 0 && (
+                      <TouchableOpacity
+                        onPress={clearOrigin}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        <MaterialCommunityIcons
+                          name="close-circle"
+                          size={18}
+                          color={C.hint}
+                        />
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                      onPress={setCurrentLocationAsOrigin}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <MaterialCommunityIcons
+                        name="crosshairs-gps"
+                        size={20}
+                        color={C.brand}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
               </View>
+
               <View style={s.rowDivider} />
+
+              {/* DESTINATION */}
               <View style={s.row}>
                 <Text style={s.rowLabel}>Where to go?</Text>
                 <View style={s.inputWrap}>
@@ -1251,12 +1323,18 @@ const completeTripOnServer = async () => {
                     style={s.input}
                     placeholder="Search destination"
                     placeholderTextColor={C.hint}
-                    value={search}
-                    onChangeText={setSearch}
-                    onFocus={openSuggest}
+                    value={destSearch}
+                    onFocus={() => {
+                      setActiveField("dest");
+                      openSuggest();
+                    }}
+                    onChangeText={(txt) => {
+                      setActiveField("dest");
+                      setDestSearch(txt);
+                    }}
                     returnKeyType="search"
                   />
-                  {(search.length > 0 || dest) && (
+                  {(destSearch.length > 0 || dest) && (
                     <TouchableOpacity
                       onPress={clearDestination}
                       hitSlop={{
@@ -1278,7 +1356,9 @@ const completeTripOnServer = async () => {
 
               {showSuggest && (
                 <View style={s.suggestBox}>
-                  {search.trim().length < 2 && recents.length > 0 ? (
+                  {activeField === "dest" &&
+                  query.trim().length < 2 &&
+                  recents.length > 0 ? (
                     <View>
                       <View style={s.suggestHdr}>
                         <Text style={s.suggestHdrTxt}>Recent</Text>
@@ -1307,15 +1387,11 @@ const completeTripOnServer = async () => {
                     <FlatList
                       keyboardShouldPersistTaps="handled"
                       data={suggestions}
-                      keyExtractor={(it) =>
-                        String(it.place_id)
-                      }
+                      keyExtractor={(it) => String(it.place_id)}
                       renderItem={({ item }) => (
                         <TouchableOpacity
                           style={s.suggestRow}
-                          onPress={() =>
-                            onSelectSuggestion(item)
-                          }
+                          onPress={() => onSelectSuggestion(item)}
                         >
                           <MaterialCommunityIcons
                             name="map-marker-outline"
@@ -1340,7 +1416,7 @@ const completeTripOnServer = async () => {
                           >
                             <ActivityIndicator size="small" />
                           </View>
-                        ) : (
+                        ) : query.trim().length >= 2 ? (
                           <View style={{ padding: 12 }}>
                             <Text
                               style={{
@@ -1351,7 +1427,7 @@ const completeTripOnServer = async () => {
                               No results
                             </Text>
                           </View>
-                        )
+                        ) : null
                       }
                     />
                   )}
@@ -1876,7 +1952,6 @@ const s = StyleSheet.create({
     fontSize: 12,
     marginBottom: 2,
   },
-  rowValue: { color: C.text, fontWeight: "600" },
   rowDivider: {
     height: 1,
     backgroundColor: C.border,
@@ -1995,22 +2070,6 @@ const s = StyleSheet.create({
   },
   arriveEtaTitle: { color: C.sub, fontSize: 12 },
   arriveEtaValue: { color: C.text, fontWeight: "800" },
-
-  /* Turn banner */
-  banner: {
-    position: "absolute",
-    left: 12,
-    right: 12,
-    backgroundColor: C.darkGlass,
-    borderRadius: 12,
-    padding: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    zIndex: 25,
-  },
-  bannerTitle: { color: C.white, fontWeight: "800", fontSize: 14 },
-  bannerSub: { color: "#D1D5DB", fontSize: 12 },
 
   /* Sim button */
   simBtn: {
