@@ -9,6 +9,7 @@ import {
   TriangleAlert,
   Settings,
   History,
+  Clock3,
 } from "lucide-react";
 import { usePathname } from "next/navigation";
 
@@ -17,6 +18,7 @@ const NAV = [
   { href: "/drivers", label: "Driver Registration", icon: FileUser },
   { href: "/buses", label: "Bus Registration", icon: BusFront },
   { href: "/incidents", label: "Incident Reports", icon: TriangleAlert },
+  { href: "/trips", label: "Trip History", icon: Clock3 },
   { href: "/emergency", label: "Emergency Reports", icon: History },
   { href: "/feedback", label: "User Feedback", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -29,8 +31,6 @@ export default function Sidebar() {
     <>
       <style>{css}</style>
       <aside className="admin-sidebar" style={S.aside}>
-        {/* Small label / section title */}
-       
         <nav style={S.nav}>
           {NAV.map(({ href, label, icon: Icon }) => {
             const active = path === href;

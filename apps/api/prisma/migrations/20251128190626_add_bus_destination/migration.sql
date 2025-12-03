@@ -1,4 +1,0 @@
--- AlterTable
-ALTER TABLE "Bus" ADD COLUMN "destLabel" TEXT;
-ALTER TABLE "Bus" ADD COLUMN "destLat" REAL;
-ALTER TABLE "Bus" ADD COLUMN "destLng" REAL;

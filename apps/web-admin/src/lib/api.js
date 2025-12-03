@@ -282,6 +282,39 @@ export async function listIotEmergencies(params = {}) {
   return [];
 }
 
+/* ---------- TRIPS (ADMIN) ---------- */
+
+export async function listTrips(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+
+  try {
+    // primary admin trips endpoint
+    const data = await request(`/admin/trips${qs ? `?${qs}` : ""}`);
+    if (Array.isArray(data?.items)) return data.items;
+    if (Array.isArray(data)) return data;
+    return [];
+  } catch (err) {
+    // kung wala pa ang /admin/trips (404), try /trips
+    if (err.status === 404) {
+      try {
+        const data = await request(`/trips${qs ? `?${qs}` : ""}`);
+        if (Array.isArray(data?.items)) return data.items;
+        if (Array.isArray(data)) return data;
+        return [];
+      } catch (err2) {
+        // kung wala sad ang /trips, treat as walay data
+        if (err2.status === 404) {
+          return [];
+        }
+        throw err2;
+      }
+    }
+
+    // other errors (500, 403, etc.) — i-throw gihapon
+    throw err;
+  }
+}
+
 /* ---------- NOTIFICATIONS (ADMIN) ---------- */
 
 export async function listNotifications(params = {}) {

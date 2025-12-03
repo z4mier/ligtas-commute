@@ -3,30 +3,30 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 model User {
-  id                 String             @id @default(cuid())
-  email              String?            @unique
-  phone              String?            @unique
+  id                 String   @id @default(cuid())
+  email              String?  @unique
+  phone              String?  @unique
   password           String?
-  role               String             @default("COMMUTER")
-  status             String             @default("active") // ok ni, gi-.toUpperCase() ra sa API
-  mustChangePassword Boolean            @default(false)
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  role               String   @default("COMMUTER")
+  status             String   @default("active")
+  mustChangePassword Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
   driverProfile      DriverProfile?
   commuterProfile    CommuterProfile?
   emergencyContacts  EmergencyContact[]
-  reportedIncidents  IncidentReport[]   @relation("UserReporter")
+  reportedIncidents  IncidentReport[] @relation("UserReporter")
 }
 
 model DriverProfile {
-  driverId  String           @id @default(cuid()) @map("id")
-  userId    String           @unique
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  driverId  String  @id @default(cuid()) @map("id")
+  userId    String  @unique
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   fullName  String
   licenseNo String
@@ -35,22 +35,18 @@ model DriverProfile {
   phone     String?
 
   busId     String?
-  bus       Bus?             @relation("BusDrivers", fields: [busId], references: [id])
+  bus       Bus?   @relation("BusDrivers", fields: [busId], references: [id])
 
-  busType   String           @default("AIRCON")
+  busType   String @default("AIRCON")
+  status    String @default("OFF_DUTY")
+  isActive  Boolean @default(true)
 
-  status    String           @default("OFF_DUTY")
-
-  /// account-level: buhi pa ba ni siya sa system
-  isActive  Boolean          @default(true)
-
-  createdAt DateTime         @default(now())
+  createdAt DateTime @default(now())
 
   ratings   RideRating[]
   incidents IncidentReport[]
   trips     Trip[]
 
-  // NEW: all IoT emergency incidents tied to this driver (if any)
   emergencyIncidents EmergencyIncident[] @relation("DriverEmergencyIncidents")
 
   @@index([busId])
@@ -97,12 +93,6 @@ model Bus {
   routeId      String?
   forwardRoute String?
   returnRoute  String?
-
-  /// NEW: preset destination for Start Trip (Google Maps)
-  destLabel    String?   // e.g. "Oslob Bus Stop" or "South Bus Terminal"
-  destLat      Float?
-  destLng      Float?
-
   deviceId     String?         @unique
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @default(now()) @updatedAt
@@ -188,34 +178,21 @@ model IncidentCategory {
   @@id([incidentId, category])
 }
 
-//////////////////////
-// NEW: IoT emergencies
-//////////////////////
-
 model EmergencyIncident {
   id              String   @id @default(cuid())
-
-  // from device
   deviceId        String
-  code            String        // "YELLOW" | "ORANGE" | "RED"
+  code            String
   message         String?
-
   latitude        Float?
   longitude       Float?
-
-  status          String   @default("PENDING") // PENDING | RESOLVED | DISMISSED
-
-  // link to bus + driver (optional, pero useful sa dashboard)
+  status          String   @default("PENDING")
   busId           String?
   driverProfileId String?
-
   busNumber       String?
   busPlate        String?
-
   createdAt       DateTime @default(now())
   resolvedAt      DateTime?
 
-  // relations
   bus    Bus?           @relation("BusEmergencyIncidents", fields: [busId], references: [id])
   driver DriverProfile? @relation("DriverEmergencyIncidents", fields: [driverProfileId], references: [driverId])
 

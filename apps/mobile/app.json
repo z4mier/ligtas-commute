@@ -37,13 +37,19 @@
       "permissions": [
         "CAMERA",
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA",
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA"
       ],
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyDegIXVdcHXgls2avydsdWgSKFziyePLNY"
         }
-      }
+      },
+      "package": "com.anonymous.mobile"
     }
   }
 }
