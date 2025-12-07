@@ -20,7 +20,7 @@ const NAV = [
   { href: "/incidents", label: "Incident Reports", icon: TriangleAlert },
   { href: "/trips", label: "Trip History", icon: Clock3 },
   { href: "/emergency", label: "Emergency Reports", icon: History },
-  { href: "/feedback", label: "User Feedback", icon: MessageSquare },
+  { href: "/feedback", label: "User Feedbacks", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

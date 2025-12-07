@@ -22,7 +22,6 @@ import {
 } from "@expo-google-fonts/poppins";
 import { StatusBar } from "expo-status-bar";
 import { API_URL } from "../constants/config";
-import { useI18n } from "../i18n/i18n";
 import { useTheme, THEME } from "../theme/ThemeProvider";
 
 /* ---------------- Toast ---------------- */
@@ -283,8 +282,6 @@ export default function SettingsScreen({ navigation }) {
   const s = useMemo(() => makeStyles(theme), [theme]);
   const { show, Toast } = useToast(theme);
 
-  const { t } = useI18n();
-
   const [loading, setLoading] = useState(true);
 
   const [profile, setProfile] = useState({
@@ -358,7 +355,7 @@ export default function SettingsScreen({ navigation }) {
       return;
     }
     if (!res.ok) {
-      show(t("err.loadProfile", "Failed to load profile"), "danger");
+      show("Failed to load profile", "danger");
       return;
     }
 
@@ -387,7 +384,7 @@ export default function SettingsScreen({ navigation }) {
       phone: nextProfile.phone,
       address: nextProfile.address,
     });
-  }, [navigation, show, t]);
+  }, [navigation, show]);
 
   useEffect(() => {
     (async () => {
@@ -409,13 +406,9 @@ export default function SettingsScreen({ navigation }) {
     setEditErr("");
     const cleanEmail = (email || "").trim().toLowerCase();
     if (!fullName.trim())
-      return setEditErr(
-        t("err.fullName", "Please enter your full name.")
-      );
+      return setEditErr("Please enter your full name.");
     if (!cleanEmail || !EMAIL_RE.test(cleanEmail))
-      return setEditErr(
-        t("err.email", "Please enter a valid email address.")
-      );
+      return setEditErr("Please enter a valid email address.");
     try {
       setEditLoading(true);
       const token = await AsyncStorage.getItem("token");
@@ -434,9 +427,7 @@ export default function SettingsScreen({ navigation }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok)
-        return setEditErr(
-          data?.message || t("err.update", "Update failed")
-        );
+        return setEditErr(data?.message || "Update failed");
 
       setProfile((p) => ({
         ...p,
@@ -452,11 +443,9 @@ export default function SettingsScreen({ navigation }) {
         address,
       });
       setEditModal(false);
-      show(
-        t("toast.profileSaved", "Profile updated successfully")
-      );
+      show("Profile updated successfully");
     } catch {
-      setEditErr(t("err.network", "Network error"));
+      setEditErr("Network error");
     } finally {
       setEditLoading(false);
     }
@@ -465,15 +454,11 @@ export default function SettingsScreen({ navigation }) {
   async function updatePassword() {
     setPErr("");
     if (!currentPassword || !newPassword || !confirmPassword)
-      return setPErr(
-        t("err.fillAllPw", "Fill all password fields.")
-      );
+      return setPErr("Fill all password fields.");
     if (newPassword.length < 6)
-      return setPErr(
-        t("err.pwMin", "New password must be at least 6 characters.")
-      );
+      return setPErr("New password must be at least 6 characters.");
     if (newPassword !== confirmPassword)
-      return setPErr(t("err.pwMatch", "Passwords do not match."));
+      return setPErr("Passwords do not match.");
     try {
       setPLoading(true);
       const token = await AsyncStorage.getItem("token");
@@ -487,10 +472,7 @@ export default function SettingsScreen({ navigation }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok)
-        return setPErr(
-          data?.message ||
-            t("err.tryAgain", "Update failed. Please try again.")
-        );
+        return setPErr(data?.message || "Update failed. Please try again.");
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -498,13 +480,9 @@ export default function SettingsScreen({ navigation }) {
       setShowNew(false);
       setShowCon(false);
       setSecurityModal(false);
-      show(
-        t("toast.pwChanged", "Password successfully changed")
-      );
+      show("Password successfully changed");
     } catch {
-      setPErr(
-        t("err.networkTryAgain", "Network error. Please try again.")
-      );
+      setPErr("Network error. Please try again.");
     } finally {
       setPLoading(false);
     }
@@ -513,13 +491,7 @@ export default function SettingsScreen({ navigation }) {
   /* ---------- Emergency Contacts CRUD ---------- */
   function openAddContact() {
     if (contacts.length >= 3) {
-      show(
-        t(
-          "err.maxContacts",
-          "You can add up to 3 contacts only."
-        ),
-        "danger"
-      );
+      show("You can add up to 3 contacts only.", "danger");
       return;
     }
     setEditingIndex(-1);
@@ -572,7 +544,7 @@ export default function SettingsScreen({ navigation }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setEcErr(data?.message || t("err.update", "Update failed"));
+        setEcErr(data?.message || "Update failed");
         return;
       }
       const returned = Array.isArray(data?.emergencyContacts)
@@ -583,12 +555,10 @@ export default function SettingsScreen({ navigation }) {
         ...p,
         emergencyContacts: returned,
       }));
-      show(
-        t("toast.contactsSaved", "Emergency contacts saved")
-      );
+      show("Emergency contacts saved");
       if (closing) setEcModal(false);
     } catch {
-      setEcErr(t("err.network", "Network error"));
+      setEcErr("Network error");
     } finally {
       setEcLoading(false);
     }
@@ -600,26 +570,14 @@ export default function SettingsScreen({ navigation }) {
     const ph = ecPhone.trim();
     const rl = ecRel.trim();
     if (!nm)
-      return setEcErr(
-        t("err.nameReq", "Please enter a name.")
-      );
+      return setEcErr("Please enter a name.");
     if (!ph || !PHONE_RE.test(ph))
-      return setEcErr(
-        t(
-          "err.phoneReq",
-          "Please enter a valid PH mobile number."
-        )
-      );
+      return setEcErr("Please enter a valid PH mobile number.");
     const item = { name: nm, phone: ph, relation: rl || "—" };
     let next = [...contacts];
     if (editingIndex === -1) {
       if (next.length >= 3)
-        return setEcErr(
-          t(
-            "err.maxContacts",
-            "You can add up to 3 contacts only."
-          )
-        );
+        return setEcErr("You can add up to 3 contacts only.");
       next.push(item);
     } else {
       next[editingIndex] = item;
@@ -642,10 +600,7 @@ export default function SettingsScreen({ navigation }) {
     );
   }
 
-  const joinText = `${t(
-    "memberSince",
-    "Member since"
-  )} ${new Date(
+  const joinText = `Member since ${new Date(
     profile?.createdAt || Date.now()
   ).toLocaleString("default", {
     month: "long",
@@ -683,7 +638,7 @@ export default function SettingsScreen({ navigation }) {
             />
           </TouchableOpacity>
           <Text style={[s.title, s.f700]}>
-            {t("settings.title", "Settings")}
+            Settings
           </Text>
         </View>
 
@@ -691,7 +646,7 @@ export default function SettingsScreen({ navigation }) {
         <View style={s.card}>
           <View style={s.cardHeader}>
             <Text style={[s.sectionTitle, s.f700]}>
-              {t("card.profile", "Profile")}
+              Profile
             </Text>
             <Text
               style={[
@@ -699,10 +654,7 @@ export default function SettingsScreen({ navigation }) {
                 { color: theme.textSub },
               ]}
             >
-              {t(
-                "tapToViewProfile",
-                "Tap to view profile"
-              )}
+              Tap to view profile
             </Text>
           </View>
 
@@ -743,10 +695,7 @@ export default function SettingsScreen({ navigation }) {
         <View style={s.card}>
           <View style={s.cardHeader}>
             <Text style={[s.sectionTitle, s.f700]}>
-              {t(
-                "card.emergency",
-                "Emergency Contacts"
-              )}
+              Emergency Contacts
             </Text>
             <Text
               style={[
@@ -754,10 +703,7 @@ export default function SettingsScreen({ navigation }) {
                 { color: theme.textSub },
               ]}
             >
-              {t(
-                "card.emergencyHint",
-                "Add up to 3 contacts"
-              )}
+              Add up to 3 contacts
             </Text>
           </View>
 
@@ -768,7 +714,7 @@ export default function SettingsScreen({ navigation }) {
                 { color: theme.textSub, marginTop: 8 },
               ]}
             >
-              {t("noContacts", "No contacts yet.")}
+              No contacts yet.
             </Text>
           ) : (
             <View style={{ marginTop: 6 }}>
@@ -836,10 +782,7 @@ export default function SettingsScreen({ navigation }) {
                 { color: theme.text },
               ]}
             >
-              {t(
-                "addContact",
-                "Add Emergency Contact"
-              )}
+              Add Emergency Contact
             </Text>
           </TouchableOpacity>
         </View>
@@ -862,7 +805,7 @@ export default function SettingsScreen({ navigation }) {
                 { marginLeft: 8 },
               ]}
             >
-              {t("termsPrivacy", "Terms & Privacy")}
+              Terms & Privacy
             </Text>
           </View>
         </TouchableOpacity>
@@ -883,7 +826,7 @@ export default function SettingsScreen({ navigation }) {
                 { marginLeft: 8 },
               ]}
             >
-              {t("helpSupport", "Help & Support")}
+              Help & Support
             </Text>
           </View>
         </TouchableOpacity>
@@ -910,7 +853,7 @@ export default function SettingsScreen({ navigation }) {
                 },
               ]}
             >
-              {t("logout", "Logout")}
+              Logout
             </Text>
           </TouchableOpacity>
         </View>
@@ -931,7 +874,7 @@ export default function SettingsScreen({ navigation }) {
                   { fontSize: 16, color: theme.brand },
                 ]}
               >
-                {t("card.profile", "Profile")}
+                Profile
               </Text>
               <TouchableOpacity
                 onPress={() => setProfileModal(false)}
@@ -995,10 +938,7 @@ export default function SettingsScreen({ navigation }) {
                   { color: theme.text },
                 ]}
               >
-                {t(
-                  "personalInfo",
-                  "Personal Information"
-                )}
+                Personal Information
               </Text>
               <TouchableOpacity
                 onPress={() => {
@@ -1048,7 +988,7 @@ export default function SettingsScreen({ navigation }) {
                 { marginTop: 12, color: theme.text },
               ]}
             >
-              {t("security", "Security")}
+              Security
             </Text>
             <TouchableOpacity
               onPress={() => {
@@ -1067,10 +1007,7 @@ export default function SettingsScreen({ navigation }) {
                   { color: theme.text },
                 ]}
               >
-                {t(
-                  "managePw",
-                  "Change Password"
-                )}
+                Change Password
               </Text>
             </TouchableOpacity>
           </View>
@@ -1092,7 +1029,7 @@ export default function SettingsScreen({ navigation }) {
                   { fontSize: 16, color: theme.brand },
                 ]}
               >
-                {t("editProfile", "Edit Profile")}
+                Edit Profile
               </Text>
               <TouchableOpacity
                 onPress={() => setEditModal(false)}
@@ -1148,10 +1085,7 @@ export default function SettingsScreen({ navigation }) {
                   setFullName(v);
                   if (editErr) setEditErr("");
                 }}
-                placeholder={t(
-                  "placeholder.fullName",
-                  "Full Name"
-                )}
+                placeholder="Full Name"
                 placeholderTextColor={theme.textSub}
               />
             </View>
@@ -1167,10 +1101,7 @@ export default function SettingsScreen({ navigation }) {
                   value={email}
                   editable={false}
                   selectTextOnFocus={false}
-                  placeholder={t(
-                    "placeholder.email",
-                    "Email"
-                  )}
+                  placeholder="Email"
                   placeholderTextColor={theme.textSub}
                 />
               </EditRow>
@@ -1184,10 +1115,7 @@ export default function SettingsScreen({ navigation }) {
                   value={phone}
                   onChangeText={setPhone}
                   keyboardType="phone-pad"
-                  placeholder={t(
-                    "placeholder.phone",
-                    "Phone"
-                  )}
+                  placeholder="Phone"
                   placeholderTextColor={theme.textSub}
                 />
               </EditRow>
@@ -1200,10 +1128,7 @@ export default function SettingsScreen({ navigation }) {
                   style={s.inputFlat}
                   value={address}
                   onChangeText={setAddress}
-                  placeholder={t(
-                    "placeholder.address",
-                    "Address"
-                  )}
+                  placeholder="Address"
                   placeholderTextColor={theme.textSub}
                 />
               </EditRow>
@@ -1275,7 +1200,7 @@ export default function SettingsScreen({ navigation }) {
                       { color: THEME.light.white },
                     ]}
                   >
-                    {t("save", "Save")}
+                    Save
                   </Text>
                 )}
               </TouchableOpacity>
@@ -1300,7 +1225,7 @@ export default function SettingsScreen({ navigation }) {
                     { color: theme.text },
                   ]}
                 >
-                  {t("cancel", "Cancel")}
+                  Cancel
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1323,10 +1248,7 @@ export default function SettingsScreen({ navigation }) {
                   { fontSize: 16, color: theme.brand },
                 ]}
               >
-                {t(
-                  "changePassword",
-                  "Change Password"
-                )}
+                Change Password
               </Text>
               <TouchableOpacity
                 onPress={() => setSecurityModal(false)}
@@ -1348,10 +1270,7 @@ export default function SettingsScreen({ navigation }) {
                     setCurrentPassword(v);
                     if (pErr) setPErr("");
                   }}
-                  placeholder={t(
-                    "placeholder.currentPassword",
-                    "Current Password"
-                  )}
+                  placeholder="Current Password"
                   placeholderTextColor={theme.textSub}
                   secureTextEntry={!showCur}
                 />
@@ -1379,10 +1298,7 @@ export default function SettingsScreen({ navigation }) {
                     setNewPassword(v);
                     if (pErr) setPErr("");
                   }}
-                  placeholder={t(
-                    "placeholder.newPassword",
-                    "New Password"
-                  )}
+                  placeholder="New Password"
                   placeholderTextColor={theme.textSub}
                   secureTextEntry={!showNew}
                 />
@@ -1410,10 +1326,7 @@ export default function SettingsScreen({ navigation }) {
                     setConfirmPassword(v);
                     if (pErr) setPErr("");
                   }}
-                  placeholder={t(
-                    "placeholder.confirmPassword",
-                    "Confirm New Password"
-                  )}
+                  placeholder="Confirm New Password"
                   placeholderTextColor={theme.textSub}
                   secureTextEntry={!showCon}
                 />
@@ -1476,10 +1389,7 @@ export default function SettingsScreen({ navigation }) {
                     { color: THEME.light.white },
                   ]}
                 >
-                  {t(
-                    "updatePassword",
-                    "Update Password"
-                  )}
+                  Update Password
                 </Text>
               )}
             </TouchableOpacity>
@@ -1503,14 +1413,8 @@ export default function SettingsScreen({ navigation }) {
                 ]}
               >
                 {editingIndex === -1
-                  ? t(
-                      "addContact",
-                      "Add Emergency Contact"
-                    )
-                  : t(
-                      "editContact",
-                      "Edit Emergency Contact"
-                    )}
+                  ? "Add Emergency Contact"
+                  : "Edit Emergency Contact"}
               </Text>
               <TouchableOpacity
                 onPress={() => setEcModal(false)}
@@ -1531,10 +1435,7 @@ export default function SettingsScreen({ navigation }) {
                   setEcName(v);
                   if (ecErr) setEcErr("");
                 }}
-                placeholder={t(
-                  "placeholder.fullName",
-                  "Full Name"
-                )}
+                placeholder="Full Name"
                 placeholderTextColor={theme.textSub}
               />
             </View>
@@ -1547,10 +1448,7 @@ export default function SettingsScreen({ navigation }) {
                   if (ecErr) setEcErr("");
                 }}
                 keyboardType="phone-pad"
-                placeholder={t(
-                  "placeholder.phone",
-                  "Phone (e.g. 09XXXXXXXXX)"
-                )}
+                placeholder="Phone (e.g. 09XXXXXXXXX)"
                 placeholderTextColor={theme.textSub}
               />
             </View>
@@ -1559,10 +1457,7 @@ export default function SettingsScreen({ navigation }) {
                 style={s.input}
                 value={ecRel}
                 onChangeText={(v) => setEcRel(v)}
-                placeholder={t(
-                  "placeholder.relation",
-                  "Relation (optional)"
-                )}
+                placeholder="Relation (optional)"
                 placeholderTextColor={theme.textSub}
               />
             </View>
@@ -1608,7 +1503,7 @@ export default function SettingsScreen({ navigation }) {
                     { color: THEME.light.white },
                   ]}
                 >
-                  {t("save", "Save")}
+                  Save
                 </Text>
               )}
             </TouchableOpacity>
@@ -1631,7 +1526,7 @@ export default function SettingsScreen({ navigation }) {
                   { fontSize: 16, color: theme.brand },
                 ]}
               >
-                {t("logout", "Logout")}
+                Logout
               </Text>
               <TouchableOpacity
                 onPress={() => setLogoutModal(false)}
@@ -1649,10 +1544,7 @@ export default function SettingsScreen({ navigation }) {
                 { marginBottom: 14 },
               ]}
             >
-              {t(
-                "confirmLogout",
-                "Are you sure you want to logout?"
-              )}
+              Are you sure you want to logout?
             </Text>
             <View
               style={{
@@ -1674,7 +1566,7 @@ export default function SettingsScreen({ navigation }) {
                     { color: theme.text },
                   ]}
                 >
-                  {t("cancel", "Cancel")}
+                  Cancel
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -1691,7 +1583,7 @@ export default function SettingsScreen({ navigation }) {
                     { color: THEME.light.white },
                   ]}
                 >
-                  {t("logout", "Logout")}
+                  Logout
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1711,10 +1603,7 @@ export default function SettingsScreen({ navigation }) {
               <Text
                 style={[s.f700, s.modalTitle]}
               >
-                {t(
-                  "termsPrivacy",
-                  "LigtasCommute Terms and Privacy"
-                )}
+                LigtasCommute Terms and Privacy
               </Text>
               <TouchableOpacity
                 onPress={() => setTermsModal(false)}
@@ -1754,22 +1643,23 @@ export default function SettingsScreen({ navigation }) {
               </Text>
             </ScrollView>
             <TouchableOpacity
-              onPress={() => setTermsModal(false)}
+            onPress={() => setTermsModal(false)}
+            style={[
+              s.btn,
+              s.btnPrimary,
+              { marginTop: 12 },
+            ]}
+          >
+            <Text
               style={[
-                s.btn,
-                s.btnPrimary,
-                { marginTop: 12 },
+                s.f600,
+                { color: THEME.light.white },
               ]}
             >
-              <Text
-                style={[
-                  s.f600,
-                  { color: THEME.light.white },
-                ]}
-              >
-                {t("ok", "OK")}
-              </Text>
-            </TouchableOpacity>
+              OK
+            </Text>
+          </TouchableOpacity>
+
           </View>
         </View>
       </Modal>
@@ -1786,7 +1676,7 @@ export default function SettingsScreen({ navigation }) {
               <Text
                 style={[s.f700, s.modalTitle]}
               >
-                {t("helpSupport", "Help & Support")}
+                Help & Support
               </Text>
               <TouchableOpacity
                 onPress={() => setSupportModal(false)}
@@ -1800,29 +1690,10 @@ export default function SettingsScreen({ navigation }) {
             </View>
             <ScrollView>
               <Text style={s.modalP}>
-                •{" "}
-                {t(
-                  "tip.restartApp",
-                  "Close and restart the app"
-                )}
-                {"\n"}
-                •{" "}
-                {t(
-                  "tip.checkInternet",
-                  "Check internet connection"
-                )}
-                {"\n"}
-                •{" "}
-                {t(
-                  "tip.updateApp",
-                  "Update to the latest version"
-                )}
-                {"\n"}
-                •{" "}
-                {t(
-                  "tip.permissions",
-                  "Ensure GPS and camera permissions are enabled"
-                )}
+                • Close and restart the app{"\n"}
+                • Check internet connection{"\n"}
+                • Update to the latest version{"\n"}
+                • Ensure GPS and camera permissions are enabled
               </Text>
 
               <Text
@@ -1831,29 +1702,12 @@ export default function SettingsScreen({ navigation }) {
                   { marginTop: 10 },
                 ]}
               >
-                {t(
-                  "commonIssues",
-                  "Common Issues"
-                )}
+                Common Issues
               </Text>
               <Text style={s.modalP}>
-                •{" "}
-                {t(
-                  "issue.qr",
-                  "Can’t scan QR code? Check camera permissions."
-                )}
-                {"\n"}
-                •{" "}
-                {t(
-                  "issue.location",
-                  "Location not updating? Make sure GPS is on."
-                )}
-                {"\n"}
-                •{" "}
-                {t(
-                  "issue.contact",
-                  "Still stuck? Contact support@ligtascommute.com"
-                )}
+                • Can’t scan QR code? Check camera permissions.{"\n"}
+                • Location not updating? Make sure GPS is on.{"\n"}
+                • Still stuck? Contact support@ligtascommute.com
               </Text>
             </ScrollView>
             <TouchableOpacity
@@ -1870,7 +1724,7 @@ export default function SettingsScreen({ navigation }) {
                   { color: THEME.light.white },
                 ]}
               >
-                {t("ok", "OK")}
+                OK
               </Text>
             </TouchableOpacity>
           </View>

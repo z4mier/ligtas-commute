@@ -3,125 +3,105 @@ import nodemailer from "nodemailer";
 
 export function mailer() {
   return nodemailer.createTransport({
-    host: process.env.MAILTRAP_HOST || "sandbox.smtp.mailtrap.io",
-    port: Number(process.env.MAILTRAP_PORT) || 2525,
+    host: process.env.SMTP_HOST || "smtp-relay.brevo.com",
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: false, // Brevo usually uses 587 (STARTTLS)
     auth: {
-      user: process.env.MAILTRAP_USER,
-      pass: process.env.MAILTRAP_PASS,
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
     },
   });
 }
 
-/** Registration / verification OTP (same as before, just more polished) */
+/** Registration / verification OTP */
 export async function sendOtpEmail(to, code) {
   const transport = mailer();
   const year = new Date().getFullYear();
+
+  const subject = "Your LigtasCommute verification code";
+
+  const text = `
+LigtasCommute – Verification code
+
+Your verification code is: ${code}
+
+This code will expire in 10 minutes.
+If you did not request this, you can safely ignore this email.
+
+© ${year} LigtasCommute
+  `.trim();
 
   const html = `
 <!DOCTYPE html>
 <html>
   <head>
     <meta charset="UTF-8" />
-    <title>LigtasCommute Verification Code</title>
+    <title>${subject}</title>
   </head>
-  <body style="margin:0;padding:32px;background:#0F1B2B;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-      <tr>
-        <td align="center">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#FFFFFF;border-radius:16px;overflow:hidden;border:1px solid #E5E7EB;box-shadow:0 18px 45px rgba(15,27,43,0.45);">
-            <!-- Header -->
-            <tr>
-              <td style="background:#2078A8;padding:20px 24px;text-align:center;">
-                <div style="font-size:18px;font-weight:700;color:#FFFFFF;">LigtasCommute</div>
-                <div style="font-size:13px;color:rgba(255,255,255,0.92);margin-top:4px;">Verification code</div>
-              </td>
-            </tr>
+  <body style="margin:0;padding:24px;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;">
+    <div style="max-width:480px;margin:0 auto;background:#ffffff;border-radius:10px;border:1px solid #e5e7eb;padding:20px;">
+      <h1 style="margin:0 0 6px 0;font-size:18px;font-weight:600;color:#111827;">
+        LigtasCommute
+      </h1>
+      <p style="margin:0 0 16px 0;font-size:13px;color:#6b7280;">
+        Verification code
+      </p>
 
-            <!-- Body -->
-            <tr>
-              <td style="padding:24px 24px 8px 24px;color:#111827;font-size:14px;line-height:1.6;">
-                <p style="margin:0 0 8px 0;">Hi there,</p>
-                <p style="margin:0 0 12px 0;color:#374151;">
-                  Use the code below to verify your LigtasCommute account.
-                </p>
+      <p style="margin:0 0 8px 0;font-size:14px;color:#111827;">
+        Use the code below to verify your LigtasCommute account:
+      </p>
 
-                <p style="margin:0 0 6px 0;color:#111827;font-weight:500;">Your verification code:</p>
+      <div style="margin:10px 0 14px 0;padding:12px 16px;border-radius:8px;background:#111827;color:#ffffff;font-size:22px;font-weight:600;letter-spacing:6px;text-align:center;">
+        ${code}
+      </div>
 
-                <div style="font-size:26px;font-weight:700;letter-spacing:8px;margin:10px 0 18px 0;padding:14px 16px;text-align:center;border-radius:10px;background:#0B132B;color:#FFFFFF;">
-                  ${code}
-                </div>
+      <p style="margin:0 0 6px 0;font-size:13px;color:#4b5563;">
+        This code will expire in <strong>10 minutes</strong>.
+      </p>
 
-                <p style="margin:0 0 8px 0;color:#374151;">
-                  This code will expire in <strong>10 minutes</strong>.
-                </p>
-                <p style="margin:0 0 18px 0;color:#4B5563;">
-                  If you did not request this verification, you can safely ignore this email.
-                </p>
-              </td>
-            </tr>
+      <p style="margin:10px 0 0 0;font-size:12px;color:#9ca3af;">
+        If you did not request this verification, you can ignore this email.
+      </p>
 
-            <!-- Footer -->
-            <tr>
-              <td style="padding:12px 24px 18px 24px;border-top:1px solid #E5E7EB;color:#6B7280;font-size:11px;line-height:1.5;">
-                <p style="margin:10px 0 0 0;">
-                  © ${year} LigtasCommute. All rights reserved.
-                </p>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
+      <p style="margin:20px 0 0 0;font-size:11px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:10px;">
+        © ${year} LigtasCommute. All rights reserved.
+      </p>
+    </div>
   </body>
 </html>
-  `;
-
-  const text = `
-LigtasCommute Verification
-
-Use the code below to verify your LigtasCommute account:
-
-${code}
-
-This code will expire in 10 minutes.
-
-If you did not request this verification, you can safely ignore this email.
-
-© ${year} LigtasCommute. All rights reserved.
   `.trim();
 
   const info = await transport.sendMail({
     from:
-      process.env.MAILTRAP_FROM ||
-      "LigtasCommute <no-reply@ligtascommute.test>",
+      process.env.SMTP_FROM ||
+      "LigtasCommute <ligtascommute@gmail.com>",
     to,
-    subject: "Your LigtasCommute Verification Code",
+    subject,
     text,
     html,
   });
 
-  console.log("MAILTRAP OTP SENT:", info.messageId);
+  console.log("SMTP OTP SENT:", info.messageId);
 }
 
 /** Forgot-password email – OTP-style password reset */
 export async function sendPasswordResetEmail(to, code, name) {
   const transport = mailer();
-  const displayName = name || "Commuter";
   const year = new Date().getFullYear();
+  const displayName = name || "Commuter";
+
+  const subject = "LigtasCommute password reset code";
 
   const text = `
 Hi ${displayName},
 
 We received a request to reset the password for your LigtasCommute account.
 
-Your password reset code is:
-
-    ${code}
+Your password reset code is: ${code}
 
 This code will expire in 10 minutes.
 
 If you did not request a password reset, you can safely ignore this email.
-Your password will stay the same.
 
 — LigtasCommute Team
   `.trim();
@@ -131,76 +111,54 @@ Your password will stay the same.
 <html>
   <head>
     <meta charset="UTF-8" />
-    <title>LigtasCommute Password Reset</title>
+    <title>${subject}</title>
   </head>
-  <body style="margin:0;padding:32px;background:#0F1B2B;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-      <tr>
-        <td align="center">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#FFFFFF;border-radius:16px;overflow:hidden;border:1px solid #E5E7EB;box-shadow:0 18px 45px rgba(15,27,43,0.45);">
-            <!-- Header -->
-            <tr>
-              <td style="background:#2078A8;padding:20px 24px;text-align:center;">
-                <div style="font-size:18px;font-weight:700;color:#FFFFFF;">LigtasCommute</div>
-                <div style="font-size:13px;color:rgba(255,255,255,0.92);margin-top:4px;">Password reset code</div>
-              </td>
-            </tr>
+  <body style="margin:0;padding:24px;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;">
+    <div style="max-width:480px;margin:0 auto;background:#ffffff;border-radius:10px;border:1px solid #e5e7eb;padding:20px;">
+      <h1 style="margin:0 0 6px 0;font-size:18px;font-weight:600;color:#111827;">
+        LigtasCommute
+      </h1>
+      <p style="margin:0 0 16px 0;font-size:13px;color:#6b7280;">
+        Password reset code
+      </p>
 
-            <!-- Body -->
-            <tr>
-              <td style="padding:24px 24px 8px 24px;color:#111827;font-size:14px;line-height:1.6;">
-                <p style="margin:0 0 8px 0;">Hi <strong>${displayName}</strong>,</p>
+      <p style="margin:0 0 8px 0;font-size:14px;color:#111827;">
+        Hi <strong>${displayName}</strong>, we received a request to reset the password for your LigtasCommute account.
+      </p>
 
-                <p style="margin:0 0 12px 0;color:#374151;">
-                  We received a request to reset the password for your LigtasCommute account.
-                </p>
+      <p style="margin:0 0 6px 0;font-size:13px;color:#111827;font-weight:500;">
+        Your password reset code:
+      </p>
 
-                <p style="margin:0 0 6px 0;color:#111827;font-weight:500;">
-                  Your password reset code:
-                </p>
+      <div style="margin:10px 0 14px 0;padding:12px 16px;border-radius:8px;background:#111827;color:#ffffff;font-size:22px;font-weight:600;letter-spacing:6px;text-align:center;">
+        ${code}
+      </div>
 
-                <div style="font-size:26px;font-weight:700;letter-spacing:8px;margin:10px 0 18px 0;padding:14px 16px;text-align:center;border-radius:10px;background:#2078A8;color:#FFFFFF;">
-                  ${code}
-                </div>
+      <p style="margin:0 0 6px 0;font-size:13px;color:#4b5563;">
+        This code will expire in <strong>10 minutes</strong>.
+      </p>
 
-                <p style="margin:0 0 8px 0;color:#374151;">
-                  This code will expire in <strong>10 minutes</strong>.
-                </p>
+      <p style="margin:10px 0 0 0;font-size:12px;color:#9ca3af;">
+        If you did not request a password reset, you can ignore this email and your password will remain unchanged.
+      </p>
 
-                <p style="margin:0 0 18px 0;color:#4B5563;">
-                  If you did not request a password reset, you can ignore this email and your password will remain unchanged.
-                </p>
-
-                <p style="margin:0 0 2px 0;color:#111827;">Stay safe,</p>
-                <p style="margin:0 0 14px 0;color:#374151;">LigtasCommute Team</p>
-              </td>
-            </tr>
-
-            <!-- Footer -->
-            <tr>
-              <td style="padding:12px 24px 18px 24px;border-top:1px solid #E5E7EB;color:#6B7280;font-size:11px;line-height:1.5;">
-                <p style="margin:10px 0 0 0;">
-                  © ${year} LigtasCommute. All rights reserved.
-                </p>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
+      <p style="margin:20px 0 0 0;font-size:11px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:10px;">
+        © ${year} LigtasCommute. All rights reserved.
+      </p>
+    </div>
   </body>
 </html>
-  `;
+  `.trim();
 
   const info = await transport.sendMail({
     from:
-      process.env.MAILTRAP_FROM ||
-      "LigtasCommute <no-reply@ligtascommute.test>",
+      process.env.SMTP_FROM ||
+      "LigtasCommute <ligtascommute@gmail.com>",
     to,
-    subject: "LigtasCommute Password Reset Code",
+    subject,
     text,
     html,
   });
 
-  console.log("MAILTRAP RESET SENT:", info.messageId);
+  console.log("SMTP RESET SENT:", info.messageId);
 }

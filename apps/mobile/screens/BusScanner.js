@@ -15,6 +15,7 @@ import {
   Platform,
   Modal,
   StatusBar,
+  Image,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { CameraView, useCameraPermissions } from "expo-camera";
@@ -147,7 +148,7 @@ function prettyScanError(raw) {
     return "This QR code is missing the bus number. Please scan the official LigtasCommute QR sticker inside the registered bus.";
   }
 
-  if (lower.includes("invalid qr")) {
+  if (lower.includes("invalid qr") || lower.includes("qr is not a bus code")) {
     return "This QR code is not recognized by LigtasCommute. Please scan the bus QR provided by the system.";
   }
 
@@ -156,6 +157,17 @@ function prettyScanError(raw) {
   }
 
   return raw;
+}
+
+/** Build absolute avatar URL */
+function buildAvatarUrl(raw) {
+  if (!raw) return null;
+  if (/^https?:\/\//i.test(raw)) return raw;
+
+  let base = API_URL.replace(/\/+$/, "");
+  if (base.endsWith("/api")) base = base.slice(0, -4);
+
+  return `${base}${raw.startsWith("/") ? raw : "/" + raw}`;
 }
 
 export default function BusScanner({ navigation }) {
@@ -274,6 +286,17 @@ export default function BusScanner({ navigation }) {
       status === "ON_DUTY" ??
       false;
 
+    // 🔥 Normalize avatar to ABSOLUTE URL here
+    const rawAvatar =
+      out.driverAvatar ??
+      out.profileUrl ??
+      out.profile_url ??
+      out.driver?.profileUrl ??
+      out.driver?.profile_url ??
+      null;
+
+    const avatar = rawAvatar ? buildAvatarUrl(rawAvatar) : null;
+
     return {
       id: driverProfileId,
       driverProfileId,
@@ -301,6 +324,9 @@ export default function BusScanner({ navigation }) {
 
       status,
       onDuty: !!onDuty,
+
+      avatar,
+      profileUrl: avatar,
 
       scannedAt: new Date(),
     };
@@ -352,7 +378,6 @@ export default function BusScanner({ navigation }) {
       setDriver(obj);
       setInfoOpen(true);
     } catch (err) {
-      // 🔹 use console.log so Expo doesn't show the red LogBox toast
       console.log("[BusScanner] handlePayload ERROR:", err?.message || err);
 
       const msg = prettyScanError(err?.message || "Scan failed. Try again.");
@@ -540,11 +565,22 @@ export default function BusScanner({ navigation }) {
                 }}
               >
                 <View style={s.avatarCircle}>
-                  <MaterialCommunityIcons
-                    name="account"
-                    size={22}
-                    color={C.brand}
-                  />
+                  {driver?.profileUrl ? (
+                    <Image
+                      source={{ uri: driver.profileUrl }}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        borderRadius: 19,
+                      }}
+                    />
+                  ) : (
+                    <MaterialCommunityIcons
+                      name="account"
+                      size={22}
+                      color={C.brand}
+                    />
+                  )}
                 </View>
                 <View style={{ marginLeft: 10, flex: 1 }}>
                   <View
@@ -660,6 +696,23 @@ export default function BusScanner({ navigation }) {
                 <Text style={[s.value, s.f600]}>{routeLine}</Text>
               </View>
             </View>
+
+            {/* 🔴 Off-duty warning text */}
+            {!isOnDuty && (
+              <View style={s.offDutyBox}>
+                <MaterialCommunityIcons
+                  name="alert-circle-outline"
+                  size={18}
+                  color={C.redDark}
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={[s.offDutyText, s.f400]}>
+                  This driver is currently marked as{" "}
+                  <Text style={{ fontWeight: "700" }}>Off duty</Text>. Are you
+                  sure you want to start tracking?
+                </Text>
+              </View>
+            )}
 
             {/* Start Tracking button */}
             <TouchableOpacity
@@ -864,6 +917,19 @@ const s = StyleSheet.create({
 
   label: { fontSize: 11, color: C.sub, marginTop: 2 },
   value: { fontSize: 13, color: C.text, marginTop: 2 },
+
+  /* 🔴 off-duty warning styles */
+  offDutyBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginTop: 12,
+    paddingHorizontal: 4,
+  },
+  offDutyText: {
+    flex: 1,
+    fontSize: 11,
+    color: C.redDark,
+  },
 
   primaryBtn: {
     backgroundColor: C.brand,

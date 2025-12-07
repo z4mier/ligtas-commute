@@ -42,13 +42,12 @@ const C = {
   border: "#E5E7EB",
 
   // Map markers
-  tealDot: "#22C55E",     
-  destPin: "#F43F5E",     
-  blue: "#1D4ED8",        
-  blueTrail: "#60A5FA",    
-  breadcrumb: "rgba(37,99,235,0.85)", 
-
-  darkGlass: "rgba(17,24,39,0.92)",
+tealDot: "#22C55E",
+destPin: "#F43F5E",        // keep red pin for destination
+blue: "#1D4ED8",          // user live dot
+blueTrail: "#38BDF8",     // soft highlight / secondary line
+breadcrumb: "rgba(59,130,246,0.9)", // travel history path
+routeLine: "#0EA5E9",     // MAIN route polyline (bright cyan-blue)
 };
 
 
@@ -251,8 +250,7 @@ function update(lat,lng,heading){
   document.getElementById('pos').textContent=pos.lat.toFixed(5)+", "+pos.lng.toFixed(5);
   document.getElementById('dir').textContent="Heading: "+Math.round(heading||0)+"°";
 }
-document.addEventListener('message',e=>{try{const m=JSON.parse(e.data||'{}');if(m.type==='init')init(m.lat,m.lng,m.heading||0);if(m.type==='update')update(m.lat,m.lng,m.heading||0);}catch(e){}});
-</script>
+document.addEventListener('message',e=>{try{const m=JSON.parse(e.data||'{}');if(m.type==='init')init(m.lat,m.lng,m.heading||0);if(m.type==='update')update(m.lat,m.lng,m.heading||0);}catch(e){}});</script>
 </body>
 </html>`;
 }
@@ -327,6 +325,9 @@ export default function MapTracking({ route }) {
   const [originText, setOriginText] = useState("Getting location…");
   const [dest, setDest] = useState(null);
 
+  // 👉 showRoutePins = true ONLY if both origin & dest are set
+  const showRoutePins = !!(origin && dest);
+
   const [devicePos, setDevicePos] = useState(null);
   const [heading, setHeading] = useState(0);
   const [routeCoords, setRouteCoords] = useState([]);
@@ -385,31 +386,30 @@ export default function MapTracking({ route }) {
     } catch {}
   };
 
-  /* ---------- ANIM: pulsing dot (nav on) ---------- */
+  /* ---------- ANIM: pulsing user location dot (always live) ---------- */
   const pulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    if (navMode) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulse, {
-            toValue: 1,
-            duration: 900,
-            easing: Easing.out(Easing.quad),
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulse, {
-            toValue: 0,
-            duration: 900,
-            easing: Easing.in(Easing.quad),
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    } else {
-      pulse.stopAnimation();
-      pulse.setValue(0);
-    }
-  }, [navMode, pulse]);
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 900,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0,
+          duration: 900,
+          easing: Easing.in(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+    };
+  }, [pulse]);
 
   const pulseStyle = {
     transform: [
@@ -500,8 +500,7 @@ export default function MapTracking({ route }) {
   useEffect(() => {
     if (!showSuggest) return;
 
-    const query =
-      activeField === "pickup" ? pickupSearch : destSearch;
+    const query = activeField === "pickup" ? pickupSearch : destSearch;
 
     if (query.trim().length < 2) {
       setSuggestions([]);
@@ -643,7 +642,9 @@ export default function MapTracking({ route }) {
 
       if (!navMode) fitRoute(o, d, coords);
     } catch {
-      setError("Directions failed. Please check your internet connection and try again.");
+      setError(
+        "Directions failed. Please check your internet connection and try again."
+      );
     }
   };
 
@@ -789,7 +790,7 @@ export default function MapTracking({ route }) {
     animateCameraFollow(startFrom, heading, 18.2);
 
     await fetchDirections(startFrom, dest, true);
-    setNavMode(true);
+    setNavMode(true); // 👈 from this point, we hide the origin pin
     setTripStartAt(Date.now());
     setTripDistance(0);
     setLastPoint(startFrom);
@@ -830,8 +831,6 @@ export default function MapTracking({ route }) {
 
         setDevicePos(cur);
         setHeading(hdg);
-        // ❌ origin should NOT move with device anymore
-        // setOrigin((prev) => ({ ...(prev || {}), ...cur }));
         setBreadcrumbs((p) => [...p.slice(-120), cur]);
 
         if (lastPoint) setTripDistance((d) => d + haversine(lastPoint, cur));
@@ -1141,8 +1140,7 @@ export default function MapTracking({ route }) {
     }
   };
 
-  const query =
-    activeField === "pickup" ? pickupSearch : destSearch;
+  const query = activeField === "pickup" ? pickupSearch : destSearch;
 
   /* ---------- render ---------- */
   return (
@@ -1156,6 +1154,7 @@ export default function MapTracking({ route }) {
         showsMyLocationButton={false}
         toolbarEnabled={false}
         zoomControlEnabled={false}
+        showsTraffic={true}
         onLongPress={onLongPress}
         initialRegion={{
           latitude: origin?.latitude || 10.3157,
@@ -1164,54 +1163,61 @@ export default function MapTracking({ route }) {
           longitudeDelta: 0.08,
         }}
       >
-        {/* Start point marker – blue bus */}
-        {origin && !(devicePos && haversine(origin, devicePos) < 20) && (
+        {/* 👉 Start point pin – hide once navMode = true */}
+        {showRoutePins && origin && !navMode && (
           <Marker
             coordinate={origin}
             title={origin.name || "Starting point"}
             description="Pickup location"
           >
-            <View style={{ alignItems: "center", justifyContent: "center" }}>
-              <MaterialCommunityIcons name="bus" size={30} color={C.blue} />
-            </View>
+            <MaterialCommunityIcons
+              name="map-marker"
+              size={36}
+              color={C.blue}
+            />
           </Marker>
         )}
 
-        {/* Destination – pink/red bus */}
-        {dest && (
-          <Marker coordinate={dest} title={dest.name || "Destination"}>
-            <View style={{ alignItems: "center", justifyContent: "center" }}>
-              <MaterialCommunityIcons name="bus" size={28} color={C.destPin} />
-            </View>
+        {/* 👉 Destination pin – stays visible even during navigation */}
+        {showRoutePins && dest && (
+          <Marker
+            coordinate={dest}
+            title={dest.name || "Destination"}
+            description="Pinned destination"
+          >
+            <MaterialCommunityIcons
+              name="map-marker"
+              size={36}
+              color={C.destPin}
+            />
           </Marker>
         )}
 
-        {/* Your location */}
+        {/* 👉 Live moving circle – commuter POV */}
         {devicePos && (
-          <Marker coordinate={devicePos} title="You" description={originText}>
+          <Marker coordinate={devicePos} title="Live location">
             <View style={{ alignItems: "center", justifyContent: "center" }}>
-              {navMode && <Animated.View style={[s.pulse, pulseStyle]} />}
+              <Animated.View style={[s.pulse, pulseStyle]} />
               <View style={s.blueDot} />
             </View>
           </Marker>
         )}
 
         {routeCoords.length > 0 && (
-      <Polyline
-        coordinates={routeCoords}
-        strokeWidth={6}
-        strokeColor={C.blueTrail} 
-      />
-    )}
+          <Polyline
+            coordinates={routeCoords}
+            strokeWidth={6}
+            strokeColor={C.routeLine} // 🔴 red route line
+          />
+        )}
 
-    {breadcrumbs.length > 1 && (
-      <Polyline
-        coordinates={breadcrumbs}
-        strokeWidth={3}
-        strokeColor={C.breadcrumb}
-      />
-    )}
-
+        {breadcrumbs.length > 1 && (
+          <Polyline
+            coordinates={breadcrumbs}
+            strokeWidth={3}
+            strokeColor={C.breadcrumb}
+          />
+        )}
       </MapView>
 
       {/* DEV Sim */}
@@ -1880,10 +1886,10 @@ const s = StyleSheet.create({
   /* pulsing user dot */
   pulse: {
     position: "absolute",
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: C.blue,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(37,99,235,0.25)",
   },
   blueDot: {
     width: 14,
@@ -2316,3 +2322,4 @@ const s = StyleSheet.create({
   },
   errTxt: { color: "#991B1B", textAlign: "center" },
 });
+

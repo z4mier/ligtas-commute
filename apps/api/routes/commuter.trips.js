@@ -226,7 +226,8 @@ router.get("/trips/recent", requireAuth, async (req, res) => {
       orderBy: { endedAt: "desc" },
       take: 10,
       include: {
-        driverProfile: { select: { fullName: true } },
+        // 🔥 include profileUrl so mobile can show avatar
+        driverProfile: { select: { fullName: true, profileUrl: true } },
         bus: { select: { number: true, plate: true } },
       },
     });
@@ -256,13 +257,16 @@ router.get("/trips/recent", requireAuth, async (req, res) => {
       ratingByRideId[r.rideId] = r;
     }
 
-    // 4) Attach ratingScore / ratingComment to each trip object
+    // 4) Attach ratingScore / ratingComment + driverAvatar to each trip object
     const result = trips.map((t) => {
       const r = ratingByRideId[t.id];
+      const dp = t.driverProfile || {};
       return {
         ...t,
         ratingScore: r?.score ?? null,
         ratingComment: r?.comment ?? null,
+        // this gets picked up by TripDetails as trip.driverAvatar
+        driverAvatar: dp.profileUrl || null,
       };
     });
 

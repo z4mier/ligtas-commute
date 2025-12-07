@@ -9,7 +9,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useI18n } from "../i18n/i18n";
 import * as Notify from "../lib/notify";
 
 const C = {
@@ -36,15 +35,13 @@ function timeAgo(ts) {
   return `${d}d ago`;
 }
 
-export default function Notifications({ route, navigation }) {
-  const { t } = useI18n();
+export default function Notifications({ navigation }) {
   const [items, setItems] = useState([]);
 
   useLayoutEffect(() => {
     navigation.setOptions({ headerShown: false });
   }, [navigation]);
 
-  // Load once + live updates when something calls Notify.add(...)
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -52,17 +49,11 @@ export default function Notifications({ route, navigation }) {
       if (mounted) setItems(list);
     })();
     const unsub = Notify.onChange(async () => setItems(await Notify.load()));
-    return () => { mounted = false; unsub(); };
+    return () => {
+      mounted = false;
+      unsub();
+    };
   }, []);
-
-  // Optional: if a screen navigates here with a one-off payload to inject
-  useEffect(() => {
-    const injected = route?.params?.inject;
-    if (injected) {
-      Notify.add(injected); // also persists & triggers onChange
-      navigation.setParams({ inject: undefined });
-    }
-  }, [route?.params?.inject, navigation]);
 
   const markAllRead = async () => {
     const updated = await Notify.markAllRead();
@@ -71,31 +62,40 @@ export default function Notifications({ route, navigation }) {
 
   return (
     <SafeAreaView style={s.safeArea} edges={["top", "left", "right", "bottom"]}>
-      {/* Header */}
       <View style={s.header}>
         <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 6 }}>
-            <MaterialCommunityIcons name="chevron-left" size={26} color={C.text} />
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={{ padding: 6 }}
+          >
+            <MaterialCommunityIcons
+              name="chevron-left"
+              size={26}
+              color={C.text}
+            />
           </TouchableOpacity>
-          <Text style={s.title}>{t("notifications", "Notifications")}</Text>
+          <Text style={s.title}>Notifications</Text>
         </View>
         <TouchableOpacity onPress={markAllRead} style={{ paddingHorizontal: 6 }}>
-          <Text style={s.markAll}>{t("markAllRead", "Mark all as read")}</Text>
+          <Text style={s.markAll}>Mark all as read</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Content */}
       <ScrollView contentContainerStyle={s.scroll}>
         {items.length === 0 ? (
           <View style={s.emptyWrap}>
-            <MaterialCommunityIcons name="bell-off-outline" size={32} color={C.hint} />
-            <Text style={s.emptyTitle}>{t("noNotifications", "No notifications")}</Text>
+            <MaterialCommunityIcons
+              name="bell-off-outline"
+              size={32}
+              color={C.hint}
+            />
+            <Text style={s.emptyTitle}>No notifications</Text>
             <Text style={s.emptySub}>
-              {t("noNotificationsSub", "You’re all caught up. We’ll notify you here.").replace("’","'")}
+              {"You're all caught up. We'll notify you here."}
             </Text>
           </View>
         ) : (
-          items.map(n => (
+          items.map((n) => (
             <View key={String(n.id)} style={s.card}>
               <Text style={s.cardTitle}>{n.title}</Text>
               {!!n.body && <Text style={s.cardBody}>{n.body}</Text>}
@@ -151,10 +151,33 @@ const s = StyleSheet.create({
       android: { elevation: 1.5 },
     }),
   },
-  cardTitle: { fontFamily: "Poppins_700Bold", color: C.text, fontSize: 13 },
-  cardBody: { fontFamily: "Poppins_400Regular", color: C.sub, fontSize: 11.5, marginTop: 2 },
-  cardTime: { fontFamily: "Poppins_400Regular", color: C.hint, fontSize: 11, marginTop: 6 },
+  cardTitle: {
+    fontFamily: "Poppins_700Bold",
+    color: C.text,
+    fontSize: 13,
+  },
+  cardBody: {
+    fontFamily: "Poppins_400Regular",
+    color: C.sub,
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  cardTime: {
+    fontFamily: "Poppins_400Regular",
+    color: C.hint,
+    fontSize: 11,
+    marginTop: 6,
+  },
   emptyWrap: { alignItems: "center", paddingTop: 40, gap: 6 },
-  emptyTitle: { fontFamily: "Poppins_700Bold", color: C.text, fontSize: 14 },
-  emptySub: { fontFamily: "Poppins_400Regular", color: C.hint, fontSize: 12, textAlign: "center" },
+  emptyTitle: {
+    fontFamily: "Poppins_700Bold",
+    color: C.text,
+    fontSize: 14,
+  },
+  emptySub: {
+    fontFamily: "Poppins_400Regular",
+    color: C.hint,
+    fontSize: 12,
+    textAlign: "center",
+  },
 });

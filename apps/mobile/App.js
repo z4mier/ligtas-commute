@@ -1,6 +1,4 @@
 // apps/mobile/App.js
-import "./i18n/i18n";
-
 import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -15,15 +13,11 @@ import OtpVerifyScreen from "./screens/OtpVerifyScreen";
 import DriverDashboard from "./screens/DriverDashboard";
 import DriverSettingsScreen from "./screens/DriverSettingsScreen";
 import DriverTracking from "./screens/DriverTracking";
-import DriverQR from "./screens/DriverQR";
 import DriverRatings from "./screens/DriverRatings";
 import DriverReports from "./screens/DriverReports";
-
 import CommuterDashboard from "./screens/CommuterDashboard";
 import SettingsScreen from "./screens/SettingsScreen";
 import Notifications from "./screens/Notifications";
-import SafetyInsightsList from "./screens/SafetyInsightsList";
-import CommunityList from "./screens/CommunityList";
 import MapTracking from "./screens/MapTracking";
 import TripDetails from "./screens/TripDetails";
 import BusScanner from "./screens/BusScanner";
@@ -65,7 +59,7 @@ export default function App() {
               name="DriverTracking"
               component={DriverTracking}
             />
-            <Stack.Screen name="DriverQR" component={DriverQR} />
+            
             <Stack.Screen
               name="DriverRatings"
               component={DriverRatings}
@@ -86,14 +80,6 @@ export default function App() {
             <Stack.Screen
               name="Notifications"
               component={Notifications}
-            />
-            <Stack.Screen
-              name="SafetyInsightsList"
-              component={SafetyInsightsList}
-            />
-            <Stack.Screen
-              name="CommunityList"
-              component={CommunityList}
             />
             <Stack.Screen name="MapTracking" component={MapTracking} />
             <Stack.Screen name="QRScanner" component={BusScanner} />

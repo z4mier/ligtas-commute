@@ -57,6 +57,32 @@ function saveClearedNotifIds(ids) {
   }
 }
 
+/* NEW: helpers for READ notification ids (for badge behavior) */
+function getReadNotifIds() {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = localStorage.getItem("lc_read_notifs");
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return new Set();
+    return new Set(arr);
+  } catch (e) {
+    console.warn("Failed to read lc_read_notifs:", e);
+    return new Set();
+  }
+}
+
+function saveReadNotifIds(ids) {
+  if (typeof window === "undefined") return;
+  try {
+    const current = getReadNotifIds();
+    ids.forEach((id) => current.add(id));
+    localStorage.setItem("lc_read_notifs", JSON.stringify([...current]));
+  } catch (e) {
+    console.warn("Failed to write lc_read_notifs:", e);
+  }
+}
+
 export default function Topbar() {
   const r = useRouter();
 
@@ -171,7 +197,15 @@ export default function Topbar() {
       });
 
       const cleared = getClearedNotifIds();
-      combined = combined.filter((n) => !cleared.has(n.id));
+      const readSet = getReadNotifIds();
+
+      // remove cleared ones, and mark read based on stored set
+      combined = combined
+        .filter((n) => !cleared.has(n.id))
+        .map((n) => ({
+          ...n,
+          read: readSet.has(n.id),
+        }));
 
       setNotifications(combined);
       setUnreadCount(combined.filter((n) => !n.read).length);
@@ -197,10 +231,18 @@ export default function Topbar() {
   }
 
   function handleNotificationClick(n) {
-    setNotifications((prev) =>
-      prev.map((item) => (item.id === n.id ? { ...item, read: true } : item))
-    );
-    setUnreadCount((prev) => Math.max(0, prev - (n.read ? 0 : 1)));
+    // mark this one as read in state
+    setNotifications((prev) => {
+      const updated = prev.map((item) =>
+        item.id === n.id ? { ...item, read: true } : item
+      );
+      const unread = updated.filter((x) => !x.read).length;
+      setUnreadCount(unread);
+      return updated;
+    });
+
+    // persist as read
+    saveReadNotifIds([n.id]);
 
     if (n.type === "feedback") {
       r.push("/feedback");
@@ -211,8 +253,19 @@ export default function Topbar() {
   }
 
   function markAllRead() {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-    setUnreadCount(0);
+    setNotifications((prev) => {
+      if (!prev.length) {
+        setUnreadCount(0);
+        return prev;
+      }
+      const ids = prev.map((n) => n.id);
+      // persist all as read
+      saveReadNotifIds(ids);
+
+      const updated = prev.map((n) => ({ ...n, read: true }));
+      setUnreadCount(0);
+      return updated;
+    });
   }
 
   function clearAll() {
@@ -259,7 +312,9 @@ export default function Topbar() {
           >
             <Bell size={18} />
             {unreadCount > 0 && (
-              <span style={S.badge}>{unreadCount > 9 ? "9+" : unreadCount}</span>
+              <span style={S.badge}>
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
             )}
           </button>
 

@@ -218,17 +218,9 @@ export async function listIncidents(params = {}) {
   }
 }
 
-/* ---------- EMERGENCY REPORTS / IOT EMERGENCIES ---------- */
-
-/**
- * For Emergency Reports page (history).
- *  - API: GET /iot/emergencies/history  (RESOLVED / CLOSED)
- *  - Falls back to admin/emergencies and /emergency-incidents if needed.
- */
 export async function listEmergencies(params = {}) {
   const qs = new URLSearchParams(params).toString();
 
-  // 1) IoT emergency history (RESOLVED/CLOSED)
   try {
     const data = await request(
       `/iot/emergencies/history${qs ? `?${qs}` : ""}`
@@ -254,7 +246,6 @@ export async function listEmergencies(params = {}) {
     }
   }
 
-  // 3) Final fallback: generic emergency-incidents (legacy)
   try {
     const data2 = await request(
       `/emergency-incidents${qs ? `?${qs}` : ""}`
@@ -270,10 +261,7 @@ export async function listEmergencies(params = {}) {
   }
 }
 
-/**
- * For LIVE dashboard (active only – PENDING/ACTIVE/OPEN/ONGOING).
- *  - API: GET /iot/emergencies
- */
+
 export async function listIotEmergencies(params = {}) {
   const qs = new URLSearchParams(params).toString();
   const data = await request(`/iot/emergencies${qs ? `?${qs}` : ""}`);

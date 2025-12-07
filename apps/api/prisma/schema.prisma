@@ -5,6 +5,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -15,6 +16,7 @@ model User {
   role               String   @default("COMMUTER")
   status             String   @default("active")
   mustChangePassword Boolean  @default(false)
+  profileUrl         String?                
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
   driverProfile      DriverProfile?
@@ -33,6 +35,8 @@ model DriverProfile {
   birthDate DateTime
   address   String
   phone     String?
+
+  profileUrl String?                          
 
   busId     String?
   bus       Bus?   @relation("BusDrivers", fields: [busId], references: [id])

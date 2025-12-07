@@ -60,29 +60,40 @@ const QuickBox = ({
   let border = C.border;
   let iconColor = C.sub;
   let titleColor = C.text;
+  let isPrimary = false;
 
   if (variant === "primary") {
     bg = C.brand;
     border = C.brand;
     iconColor = "#E5E7EB";
     titleColor = "#FFFFFF";
+    isPrimary = true;
   } else if (variant === "danger") {
     bg = "#FEE2E2";
     border = "#FCA5A5";
-    iconColor = C.danger;
-    titleColor = C.danger;
+    iconColor = "#B91C1C";
+    titleColor = "#B91C1C";
   } else if (variant === "accent") {
     bg = "#DBEAFE";
     border = "#93C5FD";
     iconColor = "#1D4ED8";
     titleColor = "#1D4ED8";
+  } else if (variant === "success") {
+    bg = "#DCFCE7";
+    border = "#6EE7B7";
+    iconColor = "#047857";
+    titleColor = "#047857";
   }
 
   const hasBadge = !!badgeCount && badgeCount > 0;
 
   return (
     <TouchableOpacity
-      style={[styles.quickBox, { backgroundColor: bg, borderColor: border }]}
+      style={[
+        styles.quickBox,
+        { backgroundColor: bg, borderColor: border },
+        isPrimary && styles.quickBoxPrimary,
+      ]}
       activeOpacity={0.85}
       onPress={onPress}
     >
@@ -94,7 +105,12 @@ const QuickBox = ({
         </View>
       )}
 
-      <View style={styles.quickBoxIconWrap}>
+      <View
+        style={[
+          styles.quickBoxIconWrap,
+          isPrimary && styles.quickBoxIconWrapPrimary,
+        ]}
+      >
         <MaterialCommunityIcons name={icon} size={20} color={iconColor} />
       </View>
       <Text
@@ -136,14 +152,23 @@ function buildLoopRouteLabel(forward, back) {
   return seq.join(" → ");
 }
 
-function formatTimeLabel(isoString) {
-  if (!isoString) return "—";
-  const d = new Date(isoString);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+/* ---------- Helper: ensure avatar URL is absolute ---------- */
+function buildAbsoluteAvatarUrl(raw) {
+  if (!raw) return null;
+  if (/^https?:\/\//i.test(raw)) return raw; // already absolute
+
+  const base = (API_URL || "").replace(/\/+$/, "");
+  const path = raw.startsWith("/") ? raw : `/${raw}`;
+  return `${base}${path}`;
+}
+
+/* ---------- Helper: pick first non-empty field ---------- */
+function pick(obj, keys) {
+  for (const k of keys) {
+    const v = obj?.[k];
+    if (v !== undefined && v !== null && v !== "") return v;
+  }
+  return undefined;
 }
 
 export default function DriverDashboard({ navigation }) {
@@ -153,7 +178,12 @@ export default function DriverDashboard({ navigation }) {
     Poppins_700Bold,
   });
 
-  const [driver, setDriver] = useState({ fullName: "Driver", avatar: null });
+  const [driver, setDriver] = useState({
+    fullName: "Driver",
+    avatar: null,
+    email: "",
+    phone: "",
+  });
   const [driverId, setDriverId] = useState(null);
 
   const [loading, setLoading] = useState(true);
@@ -172,18 +202,16 @@ export default function DriverDashboard({ navigation }) {
   const [isOnDuty, setIsOnDuty] = useState(false);
   const [dutyUpdating, setDutyUpdating] = useState(false);
 
-  // bus + route info for header (+ optional preset destination from DB)
+  // bus + route info for header
   const [busInfo, setBusInfo] = useState({
     number: null,
     plate: null,
-    routeLabel: null, // "SBT → Alegria → SBT"
-    presetDest: null, // { latitude, longitude, name } if destLat/destLng exist in DB
+    routeLabel: null,
+    presetDest: null,
   });
 
   // current trip session (local for now)
   const [currentTrip, setCurrentTrip] = useState(null);
-  // last finished trip (for display after End trip)
-  const [lastTrip, setLastTrip] = useState(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -267,6 +295,7 @@ export default function DriverDashboard({ navigation }) {
 
       /* -------- profile / name + bus + route for header + duty -------- */
       try {
+        // MAIN SOURCE – same as old working version
         const r = await fetch(`${API_URL}/users/me`, { headers });
         if (!r.ok) {
           console.log("[DriverDashboard] /users/me not ok", r.status);
@@ -274,30 +303,91 @@ export default function DriverDashboard({ navigation }) {
         }
         const profileData = await r.json().catch(() => ({}));
 
-        const driverProfile =
+        const driverProfileFromUser =
           profileData.driver || profileData.driverProfile || {};
 
+        // OPTIONAL extra calls just to help with avatar (non-breaking)
+        let extraDriver = {};
+        try {
+          const r1 = await fetch(`${API_URL}/driver/profile`, { headers });
+          if (r1.ok) {
+            const js = await r1.json().catch(() => ({}));
+            extraDriver = js?.data ?? js ?? {};
+          }
+        } catch {}
+        if (!Object.keys(extraDriver || {}).length) {
+          try {
+            const r2 = await fetch(`${API_URL}/driver/me`, { headers });
+            if (r2.ok) {
+              const js = await r2.json().catch(() => ({}));
+              extraDriver = js?.data ?? js ?? {};
+            }
+          } catch {}
+        }
+
+        const mergedDriver = {
+          ...extraDriver,
+          ...driverProfileFromUser, // prefer the attached driver on the user
+        };
+
         const fullName =
-          profileData.fullName || driverProfile.fullName || "Driver";
+          mergedDriver.fullName ||
+          profileData.fullName ||
+          "Driver";
 
-        const avatar =
-          profileData.profileUrl || driverProfile.profileUrl || null;
+        // AVATAR – combine all possible fields from mergedDriver + profileData
+        const rawAvatar =
+          pick(mergedDriver, [
+            "profileUrl",
+            "avatarUrl",
+            "photoUrl",
+            "profile_url",
+            "avatar_url",
+          ]) ??
+          pick(profileData, [
+            "profileUrl",
+            "avatarUrl",
+            "photoUrl",
+            "profile_url",
+            "avatar_url",
+          ]) ??
+          null;
 
-        setDriver({ fullName, avatar });
+        const email =
+          profileData.email ||
+          mergedDriver.email ||
+          "";
+        const phone =
+          profileData.phone ||
+          mergedDriver.phone ||
+          "";
 
-        // store driverId for trip history
+        const avatar = buildAbsoluteAvatarUrl(rawAvatar);
+
+        setDriver({ fullName, avatar, email, phone });
+
+        // driver id – keep old behavior
         setDriverId(
-          driverProfile.driverId || driverProfile.id || profileData.id || null
+          driverProfileFromUser.driverId ||
+            driverProfileFromUser.id ||
+            mergedDriver.id ||
+            profileData.id ||
+            null
         );
 
-        // sync duty from driverProfile.status
-        const rawStatus = (driverProfile.status || "").toUpperCase();
+        // duty status – same as before, but with fallback to mergedDriver
+        const rawStatus =
+          (driverProfileFromUser.status ||
+            mergedDriver.status ||
+            ""
+          ).toUpperCase();
         const onDutyFromApi =
           rawStatus === "ON_DUTY" || rawStatus === "ACTIVE";
         setIsOnDuty(onDutyFromApi);
 
-        // Bus details
-        const bus = driverProfile.bus || profileData.bus || null;
+        // BUS + ROUTE – EXACTLY same logic as old version
+        const bus =
+          driverProfileFromUser.bus || profileData.bus || null;
 
         let number = null;
         let plate = null;
@@ -313,7 +403,6 @@ export default function DriverDashboard({ navigation }) {
             bus.route ||
             buildLoopRouteLabel(bus.forwardRoute, bus.returnRoute);
 
-          // 1) Try DB coordinates first (if gi-set nimo sa admin side)
           const rawLat =
             typeof bus.destLat === "number"
               ? bus.destLat
@@ -343,7 +432,6 @@ export default function DriverDashboard({ navigation }) {
                 "Assigned destination",
             };
           }
-          // ❌ No more fallback to ROUTE_PRESETS (file removed)
         }
 
         setBusInfo({
@@ -420,7 +508,6 @@ export default function DriverDashboard({ navigation }) {
 
       if (!nextStatusBool) {
         setCurrentTrip(null);
-        setLastTrip(null);
       }
     } catch (err) {
       console.log("[DriverDashboard] duty update exception", err);
@@ -456,7 +543,6 @@ export default function DriverDashboard({ navigation }) {
 
   /* ---------- Trip handlers (local, history saved from DriverTracking) ---------- */
 
-  // Start trip → open DriverTracking screen
   const startTripSession = () => {
     if (!busInfo.routeLabel) {
       Alert.alert("No route", "Ask the admin to set up your bus route first.");
@@ -476,8 +562,6 @@ export default function DriverDashboard({ navigation }) {
 
     setCurrentTrip(trip);
 
-    // 👉 Start trip: open tracking. Driver can pin/select start + destination.
-    // If the bus has destLat/destLng, we still pass presetDest so map can auto-fill it.
     navigation?.navigate?.("DriverTracking", {
       trip,
       busInfo,
@@ -498,19 +582,6 @@ export default function DriverDashboard({ navigation }) {
         text: "End trip",
         style: "destructive",
         onPress: async () => {
-          const endedAt = new Date().toISOString();
-
-          const finishedTrip = {
-            id: currentTrip.id,
-            routeLabel: currentTrip.routeLabel || busInfo.routeLabel,
-            startedAt: currentTrip.startedAt,
-            endedAt,
-            driverId,
-          };
-
-          // ❌ No saving to TRIP_HISTORY here anymore.
-          // This only updates the "Last trip" display in Live status.
-          setLastTrip(finishedTrip);
           setCurrentTrip(null);
         },
       },
@@ -549,7 +620,7 @@ export default function DriverDashboard({ navigation }) {
       setRatingUnread(0);
       await AsyncStorage.setItem(STORAGE_KEYS.ratingLastSeen, String(total));
     } catch (e) {
-      console.log("[DriverDashboard] store rating lastSeen error", e);
+      console.log("[DriverDashboard] store ratingLastSeen error", e);
     } finally {
       navigation?.navigate?.("DriverRatings");
     }
@@ -657,80 +728,78 @@ export default function DriverDashboard({ navigation }) {
             </View>
 
             <View style={styles.liveCard}>
+              {/* OFF DUTY */}
               {!isOnDuty && (
                 <>
                   <Text style={styles.liveLabel}>You are OFF duty</Text>
-                  <Text style={styles.liveMeta}>
-                    Start duty to begin tracking your trips and to be visible in
-                    the system.
+                  <Text
+                    style={[styles.liveMeta, { marginLeft: 0, marginTop: 4 }]}
+                  >
+                    Tap{" "}
+                    <Text style={{ fontWeight: "600" }}>"Start duty"</Text> below
+                    to make yourself available for trips.
                   </Text>
                 </>
               )}
 
+              {/* ON DUTY, NO ACTIVE TRIP */}
               {isOnDuty && !hasActiveTrip && (
                 <>
-                  <Text style={styles.liveLabel}>On duty</Text>
-                  <Text style={styles.liveValue}>
-                    {routeLine !== "Route not set"
-                      ? routeLine
-                      : "Waiting for assigned route"}
-                  </Text>
-                  <Text style={styles.liveMeta}>
-                    You are available for trips. Tap "Start trip" to open the
-                    map. Set your current location and destination before
-                    starting navigation.
+                  <View style={styles.dutyPill}>
+                    <View style={styles.dutyDot} />
+                    <Text style={styles.dutyPillText}>On duty</Text>
+                  </View>
+
+                  <Text
+                    style={[styles.liveMeta, { marginLeft: 0, marginTop: 8 }]}
+                  >
+                    You are available for trips.
                   </Text>
 
-                  {busInfo.presetDest && (
-                    <Text style={styles.liveMeta}>
-                      This bus has an assigned destination. It may auto-fill on
-                      the map, but you can still change it anytime.
+                  {routeLine !== "Route not set" && (
+                    <Text
+                      style={[styles.liveMeta, { marginLeft: 0, marginTop: 2 }]}
+                      numberOfLines={2}
+                    >
+                      Route: {routeLine}
                     </Text>
-                  )}
-
-                  {lastTrip && (
-                    <View style={{ marginTop: 10 }}>
-                      <Text style={styles.liveSubheading}>Last trip</Text>
-                      <Text style={styles.liveMeta}>
-                        {lastTrip.routeLabel || routeLine || "—"}
-                      </Text>
-                      <Text style={styles.liveMeta}>
-                        Time: {formatTimeLabel(lastTrip.startedAt)} –{" "}
-                        {formatTimeLabel(lastTrip.endedAt)}
-                      </Text>
-                    </View>
                   )}
                 </>
               )}
 
+              {/* ACTIVE TRIP */}
               {isOnDuty && hasActiveTrip && (
                 <>
-                  <Text style={styles.liveLabel}>Current trip</Text>
-                  <Text style={styles.liveValue}>
-                    {currentTrip.routeLabel || routeLine || "—"}
+                  <View
+                    style={[
+                      styles.dutyPill,
+                      { backgroundColor: "#EEF2FF", borderColor: "#E0E7FF" },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="navigation-variant"
+                      size={14}
+                      color={C.brand}
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text
+                      style={[styles.dutyPillText, { color: C.brand }]}
+                    >
+                      Trip in progress
+                    </Text>
+                  </View>
+
+                  <Text
+                    style={[styles.liveMeta, { marginLeft: 0, marginTop: 8 }]}
+                  >
+                    {currentTrip.routeLabel || routeLine || "Route not set"}
                   </Text>
 
-                  <View style={styles.liveRow}>
-                    <MaterialCommunityIcons
-                      name="clock-outline"
-                      size={16}
-                      color={C.sub}
-                    />
-                    <Text style={styles.liveMeta}>
-                      Started at: {formatTimeLabel(currentTrip.startedAt)}
-                    </Text>
-                  </View>
-
-                  <View style={styles.liveRow}>
-                    <MaterialCommunityIcons
-                      name="account-group-outline"
-                      size={16}
-                      color={C.sub}
-                    />
-                    <Text style={styles.liveMeta}>
-                      Passengers scanned: {currentTrip.passengers || 0}
-                    </Text>
-                  </View>
+                  <Text
+                    style={[styles.liveMeta, { marginLeft: 0, marginTop: 2 }]}
+                  >
+                    Keep the app open while driving so tracking stays accurate.
+                  </Text>
                 </>
               )}
             </View>
@@ -759,10 +828,10 @@ export default function DriverDashboard({ navigation }) {
                 title={isOnDuty ? "End duty" : "Start duty"}
                 subtitle={
                   isOnDuty
-                    ? "Go off duty after your last trip"
-                    : "Make yourself available for trips"
+                    ? "Tap when you're done driving for the day."
+                    : "REQUIRED: Start duty before any trip."
                 }
-                variant="primary"
+                variant={isOnDuty ? "danger" : "success"}
                 onPress={() => confirmDutyChange(!isOnDuty)}
               />
 
@@ -852,6 +921,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#1F2937",
     justifyContent: "center",
     alignItems: "center",
+    overflow: "hidden",
   },
   avatarImg: { width: 48, height: 48, borderRadius: 999 },
   avatarLetter: {
@@ -927,6 +997,30 @@ const styles = StyleSheet.create({
     color: C.sub,
   },
 
+  dutyPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(16,185,129,0.10)",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: "rgba(16,185,129,0.35)",
+  },
+  dutyDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: C.success,
+    marginRight: 6,
+  },
+  dutyPillText: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 11,
+    color: C.success,
+  },
+
   quickGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -940,6 +1034,14 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     position: "relative",
   },
+  quickBoxPrimary: {
+    borderWidth: 0,
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 4,
+  },
   quickBoxIconWrap: {
     width: 30,
     height: 30,
@@ -948,6 +1050,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 6,
     backgroundColor: "rgba(255,255,255,0.55)",
+  },
+  quickBoxIconWrapPrimary: {
+    width: 36,
+    height: 36,
+    backgroundColor: "rgba(15,23,42,0.65)",
   },
   quickBoxTitle: {
     fontFamily: "Poppins_700Bold",

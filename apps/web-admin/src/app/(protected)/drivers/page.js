@@ -37,15 +37,11 @@ const shortId = (id) =>
   id ? `DRV-${String(id).slice(-5).padStart(5, "0").toUpperCase()}` : "DRV—";
 const pick = (v, fb = "—") => (v == null || v === "" ? fb : v);
 
-/* Simple condensed route label helper:
-   e.g. forward: "SBT → Santander / Lilo-an Port"
-        return:  "Santander / Lilo-an Port → SBT"
-   => "SBT — Santander / Lilo-an Port — SBT"
-*/
+/* Simple condensed route label helper */
 function simpleRouteLabel(forward, ret, fallback = "—") {
   const clean = (s) =>
     (s || "")
-      .split("—")[0] // in case something already has "—"
+      .split("—")[0]
       .trim();
 
   const partsFromArrow = (s) =>
@@ -65,7 +61,6 @@ function simpleRouteLabel(forward, ret, fallback = "—") {
     }
   }
 
-  // If parsing fails but we still have forward & return, keep them joined
   if (forward && ret) {
     return `${clean(forward)} — ${clean(ret)}`;
   }
@@ -93,28 +88,23 @@ function normalizeDriver(p) {
     .toString()
     .toUpperCase();
 
-  // Always prefer the bus' current corridor/routeSide
   const routeSide = bus.corridor || bus.routeSide || p.routeSide || "";
 
-  // Pull route data from the BUS first
   const busForward = bus.forwardRoute || "";
   const busReturn = bus.returnRoute || "";
   const busSingleRoute = bus.route || bus.routeLabel || "";
 
-  // Decide raw routeLabel (bus should always win)
   let rawRouteLabel = "";
   if (busSingleRoute) {
     rawRouteLabel = busSingleRoute;
   } else if (busForward && busReturn) {
     rawRouteLabel = `${busForward} — ${busReturn}`;
   } else if (p.routeLabel) {
-    // fallback to whatever was stored on the driver record
     rawRouteLabel = p.routeLabel;
   } else if (p.forwardRoute && p.returnRoute) {
     rawRouteLabel = `${p.forwardRoute} — ${p.returnRoute}`;
   }
 
-  // Final condensed label used everywhere in UI
   const routeLabel = simpleRouteLabel(
     busForward || p.forwardRoute,
     busReturn || p.returnRoute,
@@ -135,8 +125,6 @@ function normalizeDriver(p) {
     status: statusRaw || "ACTIVE",
     active: statusRaw === "ACTIVE",
     createdAt: p.createdAt,
-
-    // use latest bus route info
     routeSide,
     forwardRoute: busForward || p.forwardRoute || "",
     returnRoute: busReturn || p.returnRoute || "",
@@ -331,7 +319,7 @@ export default function DriverManagementPage() {
   const [query, setQuery] = useState("");
 
   // sorting + pagination
-  const [sortMode, setSortMode] = useState("newest"); // newest | oldest | nameAsc | nameDesc
+  const [sortMode, setSortMode] = useState("newest");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 6;
 
@@ -355,7 +343,7 @@ export default function DriverManagementPage() {
   // Confirm modal
   const [confirm, setConfirm] = useState({ open: false, driver: null });
 
-  // 🔽 NEW: driver-created confirmation modal state
+  // driver-created confirmation modal state
   const [showCreatedModal, setShowCreatedModal] = useState(false);
   const [createdDriverName, setCreatedDriverName] = useState("");
   const [createdDriverPhone, setCreatedDriverPhone] = useState("");
@@ -483,13 +471,13 @@ export default function DriverManagementPage() {
       arr.sort((a, b) => {
         const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
         const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return bt - at; // newest first
+        return bt - at;
       });
     } else if (sortMode === "oldest") {
       arr.sort((a, b) => {
         const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
         const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return at - bt; // oldest first
+        return at - bt;
       });
     } else if (sortMode === "nameAsc") {
       arr.sort((a, b) =>
@@ -601,7 +589,6 @@ export default function DriverManagementPage() {
       const single = selectedBus.route || selectedBus.routeLabel || "";
 
       if (fwd && ret) {
-        // store the condensed label: e.g. "SBT — Santander / Lilo-an Port — SBT"
         routePayload.routeLabel = simpleRouteLabel(fwd, ret, single || "");
       } else if (single) {
         routePayload.routeLabel = single;
@@ -619,7 +606,6 @@ export default function DriverManagementPage() {
       setSubmitting(true);
       const data = await createDriver(payload);
 
-      // 🔽 NEW: prepare and show "Driver registered" modal
       const fullNameFromPayload = (form.fullName || "").trim();
       const driverName =
         data?.fullName ||
@@ -627,8 +613,7 @@ export default function DriverManagementPage() {
         fullNameFromPayload ||
         "New driver";
 
-      const driverPhone =
-        data?.phone || form.phone || "";
+      const driverPhone = data?.phone || form.phone || "";
 
       setCreatedDriverName(driverName);
       setCreatedDriverPhone(driverPhone);
@@ -1050,30 +1035,31 @@ export default function DriverManagementPage() {
       border:
         type === "error" ? "1px solid #FCA5A5" : "1px solid #86EFAC",
     }),
-    pagination: {
+    // NEW – match bus pagination style
+    paginationBottom: {
+      marginTop: 18,
       display: "flex",
       alignItems: "center",
       justifyContent: "flex-end",
-      gap: 8,
-      marginTop: 16,
+      gap: 14,
     },
-    paginationBtn: {
-      height: 32,
-      width: 32,
-      borderRadius: 999,
-      border: "1px solid #D4DBE7",
-      background: "#FFFFFF",
-      display: "grid",
-      placeItems: "center",
-      cursor: "pointer",
-      fontSize: 16,
-      lineHeight: 1,
-      color: "#0F172A",
-    },
-    paginationInfo: {
+    paginationLabel: {
       fontSize: 13,
       color: "#6B7280",
       fontWeight: 500,
+    },
+    pageCircleBtn: {
+      width: 30,
+      height: 30,
+      borderRadius: "999px",
+      border: "1px solid #E5E7EB",
+      background: "#FFFFFF",
+      color: "#4B5563",
+      cursor: "pointer",
+      fontSize: 16,
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
     },
   };
 
@@ -1381,7 +1367,6 @@ export default function DriverManagementPage() {
 
                     return (
                       <div key={key} style={S.drvCard}>
-                        {/* HEADER: name + code left, status pill right */}
                         <div style={S.drvHeader}>
                           <div style={S.drvName}>
                             <span>{d.fullName || "Unnamed Driver"}</span>
@@ -1395,7 +1380,6 @@ export default function DriverManagementPage() {
                           </div>
                         </div>
 
-                        {/* BODY */}
                         <div
                           style={S.drvBody}
                           className="driver-body-grid"
@@ -1455,7 +1439,6 @@ export default function DriverManagementPage() {
                           </div>
                         </div>
 
-                        {/* FOOTER BUTTONS bottom-right */}
                         <div style={S.drvFooter}>
                           <button
                             type="button"
@@ -1491,46 +1474,44 @@ export default function DriverManagementPage() {
                   })}
                 </div>
 
-                {pageCount > 1 && (
-                  <div style={S.pagination}>
-                    <button
-                      type="button"
-                      style={{
-                        ...S.paginationBtn,
-                        opacity: page === 1 ? 0.4 : 1,
-                        cursor: page === 1 ? "default" : "pointer",
-                      }}
-                      disabled={page === 1}
-                      onClick={() => page > 1 && setPage(page - 1)}
-                    >
-                      ‹
-                    </button>
-                    <span style={S.paginationInfo}>
-                      Page {page} of {pageCount}
-                    </span>
-                    <button
-                      type="button"
-                      style={{
-                        ...S.paginationBtn,
-                        opacity: page === pageCount ? 0.4 : 1,
-                        cursor:
-                          page === pageCount ? "default" : "pointer",
-                      }}
-                      disabled={page === pageCount}
-                      onClick={() =>
-                        page < pageCount && setPage(page + 1)
-                      }
-                    >
-                      ›
-                    </button>
-                  </div>
-                )}
+                {/* NEW – bus-style pagination always visible */}
+                <div style={S.paginationBottom}>
+                  <button
+                    type="button"
+                    style={{
+                      ...S.pageCircleBtn,
+                      opacity: page === 1 ? 0.4 : 1,
+                      cursor: page === 1 ? "default" : "pointer",
+                    }}
+                    disabled={page === 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    ‹
+                  </button>
+                  <span style={S.paginationLabel}>
+                    Page {page} of {pageCount}
+                  </span>
+                  <button
+                    type="button"
+                    style={{
+                      ...S.pageCircleBtn,
+                      opacity: page === pageCount ? 0.4 : 1,
+                      cursor: page === pageCount ? "default" : "pointer",
+                    }}
+                    disabled={page === pageCount}
+                    onClick={() =>
+                      setPage((p) => Math.min(pageCount, p + 1))
+                    }
+                  >
+                    ›
+                  </button>
+                </div>
               </>
             )}
           </section>
         )}
 
-        {/* 🔽 NEW: DRIVER CREATED MODAL */}
+        {/* DRIVER CREATED MODAL */}
         {showCreatedModal && (
           <div
             style={S.overlay}
@@ -1561,7 +1542,6 @@ export default function DriverManagementPage() {
                   padding: "4px 2px 2px",
                 }}
               >
-                {/* Icon */}
                 <div
                   style={{
                     width: 48,

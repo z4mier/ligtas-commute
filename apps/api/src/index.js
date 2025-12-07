@@ -167,9 +167,9 @@ app.use("/driver", requireAuth, driverReportsRouter);
 // MOUNT IOT ROUTER UNDER /iot TO AVOID CONFLICTS
 app.use("/iot", iotRouter);
 
-app.use(adminTripsRouter);  
+app.use(adminTripsRouter);
 
-// --- DRIVER DUTY STATUS (ON_DUTY / OFF_DUTY) ---
+/* --- DRIVER DUTY STATUS (ON_DUTY / OFF_DUTY) --- */
 app.patch("/driver/duty", requireAuth, async (req, res) => {
   try {
     if (req.user?.role !== "DRIVER") {
@@ -249,22 +249,45 @@ app.post("/commuter/scan-bus", requireUserAuth, async (req, res) => {
       return res.status(404).json({ message: "Bus not found" });
     }
 
+    // ✅ IMPORTANT: kuhaa ang related user + commuterProfile aron naay fallback sa avatar ug name
     const driver = await prisma.driverProfile.findFirst({
       where: {
         busId: bus.id,
         isActive: true,
       },
       orderBy: { createdAt: "desc" },
+      include: {
+        user: {
+          include: {
+            commuterProfile: true,
+          },
+        },
+      },
     });
 
     const driverStatus = driver?.status || "OFF_DUTY";
     const onDuty = driverStatus === "ACTIVE" || driverStatus === "ON_DUTY";
 
+    // ✅ PICK BEST NAME
+    const driverName =
+      driver?.fullName ||
+      driver?.user?.commuterProfile?.fullName ||
+      driver?.user?.email ||
+      "Unknown Driver";
+
+    // ✅ PICK BEST AVATAR SOURCE (driverProfile OR commuterProfile)
+    const avatarRel =
+      driver?.profileUrl ||
+      driver?.user?.commuterProfile?.profileUrl ||
+      null;
+
+    const driverAvatarAbs = avatarRel ? abs(req, avatarRel) : null;
+
     return res.json({
       driverProfileId: driver?.id ?? null,
       driverId: driver?.driverId ?? null,
       busId: bus.id,
-      name: driver?.fullName || "Unknown Driver",
+      name: driverName,
       code: driver?.driverId ?? driver?.code ?? driver?.driverCode ?? null,
       busNumber: bus.number,
       plateNumber: bus.plate,
@@ -275,6 +298,10 @@ app.post("/commuter/scan-bus", requireUserAuth, async (req, res) => {
       status: driverStatus,
       onDuty,
       deviceId: bus.deviceId || null, // expose deviceId to client
+
+      // ✅ these are what BusScanner reads
+      driverAvatar: driverAvatarAbs,
+      profileUrl: driverAvatarAbs,
     });
   } catch (err) {
     console.error("POST /commuter/scan-bus ERROR:", err);
@@ -509,7 +536,7 @@ app.post("/auth/request-otp", async (req, res) => {
     console.log(`[request-otp] Resent OTP for ${key}: ${code}`);
     return res.json({
       message: "OTP sent",
-      otp: process.env.NODE_ENV !== "production" ? code : undefined,
+      // OTP code intentionally not returned to client
     });
   } catch (err) {
     if (err instanceof z.ZodError)
@@ -605,7 +632,7 @@ app.post("/auth/forgot-password", async (req, res) => {
     return res.json({
       ok: true,
       message: "Password reset code sent.",
-      code: process.env.NODE_ENV !== "production" ? code : undefined,
+      // Reset code intentionally not returned to client
     });
   } catch (err) {
     if (err instanceof z.ZodError)
@@ -1060,15 +1087,13 @@ app.patch("/users/me", requireAuth, async (req, res) => {
     }
 
     if (input.emergencyContacts) {
-      const payload = input.emergencyContacts
-        .slice(0, 3)
-        .map((c, i) => ({
-          userId,
-          name: c.name,
-          phone: c.phone,
-          relation: c.relation ?? null,
-          priority: c.priority ?? i,
-        }));
+      const payload = input.emergencyContacts.slice(0, 3).map((c, i) => ({
+        userId,
+        name: c.name,
+        phone: c.phone,
+        relation: c.relation ?? null,
+        priority: c.priority ?? i,
+      }));
 
       await prisma.$transaction([
         prisma.emergencyContact.deleteMany({ where: { userId } }),

@@ -26,11 +26,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL } from "../constants/config";
 
-// ✅ notification helpers
-import {
-  addRatingSubmitted,
-  addIncidentSubmitted,
-} from "../lib/notify";
+import { addRatingSubmitted, addIncidentSubmitted } from "../lib/notify";
 
 const C = {
   bg: "#F3F4F6",
@@ -60,6 +56,27 @@ const INCIDENT_CATEGORIES = [
   "Other",
 ];
 
+/* ---------- Avatar helper (simple) ---------- */
+function buildAbsoluteAvatarUrl(raw) {
+  if (!raw) return null;
+
+  // already absolute (http/https)
+  if (/^https?:\/\//i.test(raw)) return raw;
+
+  // normalise base (no trailing slash)
+  let base = (API_URL || "").replace(/\/+$/, "");
+
+  // if API_URL ends with "/api", strip it so images use root host
+  if (base.toLowerCase().endsWith("/api")) {
+    base = base.slice(0, -4); // remove "/api"
+  }
+
+  const path = raw.startsWith("/") ? raw : `/${raw}`;
+  const full = `${base}${path}`;
+  console.log("[TripDetails] driver avatar URL =", full);
+  return full;
+}
+
 function fmtDateTime(x) {
   if (!x) return "—";
   const d = new Date(x);
@@ -83,22 +100,16 @@ export default function TripDetails({ route, navigation }) {
   const { trip } = route.params || {};
 
   const initialRating =
-    trip?.ratingScore ??
-    trip?.rating ??
-    trip?.score ??
-    null;
+    trip?.ratingScore ?? trip?.rating ?? trip?.score ?? null;
 
   const initialNotes =
-    trip?.ratingComment ??
-    trip?.comment ??
-    trip?.feedback ??
-    "";
+    trip?.ratingComment ?? trip?.comment ?? trip?.feedback ?? "";
 
   const hasInitialRating = initialRating != null && initialRating > 0;
 
   const [rating, setRating] = useState(initialRating || 0);
   const [notes, setNotes] = useState(initialNotes);
-  const [mode, setMode] = useState(hasInitialRating ? "summary" : "form"); // "form" | "summary"
+  const [mode, setMode] = useState(hasInitialRating ? "summary" : "form");
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -106,6 +117,9 @@ export default function TripDetails({ route, navigation }) {
   const [reportCategories, setReportCategories] = useState([]);
   const [reportNotes, setReportNotes] = useState("");
   const [submittingReport, setSubmittingReport] = useState(false);
+
+  // 🔥 image error fallback state
+  const [avatarError, setAvatarError] = useState(false);
 
   const [fontsLoaded] = useFonts({
     Poppins_400Regular,
@@ -158,14 +172,21 @@ export default function TripDetails({ route, navigation }) {
     rawDriver?.username ||
     "Your driver";
 
-  const driverAvatar =
-    trip.driverAvatar ||
+  // 🔥 Avatar logic: use what backend sends
+  const candidateAvatar =
+    trip.driverAvatar || // from /trips/recent mapping
+    trip.driver_avatar ||
+    trip.avatar ||
     rawDriver?.profileUrl ||
-    rawDriver?.avatarUrl ||
-    rawDriver?.photoUrl ||
-    rawDriver?.image ||
-    rawDriver?.picture ||
     null;
+
+  console.log("[TripDetails] raw driver avatar =", candidateAvatar);
+
+  const driverAvatar = candidateAvatar
+    ? buildAbsoluteAvatarUrl(candidateAvatar)
+    : null;
+
+  const showDriverImage = !!driverAvatar && !avatarError;
 
   const driverInitial =
     driverName && driverName.length > 0
@@ -238,7 +259,6 @@ export default function TripDetails({ route, navigation }) {
         );
       }
 
-      // ✅ Mark this trip as rated in the current screen / nav params
       const updatedTrip = {
         ...trip,
         ratingScore: rating,
@@ -246,7 +266,6 @@ export default function TripDetails({ route, navigation }) {
       };
       navigation.setParams({ trip: updatedTrip });
 
-      // ✅ Create a notification for the bell (Rating submitted)
       await addRatingSubmitted({ trip: updatedTrip, rating });
 
       setSubmitting(false);
@@ -309,7 +328,6 @@ export default function TripDetails({ route, navigation }) {
         throw new Error(data.error || "Failed to submit report");
       }
 
-      // ✅ Create a notification for the bell (Issue reported)
       await addIncidentSubmitted({ trip });
 
       setSubmittingReport(false);
@@ -370,10 +388,16 @@ export default function TripDetails({ route, navigation }) {
         <View style={styles.mainCard}>
           <View style={styles.tripRow}>
             <View style={styles.tripAvatar}>
-              {driverAvatar ? (
+              {showDriverImage ? (
                 <Image
                   source={{ uri: driverAvatar }}
                   style={styles.tripAvatarImg}
+                  onError={() => {
+                    console.log(
+                      "[TripDetails] avatar load failed, fallback to initial"
+                    );
+                      setAvatarError(true);
+                  }}
                 />
               ) : (
                 <Text style={styles.tripAvatarInitial}>{driverInitial}</Text>
@@ -390,7 +414,6 @@ export default function TripDetails({ route, navigation }) {
 
         {/* MAP + ROUTE CARD */}
         <View style={styles.tripCard}>
-          {/* ✅ Updated: no more “Trip route preview will appear here.” */}
           <View style={styles.mapPlaceholder}>
             <MaterialCommunityIcons
               name="map-outline"
@@ -537,10 +560,7 @@ export default function TripDetails({ route, navigation }) {
                         />
                         <Text style={styles.summaryLabelSmall}>
                           •{" "}
-                          {
-                            RATING_LABELS[rating || initialRating] ||
-                            ""
-                          }
+                          {RATING_LABELS[rating || initialRating] || ""}
                         </Text>
                       </>
                     )}
@@ -782,12 +802,6 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_600SemiBold",
     fontSize: 12,
     color: C.text,
-  },
-  mapPlaceholderText: {
-    fontFamily: "Poppins_400Regular",
-    fontSize: 11,
-    color: C.sub,
-    marginTop: 2,
   },
 
   routeBlock: {

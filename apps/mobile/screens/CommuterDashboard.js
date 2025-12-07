@@ -23,7 +23,6 @@ import {
   Poppins_700Bold,
 } from "@expo-google-fonts/poppins";
 import { API_URL } from "../constants/config";
-import { useI18n } from "../i18n/i18n";
 import * as Notify from "../lib/notify";
 
 const C = {
@@ -46,7 +45,7 @@ const HEADER_H = 48;
 
 const SAFETY_TIPS = [
   "Always check the driver's ID and bus number before boarding.",
-  "Share your trip details with a trusted contact when traveling at night.",
+  "Share your trip details with a trusted contact when traveling.",
   "Avoid displaying valuables like phones and wallets near the bus doors.",
   "Stay seated or hold onto the handrails when the bus is moving.",
   "Know the location of the emergency button and exits in case of incidents.",
@@ -144,7 +143,6 @@ export default function CommuterDashboard({ navigation }) {
     Poppins_700Bold,
   });
 
-  const { t } = useI18n();
   const insets = useSafeAreaInsets();
 
   const [checking, setChecking] = useState(true);
@@ -357,7 +355,7 @@ export default function CommuterDashboard({ navigation }) {
         >
           <View style={s.notifCard}>
             <View style={s.notifHeader}>
-              <Text style={s.notifTitle}>{t("notifications")}</Text>
+              <Text style={s.notifTitle}>Notifications</Text>
               <TouchableOpacity
                 onPress={markAllRead}
                 disabled={!notifications.length}
@@ -368,7 +366,7 @@ export default function CommuterDashboard({ navigation }) {
                     { color: notifications.length ? C.brand : C.hint },
                   ]}
                 >
-                  {t("markAllRead")}
+                  Mark all as read
                 </Text>
               </TouchableOpacity>
             </View>
@@ -380,8 +378,10 @@ export default function CommuterDashboard({ navigation }) {
                   size={28}
                   color={C.hint}
                 />
-                <Text style={s.emptyTitle}>{t("noNotifications")}</Text>
-                <Text style={s.emptySub}>{t("noNotificationsSub")}</Text>
+                <Text style={s.emptyTitle}>No notifications yet</Text>
+                <Text style={s.emptySub}>
+                  You’ll see important alerts and updates here.
+                </Text>
               </View>
             ) : (
               notifications.slice(0, 3).map((n) => (
@@ -402,7 +402,7 @@ export default function CommuterDashboard({ navigation }) {
               style={s.viewAllBtn}
               onPress={openAllNotifications}
             >
-              <Text style={s.viewAllBtnTxt}>{t("viewAllNotifications")}</Text>
+              <Text style={s.viewAllBtnTxt}>View all notifications</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -418,9 +418,7 @@ export default function CommuterDashboard({ navigation }) {
         {/* GREETING */}
         <View style={s.hero}>
           <Text style={s.heroHello}>Hello,</Text>
-          <Text style={s.heroName}>
-            {displayName || t("commuter" /* fallback */)}
-          </Text>
+          <Text style={s.heroName}>{displayName || "Commuter"}</Text>
           <Text style={s.heroSub}>Ready for a safer commute today?</Text>
         </View>
 
@@ -473,9 +471,7 @@ export default function CommuterDashboard({ navigation }) {
           ) : (
             recentTrips.slice(0, MAX_RECENT_SHOWN).map((trip) => {
               const title = `Ride to ${cleanPlace(trip.destLabel)}`;
-              const dateTimeStr = fmtDateTime(
-                trip.endedAt || trip.startedAt
-              );
+              const dateTimeStr = fmtDateTime(trip.endedAt || trip.startedAt);
 
               const driverName =
                 trip.driverProfile?.fullName ||
@@ -567,7 +563,7 @@ export default function CommuterDashboard({ navigation }) {
               color="#fff"
             />
           </View>
-          <Text style={[s.tabLabel, s.tabActive]}>{t("tabHome")}</Text>
+          <Text style={[s.tabLabel, s.tabActive]}>Home</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={s.tab} onPress={goQR}>
@@ -578,7 +574,7 @@ export default function CommuterDashboard({ navigation }) {
               color={C.brand}
             />
           </View>
-          <Text style={s.tabLabel}>{t("tabQR")}</Text>
+          <Text style={s.tabLabel}>Scan</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={s.tab} onPress={goSettings}>
@@ -589,7 +585,7 @@ export default function CommuterDashboard({ navigation }) {
               color={C.brand}
             />
           </View>
-          <Text style={s.tabLabel}>{t("tabSettings")}</Text>
+          <Text style={s.tabLabel}>Settings</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
