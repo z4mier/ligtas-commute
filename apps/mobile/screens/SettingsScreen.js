@@ -2,7 +2,6 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   View,
-  Text,
   TouchableOpacity,
   ScrollView,
   Modal,
@@ -23,8 +22,8 @@ import {
 import { StatusBar } from "expo-status-bar";
 import { API_URL } from "../constants/config";
 import { useTheme, THEME } from "../theme/ThemeProvider";
+import LCText from "../components/LCText"; // ✅ fixed-text component
 
-/* ---------------- Toast ---------------- */
 function useToast(theme) {
   const [msg, setMsg] = useState("");
   const [tone, setTone] = useState("success");
@@ -65,24 +64,30 @@ function useToast(theme) {
         backgroundColor: tone === "success" ? theme.success : theme.danger,
       }}
     >
-      <Text style={{ fontFamily: "Poppins_600SemiBold", color: THEME.light.white }}>
+      <LCText
+        variant="label"
+        style={{
+          fontFamily: "Poppins_600SemiBold",
+          color: THEME.light.white,
+          fontSize: 11.5,
+        }}
+      >
         {msg}
-      </Text>
+      </LCText>
     </Animated.View>
   );
   return { show, Toast };
 }
 
-/* ---------------- Styles ---------------- */
 const makeStyles = (C) =>
   StyleSheet.create({
     f400: { fontFamily: "Poppins_400Regular" },
     f600: { fontFamily: "Poppins_600SemiBold" },
     f700: { fontFamily: "Poppins_700Bold" },
 
-    modalTitle: { fontSize: 18, color: C.brand },
-    modalH2: { fontSize: 15, fontWeight: "700", color: C.text, marginBottom: 6 },
-    modalP: { fontSize: 13, lineHeight: 20, color: C.text },
+    modalTitle: { fontSize: 13, color: C.brand },
+    modalH2: { fontSize: 12, fontWeight: "700", color: C.text, marginBottom: 6 },
+    modalP: { fontSize: 11, lineHeight: 18, color: C.text },
 
     screen: { flex: 1, backgroundColor: C.page },
     loadingBox: {
@@ -92,7 +97,7 @@ const makeStyles = (C) =>
       justifyContent: "center",
     },
     bodyPad: { paddingHorizontal: 16 },
-    title: { fontSize: 18, color: C.text },
+    title: { fontSize: 14, color: C.text },
 
     card: {
       backgroundColor: C.card,
@@ -108,10 +113,10 @@ const makeStyles = (C) =>
       alignItems: "center",
     },
 
-    sectionTitle: { color: C.text, fontSize: 14 },
-    small: { fontSize: 12, color: C.text },
-    label: { fontSize: 13, color: C.text },
-    name: { color: C.text, fontSize: 15 },
+    sectionTitle: { color: C.text, fontSize: 12 },
+    small: { fontSize: 11, color: C.text },
+    label: { fontSize: 11, color: C.text },
+    name: { color: C.text, fontSize: 13 },
 
     rowLeft: { flexDirection: "row", alignItems: "center" },
 
@@ -136,7 +141,12 @@ const makeStyles = (C) =>
       alignItems: "center",
     },
 
-    btn: { height: 44, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+    btn: {
+      height: 44,
+      borderRadius: 8,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     btnPrimary: { backgroundColor: C.brand },
     btnLight: { backgroundColor: C.ghostBg, borderWidth: 1, borderColor: C.border },
     btnGhost: { backgroundColor: C.ghostBg, borderWidth: 1, borderColor: C.border },
@@ -228,6 +238,7 @@ const makeStyles = (C) =>
       backgroundColor: C.inputBg,
       color: C.text,
       paddingRight: 44,
+      fontSize: 12,
     },
     inputFlat: {
       height: 40,
@@ -237,6 +248,7 @@ const makeStyles = (C) =>
       paddingHorizontal: 10,
       backgroundColor: C.inputBg,
       color: C.text,
+      fontSize: 12,
     },
     stackGap: { marginTop: 8 },
     stackGapTight: { marginTop: 6 },
@@ -251,7 +263,6 @@ const makeStyles = (C) =>
       width: 32,
     },
 
-    // Emergency contacts
     ecRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -260,18 +271,16 @@ const makeStyles = (C) =>
       borderBottomWidth: 1,
       borderBottomColor: C.border,
     },
-    ecName: { color: C.text, fontWeight: "700" },
-    ecPhone: { color: C.text, fontSize: 12 },
-    ecRel: { color: C.text, fontSize: 12, opacity: 0.8 },
+    ecName: { color: C.text, fontWeight: "700", fontSize: 12 },
+    ecPhone: { color: C.text, fontSize: 11 },
+    ecRel: { color: C.text, fontSize: 11, opacity: 0.8 },
     ecActions: { flexDirection: "row", gap: 12, alignItems: "center" },
   });
 
-/* ---------------- Helpers ---------------- */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE =
   /^(?:\+?63\s?9\d{2}[- ]?\d{3}[- ]?\d{4}|09\d{9})$/;
 
-/* ---------------- Screen ---------------- */
 export default function SettingsScreen({ navigation }) {
   const [fontsLoaded] = useFonts({
     Poppins_400Regular,
@@ -294,7 +303,6 @@ export default function SettingsScreen({ navigation }) {
     emergencyContacts: [],
   });
 
-  // modals
   const [profileModal, setProfileModal] = useState(false);
   const [editModal, setEditModal] = useState(false);
   const [securityModal, setSecurityModal] = useState(false);
@@ -302,7 +310,6 @@ export default function SettingsScreen({ navigation }) {
   const [termsModal, setTermsModal] = useState(false);
   const [supportModal, setSupportModal] = useState(false);
 
-  // edit profile vals
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -315,7 +322,6 @@ export default function SettingsScreen({ navigation }) {
     address: "",
   });
 
-  // password
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -325,7 +331,6 @@ export default function SettingsScreen({ navigation }) {
   const [pErr, setPErr] = useState("");
   const [pLoading, setPLoading] = useState(false);
 
-  // emergency contacts
   const [contacts, setContacts] = useState([]);
   const [ecModal, setEcModal] = useState(false);
   const [ecErr, setEcErr] = useState("");
@@ -335,7 +340,6 @@ export default function SettingsScreen({ navigation }) {
   const [ecPhone, setEcPhone] = useState("");
   const [ecRel, setEcRel] = useState("");
 
-  // profile edit err
   const [editErr, setEditErr] = useState("");
   const [editLoading, setEditLoading] = useState(false);
 
@@ -488,7 +492,6 @@ export default function SettingsScreen({ navigation }) {
     }
   }
 
-  /* ---------- Emergency Contacts CRUD ---------- */
   function openAddContact() {
     if (contacts.length >= 3) {
       show("You can add up to 3 contacts only.", "danger");
@@ -615,7 +618,6 @@ export default function SettingsScreen({ navigation }) {
         contentContainerStyle={{ paddingBottom: 28 }}
         style={s.bodyPad}
       >
-        {/* Header */}
         <View
           style={{
             flexDirection: "row",
@@ -637,25 +639,26 @@ export default function SettingsScreen({ navigation }) {
               }
             />
           </TouchableOpacity>
-          <Text style={[s.title, s.f700]}>
+          <LCText variant="label" style={[s.title, s.f700]}>
             Settings
-          </Text>
+          </LCText>
         </View>
 
         {/* Profile card */}
         <View style={s.card}>
           <View style={s.cardHeader}>
-            <Text style={[s.sectionTitle, s.f700]}>
+            <LCText variant="label" style={[s.sectionTitle, s.f700]}>
               Profile
-            </Text>
-            <Text
+            </LCText>
+            <LCText
+              variant="tiny"
               style={[
                 s.small,
                 { color: theme.textSub },
               ]}
             >
               Tap to view profile
-            </Text>
+            </LCText>
           </View>
 
           <TouchableOpacity
@@ -663,59 +666,63 @@ export default function SettingsScreen({ navigation }) {
             onPress={() => setProfileModal(true)}
           >
             <View style={s.avatar}>
-              <Text
+              <LCText
+                variant="label"
                 style={[
                   s.f700,
                   {
                     color: THEME.light.white,
-                    fontSize: 16,
+                    fontSize: 13,
                   },
                 ]}
               >
                 {profile.fullName?.[0]?.toUpperCase() || "U"}
-              </Text>
+              </LCText>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[s.name, s.f600]}>
+              <LCText variant="label" style={[s.name, s.f600]}>
                 {profile.fullName || "—"}
-              </Text>
-              <Text
+              </LCText>
+              <LCText
+                variant="tiny"
                 style={[
                   s.small,
                   { color: theme.textSub },
                 ]}
               >
                 {joinText}
-              </Text>
+              </LCText>
             </View>
           </TouchableOpacity>
         </View>
 
-        {/* Emergency Contacts */}
+        {/* Emergency contacts */}
         <View style={s.card}>
           <View style={s.cardHeader}>
-            <Text style={[s.sectionTitle, s.f700]}>
+            <LCText variant="label" style={[s.sectionTitle, s.f700]}>
               Emergency Contacts
-            </Text>
-            <Text
+            </LCText>
+            <LCText
+              variant="tiny"
               style={[
                 s.small,
                 { color: theme.textSub },
               ]}
             >
               Add up to 3 contacts
-            </Text>
+            </LCText>
           </View>
 
           {contacts.length === 0 ? (
-            <Text
+            <LCText
+              variant="tiny"
               style={[
                 s.small,
                 { color: theme.textSub, marginTop: 8 },
               ]}
             >
               No contacts yet.
-            </Text>
+            </LCText>
           ) : (
             <View style={{ marginTop: 6 }}>
               {contacts.map((c, idx) => (
@@ -729,14 +736,16 @@ export default function SettingsScreen({ navigation }) {
                     color={theme.brand}
                   />
                   <View style={{ flex: 1 }}>
-                    <Text style={s.ecName}>{c.name}</Text>
-                    <Text style={s.ecPhone}>
+                    <LCText variant="label" style={s.ecName}>
+                      {c.name}
+                    </LCText>
+                    <LCText variant="tiny" style={s.ecPhone}>
                       {phonePretty(c.phone)}
-                    </Text>
+                    </LCText>
                     {!!c.relation && (
-                      <Text style={s.ecRel}>
+                      <LCText variant="tiny" style={s.ecRel}>
                         {c.relation}
-                      </Text>
+                      </LCText>
                     )}
                   </View>
                   <View style={s.ecActions}>
@@ -776,18 +785,19 @@ export default function SettingsScreen({ navigation }) {
               },
             ]}
           >
-            <Text
+            <LCText
+              variant="label"
               style={[
                 s.f600,
-                { color: theme.text },
+                { color: theme.text, fontSize: 12 },
               ]}
             >
               Add Emergency Contact
-            </Text>
+            </LCText>
           </TouchableOpacity>
         </View>
 
-        {/* Docs / Support */}
+        {/* Terms & Help */}
         <TouchableOpacity
           style={s.card}
           onPress={() => setTermsModal(true)}
@@ -798,15 +808,16 @@ export default function SettingsScreen({ navigation }) {
               size={20}
               color={theme.brand}
             />
-            <Text
+            <LCText
+              variant="label"
               style={[
                 s.label,
                 s.f600,
-                { marginLeft: 8 },
+                { marginLeft: 8, fontSize: 12 },
               ]}
             >
               Terms & Privacy
-            </Text>
+            </LCText>
           </View>
         </TouchableOpacity>
         <TouchableOpacity
@@ -819,19 +830,20 @@ export default function SettingsScreen({ navigation }) {
               size={20}
               color={theme.brand}
             />
-            <Text
+            <LCText
+              variant="label"
               style={[
                 s.label,
                 s.f600,
-                { marginLeft: 8 },
+                { marginLeft: 8, fontSize: 12 },
               ]}
             >
               Help & Support
-            </Text>
+            </LCText>
           </View>
         </TouchableOpacity>
 
-        {/* Logout (keep at bottom) */}
+        {/* Logout */}
         <View
           style={[s.card, { marginBottom: 12 }]}
         >
@@ -844,22 +856,24 @@ export default function SettingsScreen({ navigation }) {
               size={20}
               color={theme.danger}
             />
-            <Text
+            <LCText
+              variant="label"
               style={[
                 s.f600,
                 {
                   color: theme.danger,
                   marginLeft: 8,
+                  fontSize: 12,
                 },
               ]}
             >
               Logout
-            </Text>
+            </LCText>
           </TouchableOpacity>
         </View>
       </ScrollView>
 
-      {/* Profile Modal */}
+      {/* Profile modal */}
       <Modal
         visible={profileModal}
         transparent
@@ -868,14 +882,15 @@ export default function SettingsScreen({ navigation }) {
         <View style={s.modalOverlay}>
           <View style={s.modalBox}>
             <View style={s.modalHeader}>
-              <Text
+              <LCText
+                variant="label"
                 style={[
                   s.f700,
-                  { fontSize: 16, color: theme.brand },
+                  { fontSize: 13, color: theme.brand },
                 ]}
               >
                 Profile
-              </Text>
+              </LCText>
               <TouchableOpacity
                 onPress={() => setProfileModal(false)}
               >
@@ -904,42 +919,45 @@ export default function SettingsScreen({ navigation }) {
                   },
                 ]}
               >
-                <Text
+                <LCText
+                  variant="label"
                   style={[
                     s.f700,
                     {
                       color: THEME.light.white,
-                      fontSize: 18,
+                      fontSize: 14,
                     },
                   ]}
                 >
                   {profile.fullName?.[0]?.toUpperCase() ||
                     "U"}
-                </Text>
+                </LCText>
               </View>
-              <Text
+              <LCText
+                variant="label"
                 style={[
                   s.f700,
                   {
-                    fontSize: 16,
+                    fontSize: 13,
                     color: theme.text,
                     marginTop: 10,
                   },
                 ]}
               >
                 {profile.fullName || "—"}
-              </Text>
+              </LCText>
             </View>
 
             <View style={s.infoBoxHeader}>
-              <Text
+              <LCText
+                variant="label"
                 style={[
                   s.f600,
-                  { color: theme.text },
+                  { color: theme.text, fontSize: 12 },
                 ]}
               >
                 Personal Information
-              </Text>
+              </LCText>
               <TouchableOpacity
                 onPress={() => {
                   setProfileModal(false);
@@ -981,15 +999,16 @@ export default function SettingsScreen({ navigation }) {
               />
             </View>
 
-            <Text
+            <LCText
+              variant="label"
               style={[
                 s.label,
                 s.f600,
-                { marginTop: 12, color: theme.text },
+                { marginTop: 12, color: theme.text, fontSize: 12 },
               ]}
             >
               Security
-            </Text>
+            </LCText>
             <TouchableOpacity
               onPress={() => {
                 setProfileModal(false);
@@ -1001,20 +1020,21 @@ export default function SettingsScreen({ navigation }) {
                 { marginTop: 8 },
               ]}
             >
-              <Text
+              <LCText
+                variant="label"
                 style={[
                   s.f600,
-                  { color: theme.text },
+                  { color: theme.text, fontSize: 12 },
                 ]}
               >
                 Change Password
-              </Text>
+              </LCText>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Edit Profile Modal */}
+      {/* Edit profile modal */}
       <Modal
         visible={editModal}
         transparent
@@ -1023,14 +1043,15 @@ export default function SettingsScreen({ navigation }) {
         <View style={s.modalOverlay}>
           <View style={s.modalBox}>
             <View style={s.modalHeader}>
-              <Text
+              <LCText
+                variant="label"
                 style={[
                   s.f700,
-                  { fontSize: 16, color: theme.brand },
+                  { fontSize: 13, color: theme.brand },
                 ]}
               >
                 Edit Profile
-              </Text>
+              </LCText>
               <TouchableOpacity
                 onPress={() => setEditModal(false)}
               >
@@ -1059,17 +1080,18 @@ export default function SettingsScreen({ navigation }) {
                   },
                 ]}
               >
-                <Text
+                <LCText
+                  variant="label"
                   style={[
                     s.f700,
                     {
                       color: THEME.light.white,
-                      fontSize: 18,
+                      fontSize: 14,
                     },
                   ]}
                 >
                   {fullName?.[0]?.toUpperCase() || "U"}
-                </Text>
+                </LCText>
               </View>
               <TextInput
                 style={[
@@ -1137,14 +1159,15 @@ export default function SettingsScreen({ navigation }) {
                 s={s}
                 icon="calendar-month-outline"
               >
-                <Text
+                <LCText
+                  variant="tiny"
                   style={[
                     s.small,
                     { color: theme.textSub },
                   ]}
                 >
                   {joinText}
-                </Text>
+                </LCText>
               </EditRow>
             </View>
 
@@ -1155,7 +1178,8 @@ export default function SettingsScreen({ navigation }) {
                   size={16}
                   color={THEME.light.white}
                 />
-                <Text
+                <LCText
+                  variant="tiny"
                   style={[
                     s.small,
                     {
@@ -1165,7 +1189,7 @@ export default function SettingsScreen({ navigation }) {
                   ]}
                 >
                   {editErr}
-                </Text>
+                </LCText>
               </View>
             ) : null}
 
@@ -1194,14 +1218,15 @@ export default function SettingsScreen({ navigation }) {
                     color={THEME.light.white}
                   />
                 ) : (
-                  <Text
+                  <LCText
+                    variant="label"
                     style={[
                       s.f600,
-                      { color: THEME.light.white },
+                      { color: THEME.light.white, fontSize: 12 },
                     ]}
                   >
                     Save
-                  </Text>
+                  </LCText>
                 )}
               </TouchableOpacity>
               <TouchableOpacity
@@ -1219,21 +1244,22 @@ export default function SettingsScreen({ navigation }) {
                   { flex: 1 },
                 ]}
               >
-                <Text
+                <LCText
+                  variant="label"
                   style={[
                     s.f600,
-                    { color: theme.text },
+                    { color: theme.text, fontSize: 12 },
                   ]}
                 >
                   Cancel
-                </Text>
+                </LCText>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Security (Password only) */}
+      {/* Change password modal */}
       <Modal
         visible={securityModal}
         transparent
@@ -1242,14 +1268,15 @@ export default function SettingsScreen({ navigation }) {
         <View style={s.modalOverlay}>
           <View style={s.modalBox}>
             <View style={s.modalHeader}>
-              <Text
+              <LCText
+                variant="label"
                 style={[
                   s.f700,
-                  { fontSize: 16, color: theme.brand },
+                  { fontSize: 13, color: theme.brand },
                 ]}
               >
                 Change Password
-              </Text>
+              </LCText>
               <TouchableOpacity
                 onPress={() => setSecurityModal(false)}
               >
@@ -1352,7 +1379,8 @@ export default function SettingsScreen({ navigation }) {
                   size={16}
                   color={THEME.light.white}
                 />
-                <Text
+                <LCText
+                  variant="tiny"
                   style={[
                     s.small,
                     {
@@ -1362,7 +1390,7 @@ export default function SettingsScreen({ navigation }) {
                   ]}
                 >
                   {pErr}
-                </Text>
+                </LCText>
               </View>
             ) : null}
 
@@ -1383,21 +1411,22 @@ export default function SettingsScreen({ navigation }) {
                   color={THEME.light.white}
                 />
               ) : (
-                <Text
+                <LCText
+                  variant="label"
                   style={[
                     s.f600,
-                    { color: THEME.light.white },
+                    { color: THEME.light.white, fontSize: 12 },
                   ]}
                 >
                   Update Password
-                </Text>
+                </LCText>
               )}
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Emergency Contact Add/Edit Modal */}
+      {/* Add / edit emergency contact */}
       <Modal
         visible={ecModal}
         transparent
@@ -1406,16 +1435,17 @@ export default function SettingsScreen({ navigation }) {
         <View style={s.modalOverlay}>
           <View style={s.modalBox}>
             <View style={s.modalHeader}>
-              <Text
+              <LCText
+                variant="label"
                 style={[
                   s.f700,
-                  { fontSize: 16, color: theme.brand },
+                  { fontSize: 13, color: theme.brand },
                 ]}
               >
                 {editingIndex === -1
                   ? "Add Emergency Contact"
                   : "Edit Emergency Contact"}
-              </Text>
+              </LCText>
               <TouchableOpacity
                 onPress={() => setEcModal(false)}
               >
@@ -1469,7 +1499,8 @@ export default function SettingsScreen({ navigation }) {
                   size={16}
                   color={THEME.light.white}
                 />
-                <Text
+                <LCText
+                  variant="tiny"
                   style={[
                     s.small,
                     {
@@ -1479,7 +1510,7 @@ export default function SettingsScreen({ navigation }) {
                   ]}
                 >
                   {ecErr}
-                </Text>
+                </LCText>
               </View>
             ) : null}
 
@@ -1497,21 +1528,22 @@ export default function SettingsScreen({ navigation }) {
                   color={THEME.light.white}
                 />
               ) : (
-                <Text
+                <LCText
+                  variant="label"
                   style={[
                     s.f600,
-                    { color: THEME.light.white },
+                    { color: THEME.light.white, fontSize: 12 },
                   ]}
                 >
                   Save
-                </Text>
+                </LCText>
               )}
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Logout */}
+      {/* Logout confirm modal */}
       <Modal
         visible={logoutModal}
         transparent
@@ -1520,14 +1552,15 @@ export default function SettingsScreen({ navigation }) {
         <View style={s.modalOverlay}>
           <View style={s.modalBox}>
             <View style={s.modalHeader}>
-              <Text
+              <LCText
+                variant="label"
                 style={[
                   s.f700,
-                  { fontSize: 16, color: theme.brand },
+                  { fontSize: 13, color: theme.brand },
                 ]}
               >
                 Logout
-              </Text>
+              </LCText>
               <TouchableOpacity
                 onPress={() => setLogoutModal(false)}
               >
@@ -1538,14 +1571,15 @@ export default function SettingsScreen({ navigation }) {
                 />
               </TouchableOpacity>
             </View>
-            <Text
+            <LCText
+              variant="body"
               style={[
                 s.label,
-                { marginBottom: 14 },
+                { marginBottom: 14, fontSize: 11.5 },
               ]}
             >
               Are you sure you want to logout?
-            </Text>
+            </LCText>
             <View
               style={{
                 flexDirection: "row",
@@ -1560,14 +1594,15 @@ export default function SettingsScreen({ navigation }) {
                   { flex: 1 },
                 ]}
               >
-                <Text
+                <LCText
+                  variant="label"
                   style={[
                     s.f600,
-                    { color: theme.text },
+                    { color: theme.text, fontSize: 12 },
                   ]}
                 >
                   Cancel
-                </Text>
+                </LCText>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={doLogout}
@@ -1577,21 +1612,22 @@ export default function SettingsScreen({ navigation }) {
                   { flex: 1 },
                 ]}
               >
-                <Text
+                <LCText
+                  variant="label"
                   style={[
                     s.f600,
-                    { color: THEME.light.white },
+                    { color: THEME.light.white, fontSize: 12 },
                   ]}
                 >
                   Logout
-                </Text>
+                </LCText>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Terms & Privacy */}
+      {/* Terms modal */}
       <Modal
         visible={termsModal}
         transparent
@@ -1600,11 +1636,12 @@ export default function SettingsScreen({ navigation }) {
         <View style={s.modalOverlay}>
           <View style={s.modalScrollBox}>
             <View style={s.modalHeader}>
-              <Text
+              <LCText
+                variant="label"
                 style={[s.f700, s.modalTitle]}
               >
                 LigtasCommute Terms and Privacy
-              </Text>
+              </LCText>
               <TouchableOpacity
                 onPress={() => setTermsModal(false)}
               >
@@ -1616,7 +1653,7 @@ export default function SettingsScreen({ navigation }) {
               </TouchableOpacity>
             </View>
             <ScrollView>
-              <Text style={s.modalP}>
+              <LCText variant="body" style={s.modalP}>
                 Last Updated: June 17, 2025{"\n\n"}
                 1. Acceptance of Terms{"\n"}
                 By using LigtasCommute, you agree to these
@@ -1640,31 +1677,31 @@ export default function SettingsScreen({ navigation }) {
                 8. Changes to Terms{"\n"}
                 Continued use after updates means you accept
                 the new terms.
-              </Text>
+              </LCText>
             </ScrollView>
             <TouchableOpacity
-            onPress={() => setTermsModal(false)}
-            style={[
-              s.btn,
-              s.btnPrimary,
-              { marginTop: 12 },
-            ]}
-          >
-            <Text
+              onPress={() => setTermsModal(false)}
               style={[
-                s.f600,
-                { color: THEME.light.white },
+                s.btn,
+                s.btnPrimary,
+                { marginTop: 12 },
               ]}
             >
-              OK
-            </Text>
-          </TouchableOpacity>
-
+              <LCText
+                variant="label"
+                style={[
+                  s.f600,
+                  { color: THEME.light.white, fontSize: 12 },
+                ]}
+              >
+                OK
+              </LCText>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Help & Support */}
+      {/* Support modal */}
       <Modal
         visible={supportModal}
         transparent
@@ -1673,11 +1710,12 @@ export default function SettingsScreen({ navigation }) {
         <View style={s.modalOverlay}>
           <View style={s.modalScrollBox}>
             <View style={s.modalHeader}>
-              <Text
+              <LCText
+                variant="label"
                 style={[s.f700, s.modalTitle]}
               >
                 Help & Support
-              </Text>
+              </LCText>
               <TouchableOpacity
                 onPress={() => setSupportModal(false)}
               >
@@ -1689,26 +1727,27 @@ export default function SettingsScreen({ navigation }) {
               </TouchableOpacity>
             </View>
             <ScrollView>
-              <Text style={s.modalP}>
+              <LCText variant="body" style={s.modalP}>
                 • Close and restart the app{"\n"}
                 • Check internet connection{"\n"}
                 • Update to the latest version{"\n"}
                 • Ensure GPS and camera permissions are enabled
-              </Text>
+              </LCText>
 
-              <Text
+              <LCText
+                variant="label"
                 style={[
                   s.modalH2,
                   { marginTop: 10 },
                 ]}
               >
                 Common Issues
-              </Text>
-              <Text style={s.modalP}>
+              </LCText>
+              <LCText variant="body" style={s.modalP}>
                 • Can’t scan QR code? Check camera permissions.{"\n"}
                 • Location not updating? Make sure GPS is on.{"\n"}
                 • Still stuck? Contact support@ligtascommute.com
-              </Text>
+              </LCText>
             </ScrollView>
             <TouchableOpacity
               onPress={() => setSupportModal(false)}
@@ -1718,14 +1757,15 @@ export default function SettingsScreen({ navigation }) {
                 { marginTop: 12 },
               ]}
             >
-              <Text
+              <LCText
+                variant="label"
                 style={[
                   s.f600,
-                  { color: THEME.light.white },
+                  { color: THEME.light.white, fontSize: 12 },
                 ]}
               >
                 OK
-              </Text>
+              </LCText>
             </TouchableOpacity>
           </View>
         </View>
@@ -1734,7 +1774,6 @@ export default function SettingsScreen({ navigation }) {
   );
 }
 
-/* --------------- Small components --------------- */
 function InfoRow({ theme, s, icon, text }) {
   return (
     <View style={s.infoRow}>
@@ -1743,17 +1782,19 @@ function InfoRow({ theme, s, icon, text }) {
         size={18}
         color={theme.brand}
       />
-      <Text
+      <LCText
+        variant="tiny"
         style={[
           s.small,
           { color: theme.text, marginLeft: 8 },
         ]}
       >
         {text}
-      </Text>
+      </LCText>
     </View>
   );
 }
+
 function EditRow({ theme, s, icon, children }) {
   return (
     <View style={s.infoRow}>

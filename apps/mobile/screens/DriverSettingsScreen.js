@@ -2,7 +2,6 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   View,
-  Text,
   TouchableOpacity,
   ScrollView,
   Modal,
@@ -26,8 +25,8 @@ import { StatusBar } from "expo-status-bar";
 import * as ImagePicker from "expo-image-picker";
 import { API_URL } from "../constants/config";
 import { useTheme, THEME } from "../theme/ThemeProvider";
+import LCText from "../components/LCText";
 
-/* ---------------- Toast ---------------- */
 function useToast(theme, topOffset = 10) {
   const [msg, setMsg] = useState("");
   const [tone, setTone] = useState("success");
@@ -74,15 +73,14 @@ function useToast(theme, topOffset = 10) {
           backgroundColor: tone === "success" ? theme.success : theme.danger,
         }}
       >
-        <Text style={{ fontFamily: "Poppins_600SemiBold", color: THEME.light.white }}>
+        <LCText style={{ fontFamily: "Poppins_600SemiBold", color: THEME.light.white }}>
           {msg}
-        </Text>
+        </LCText>
       </Animated.View>
     ),
   };
 }
 
-/* ---------------- Styles ---------------- */
 const makeStyles = (C) =>
   StyleSheet.create({
     f400: { fontFamily: "Poppins_400Regular" },
@@ -255,7 +253,6 @@ const makeStyles = (C) =>
     ecActions: { flexDirection: "row", gap: 12, alignItems: "center" },
   });
 
-/* helpers */
 function pick(obj, keys) {
   for (const k of keys) {
     const v = obj?.[k];
@@ -274,7 +271,6 @@ function phonePretty(x = "") {
     .replace(/^(?:\+?63)?0?/, (m) => (m.startsWith("+63") ? "+63" : "09"));
 }
 
-/* ---------- helpers for avatar upload ---------- */
 function buildFileFromAsset(asset) {
   const uri = asset.uri;
   const name =
@@ -289,7 +285,6 @@ function buildFileFromAsset(asset) {
   return { uri, name, type };
 }
 
-// single official endpoint: POST /driver/profile/avatar with field "avatar"
 async function tryUploadTo(token, fileObj) {
   const endpoint = `${API_URL}/driver/profile/avatar`;
 
@@ -312,11 +307,9 @@ async function tryUploadTo(token, fileObj) {
     throw new Error(msg);
   }
 
-  return js; // expect { profileUrl: "https://..." }
+  return js;
 }
 
-
-/* ---------------- Screen ---------------- */
 export default function DriverSettingsScreen({ navigation }) {
   const [fontsLoaded] = useFonts({
     Poppins_400Regular,
@@ -334,7 +327,6 @@ export default function DriverSettingsScreen({ navigation }) {
   const { show, Toast } = useToast(theme, insets.top + 10);
   const [loading, setLoading] = useState(true);
 
-  /* profile state */
   const [profile, setProfile] = useState({
     fullName: "",
     email: "",
@@ -350,7 +342,6 @@ export default function DriverSettingsScreen({ navigation }) {
   const [securityModal, setSecurityModal] = useState(false);
   const [logoutModal, setLogoutModal] = useState(false);
 
-  /* edit form */
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -362,7 +353,6 @@ export default function DriverSettingsScreen({ navigation }) {
     address: "",
   });
 
-  /* password form */
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -372,13 +362,11 @@ export default function DriverSettingsScreen({ navigation }) {
   const [pErr, setPErr] = useState("");
   const [pLoading, setPLoading] = useState(false);
 
-  /* errors & spinners */
   const [editErr, setEditErr] = useState("");
   const [editLoading, setEditLoading] = useState(false);
   const [avatarLoading, setAvatarLoading] = useState(false);
   const [avatarErr, setAvatarErr] = useState("");
 
-  /* emergency contacts */
   const [contacts, setContacts] = useState([]);
   const [ecModal, setEcModal] = useState(false);
   const [ecErr, setEcErr] = useState("");
@@ -388,7 +376,6 @@ export default function DriverSettingsScreen({ navigation }) {
   const [ecPhone, setEcPhone] = useState("");
   const [ecRel, setEcRel] = useState("");
 
-  /* ---------- Load profile ---------- */
   const fetchMe = useCallback(async () => {
     const token = await AsyncStorage.getItem("token");
     if (!token) return navigation.replace("Login");
@@ -478,7 +465,6 @@ export default function DriverSettingsScreen({ navigation }) {
     phone !== original.phone ||
     address !== original.address;
 
-  /* ---------- save profile ---------- */
   async function saveProfile() {
     setEditErr("");
     const cleanEmail = (email || "").trim().toLowerCase();
@@ -510,7 +496,6 @@ export default function DriverSettingsScreen({ navigation }) {
     }
   }
 
-  /* ---------- change password ---------- */
   async function updatePassword() {
     setPErr("");
     if (!currentPassword || !newPassword || !confirmPassword)
@@ -553,14 +538,11 @@ export default function DriverSettingsScreen({ navigation }) {
     navigation.replace("Login");
   }
 
-  /* ---------- Avatar upload ---------- */
-    /* ---------- Avatar upload ---------- */
   const pickAndUploadAvatar = useCallback(async () => {
     setAvatarErr("");
     try {
       setAvatarLoading(true);
 
-      // 1) Ask permission
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== "granted") {
         setAvatarErr("Permission denied. Enable photo access in settings.");
@@ -568,7 +550,6 @@ export default function DriverSettingsScreen({ navigation }) {
         return;
       }
 
-      // 2) Open gallery (correct mediaTypes)
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -596,7 +577,6 @@ export default function DriverSettingsScreen({ navigation }) {
         return;
       }
 
-      // 3) Upload to API
       const js = await tryUploadTo(token, fileObj);
 
       const newUrl =
@@ -617,8 +597,6 @@ export default function DriverSettingsScreen({ navigation }) {
     }
   }, [show]);
 
-
-  /* ---------- Emergency Contacts CRUD ---------- */
   function openAddContact() {
     if (contacts.length >= 3) {
       show("You can add up to 3 contacts only.", "danger");
@@ -708,7 +686,6 @@ export default function DriverSettingsScreen({ navigation }) {
     saveContacts(next, true);
   }
 
-  /* ---------------- UI ---------------- */
   if (!fontsLoaded || loading) {
     return (
       <SafeAreaView style={s.loadingBox}>
@@ -731,7 +708,6 @@ export default function DriverSettingsScreen({ navigation }) {
         style={s.bodyPad}
         contentContainerStyle={{ paddingBottom: insets.bottom + 16, flexGrow: 1 }}
       >
-        {/* Header */}
         <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
           <TouchableOpacity
             onPress={() => navigation.goBack()}
@@ -739,14 +715,15 @@ export default function DriverSettingsScreen({ navigation }) {
           >
             <Ionicons name="chevron-back" size={22} color={theme.brand} />
           </TouchableOpacity>
-          <Text style={[s.title, s.f700]}>Settings</Text>
+          <LCText style={[s.title, s.f700]}>Settings</LCText>
         </View>
 
-        {/* Profile card */}
         <View style={s.card}>
           <View style={s.cardHeader}>
-            <Text style={[s.sectionTitle, s.f700]}>Profile</Text>
-            <Text style={[s.small, { color: theme.textSub }]}>Tap to view profile</Text>
+            <LCText style={[s.sectionTitle, s.f700]}>Profile</LCText>
+            <LCText style={[s.small, { color: theme.textSub }]}>
+              Tap to view profile
+            </LCText>
           </View>
 
           <TouchableOpacity style={s.profileRow} onPress={() => setProfileModal(true)}>
@@ -754,34 +731,35 @@ export default function DriverSettingsScreen({ navigation }) {
               {profile.profileUrl ? (
                 <Image source={{ uri: profile.profileUrl }} style={s.avatarImg} />
               ) : (
-                <Text
+                <LCText
                   style={[
                     s.f700,
                     { color: THEME.light.white, fontSize: 16 },
                   ]}
                 >
                   {profile.fullName?.[0]?.toUpperCase() || "U"}
-                </Text>
+                </LCText>
               )}
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[s.name, s.f600]}>{profile.fullName || "—"}</Text>
-              <Text style={[s.small, { color: theme.textSub }]}>{joinText}</Text>
+              <LCText style={[s.name, s.f600]}>{profile.fullName || "—"}</LCText>
+              <LCText style={[s.small, { color: theme.textSub }]}>{joinText}</LCText>
             </View>
           </TouchableOpacity>
         </View>
 
-        {/* Emergency Contacts */}
         <View style={s.card}>
           <View style={s.cardHeader}>
-            <Text style={[s.sectionTitle, s.f700]}>Emergency Contacts</Text>
-            <Text style={[s.small, { color: theme.textSub }]}>Add up to 3 contacts</Text>
+            <LCText style={[s.sectionTitle, s.f700]}>Emergency Contacts</LCText>
+            <LCText style={[s.small, { color: theme.textSub }]}>
+              Add up to 3 contacts
+            </LCText>
           </View>
 
           {contacts.length === 0 ? (
-            <Text style={[s.small, { color: theme.textSub, marginTop: 8 }]}>
+            <LCText style={[s.small, { color: theme.textSub, marginTop: 8 }]}>
               No contacts yet.
-            </Text>
+            </LCText>
           ) : (
             <View style={{ marginTop: 6 }}>
               {contacts.map((c, idx) => (
@@ -792,9 +770,9 @@ export default function DriverSettingsScreen({ navigation }) {
                     color={theme.brand}
                   />
                   <View style={{ flex: 1 }}>
-                    <Text style={s.ecName}>{c.name}</Text>
-                    <Text style={s.ecPhone}>{phonePretty(c.phone)}</Text>
-                    {!!c.relation && <Text style={s.ecRel}>{c.relation}</Text>}
+                    <LCText style={s.ecName}>{c.name}</LCText>
+                    <LCText style={s.ecPhone}>{phonePretty(c.phone)}</LCText>
+                    {!!c.relation && <LCText style={s.ecRel}>{c.relation}</LCText>}
                   </View>
                   <View style={s.ecActions}>
                     <TouchableOpacity onPress={() => openEditContact(idx)}>
@@ -826,30 +804,32 @@ export default function DriverSettingsScreen({ navigation }) {
               { marginTop: 10, opacity: contacts.length >= 3 ? 0.6 : 1 },
             ]}
           >
-            <Text style={[s.f600, { color: theme.text }]}>Add Emergency Contact</Text>
+            <LCText style={[s.f600, { color: theme.text }]}>
+              Add Emergency Contact
+            </LCText>
           </TouchableOpacity>
         </View>
 
-        {/* Terms & Privacy */}
         <TermsAndPrivacyModals theme={theme} s={s} />
-        {/* Help & Support */}
         <HelpSupportModals theme={theme} s={s} />
 
-        {/* Logout */}
         <View style={[s.card, { marginTop: 12 }]}>
           <TouchableOpacity onPress={() => setLogoutModal(true)} style={s.rowLeft}>
             <MaterialCommunityIcons name="logout" size={20} color={theme.danger} />
-            <Text style={[s.f600, { color: theme.danger, marginLeft: 8 }]}>Logout</Text>
+            <LCText style={[s.f600, { color: theme.danger, marginLeft: 8 }]}>
+              Logout
+            </LCText>
           </TouchableOpacity>
         </View>
       </ScrollView>
 
-      {/* Profile Modal */}
       <Modal visible={profileModal} transparent animationType="fade">
         <View style={s.modalOverlay}>
           <View style={s.modalBox}>
             <View style={s.modalHeader}>
-              <Text style={[s.f700, { fontSize: 16, color: theme.brand }]}>Profile</Text>
+              <LCText style={[s.f700, { fontSize: 16, color: theme.brand }]}>
+                Profile
+              </LCText>
               <TouchableOpacity onPress={() => setProfileModal(false)}>
                 <Ionicons name="close" size={18} color={theme.brand} />
               </TouchableOpacity>
@@ -860,28 +840,30 @@ export default function DriverSettingsScreen({ navigation }) {
                 {profile.profileUrl ? (
                   <Image source={{ uri: profile.profileUrl }} style={s.avatarImg} />
                 ) : (
-                  <Text
+                  <LCText
                     style={[
                       s.f700,
                       { color: THEME.light.white, fontSize: 20 },
                     ]}
                   >
                     {profile.fullName?.[0]?.toUpperCase() || "U"}
-                  </Text>
+                  </LCText>
                 )}
               </View>
-              <Text
+              <LCText
                 style={[
                   s.f700,
                   { fontSize: 16, color: theme.text, marginTop: 10 },
                 ]}
               >
                 {profile.fullName || "—"}
-              </Text>
+              </LCText>
             </View>
 
             <View style={s.infoBoxHeader}>
-              <Text style={[s.f600, { color: theme.text }]}>Personal Information</Text>
+              <LCText style={[s.f600, { color: theme.text }]}>
+                Personal Information
+              </LCText>
               <TouchableOpacity
                 onPress={() => {
                   setProfileModal(false);
@@ -903,7 +885,9 @@ export default function DriverSettingsScreen({ navigation }) {
               <InfoRow theme={theme} s={s} icon="calendar-month-outline" text={joinText} />
             </View>
 
-            <Text style={[s.f600, { marginTop: 12, color: theme.text }]}>Security</Text>
+            <LCText style={[s.f600, { marginTop: 12, color: theme.text }]}>
+              Security
+            </LCText>
             <TouchableOpacity
               onPress={() => {
                 setProfileModal(false);
@@ -911,18 +895,21 @@ export default function DriverSettingsScreen({ navigation }) {
               }}
               style={[s.btn, s.btnLight, { marginTop: 8 }]}
             >
-              <Text style={[s.f600, { color: theme.text }]}>Change Password</Text>
+              <LCText style={[s.f600, { color: theme.text }]}>
+                Change Password
+              </LCText>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Edit Profile Modal */}
       <Modal visible={editModal} transparent animationType="fade">
         <View style={s.modalOverlay}>
           <View style={s.modalBox}>
             <View style={s.modalHeader}>
-              <Text style={[s.f700, { fontSize: 16, color: theme.brand }]}>Edit Profile</Text>
+              <LCText style={[s.f700, { fontSize: 16, color: theme.brand }]}>
+                Edit Profile
+              </LCText>
               <TouchableOpacity onPress={() => setEditModal(false)}>
                 <Ionicons name="close" size={18} color={theme.brand} />
               </TouchableOpacity>
@@ -937,14 +924,14 @@ export default function DriverSettingsScreen({ navigation }) {
                 {profile.profileUrl ? (
                   <Image source={{ uri: profile.profileUrl }} style={s.avatarImg} />
                 ) : (
-                  <Text
+                  <LCText
                     style={[
                       s.f700,
                       { color: THEME.light.white, fontSize: 20 },
                     ]}
                   >
                     {fullName?.[0]?.toUpperCase() || "U"}
-                  </Text>
+                  </LCText>
                 )}
                 <View style={s.cameraBadge}>
                   {avatarLoading ? (
@@ -962,13 +949,13 @@ export default function DriverSettingsScreen({ navigation }) {
                     size={16}
                     color={THEME.light.white}
                   />
-                  <Text style={[s.errText, { marginLeft: 6 }]}>{avatarErr}</Text>
+                  <LCText style={[s.errText, { marginLeft: 6 }]}>{avatarErr}</LCText>
                 </View>
               ) : null}
 
-              <Text style={[s.small, { color: theme.textSub, marginTop: 6 }]}>
+              <LCText style={[s.small, { color: theme.textSub, marginTop: 6 }]}>
                 Tap photo to change
-              </Text>
+              </LCText>
 
               <TextInput
                 style={[s.input, { textAlign: "center", marginTop: 10, paddingRight: 12 }]}
@@ -1025,7 +1012,7 @@ export default function DriverSettingsScreen({ navigation }) {
                   size={16}
                   color={THEME.light.white}
                 />
-                <Text style={[s.errText, { marginLeft: 6 }]}>{editErr}</Text>
+                <LCText style={[s.errText, { marginLeft: 6 }]}>{editErr}</LCText>
               </View>
             ) : null}
 
@@ -1042,7 +1029,9 @@ export default function DriverSettingsScreen({ navigation }) {
                 {editLoading ? (
                   <ActivityIndicator color={THEME.light.white} />
                 ) : (
-                  <Text style={[s.f600, { color: THEME.light.white }]}>Save</Text>
+                  <LCText style={[s.f600, { color: THEME.light.white }]}>
+                    Save
+                  </LCText>
                 )}
               </TouchableOpacity>
               <TouchableOpacity
@@ -1056,21 +1045,22 @@ export default function DriverSettingsScreen({ navigation }) {
                 }}
                 style={[s.btn, s.btnLight, { flex: 1 }]}
               >
-                <Text style={[s.f600, { color: theme.text }]}>Cancel</Text>
+                <LCText style={[s.f600, { color: theme.text }]}>
+                  Cancel
+                </LCText>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Security Modal */}
       <Modal visible={securityModal} transparent animationType="fade">
         <View style={s.modalOverlay}>
           <View style={s.modalBox}>
             <View style={s.modalHeader}>
-              <Text style={[s.f700, { fontSize: 16, color: theme.brand }]}>
+              <LCText style={[s.f700, { fontSize: 16, color: theme.brand }]}>
                 Change Password
-              </Text>
+              </LCText>
               <TouchableOpacity onPress={() => setSecurityModal(false)}>
                 <Ionicons name="close" size={18} color={theme.brand} />
               </TouchableOpacity>
@@ -1155,7 +1145,7 @@ export default function DriverSettingsScreen({ navigation }) {
                   size={16}
                   color={THEME.light.white}
                 />
-                <Text style={[s.errText, { marginLeft: 6 }]}>{pErr}</Text>
+                <LCText style={[s.errText, { marginLeft: 6 }]}>{pErr}</LCText>
               </View>
             ) : null}
 
@@ -1167,21 +1157,22 @@ export default function DriverSettingsScreen({ navigation }) {
               {pLoading ? (
                 <ActivityIndicator color={THEME.light.white} />
               ) : (
-                <Text style={[s.f600, { color: THEME.light.white }]}>Update Password</Text>
+                <LCText style={[s.f600, { color: THEME.light.white }]}>
+                  Update Password
+                </LCText>
               )}
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Emergency Contact Modal */}
       <Modal visible={ecModal} transparent animationType="fade">
         <View style={s.modalOverlay}>
           <View style={s.modalBox}>
             <View style={s.modalHeader}>
-              <Text style={[s.f700, { fontSize: 16, color: theme.brand }]}>
+              <LCText style={[s.f700, { fontSize: 16, color: theme.brand }]}>
                 {editingIndex === -1 ? "Add Emergency Contact" : "Edit Emergency Contact"}
-              </Text>
+              </LCText>
               <TouchableOpacity onPress={() => setEcModal(false)}>
                 <Ionicons name="close" size={18} color={theme.brand} />
               </TouchableOpacity>
@@ -1229,7 +1220,7 @@ export default function DriverSettingsScreen({ navigation }) {
                   size={16}
                   color={THEME.light.white}
                 />
-                <Text style={[s.errText, { marginLeft: 6 }]}>{ecErr}</Text>
+                <LCText style={[s.errText, { marginLeft: 6 }]}>{ecErr}</LCText>
               </View>
             ) : null}
 
@@ -1241,24 +1232,27 @@ export default function DriverSettingsScreen({ navigation }) {
               {ecLoading ? (
                 <ActivityIndicator color={THEME.light.white} />
               ) : (
-                <Text style={[s.f600, { color: THEME.light.white }]}>Save</Text>
+                <LCText style={[s.f600, { color: THEME.light.white }]}>
+                  Save
+                </LCText>
               )}
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Logout Modal */}
       <Modal visible={logoutModal} transparent animationType="fade">
         <View style={s.modalOverlay}>
           <View style={s.modalBox}>
             <View style={s.modalHeader}>
-              <Text style={[s.f700, { fontSize: 16, color: theme.brand }]}>Logout</Text>
+              <LCText style={[s.f700, { fontSize: 16, color: theme.brand }]}>
+                Logout
+              </LCText>
               <TouchableOpacity onPress={() => setLogoutModal(false)}>
                 <Ionicons name="close" size={18} color={theme.brand} />
               </TouchableOpacity>
             </View>
-            <Text
+            <LCText
               style={{
                 marginBottom: 14,
                 color: theme.text,
@@ -1266,19 +1260,23 @@ export default function DriverSettingsScreen({ navigation }) {
               }}
             >
               Are you sure you want to logout?
-            </Text>
+            </LCText>
             <View style={{ flexDirection: "row", gap: 10 }}>
               <TouchableOpacity
                 onPress={() => setLogoutModal(false)}
                 style={[s.btn, s.btnLight, { flex: 1 }]}
               >
-                <Text style={[s.f600, { color: theme.text }]}>Cancel</Text>
+                <LCText style={[s.f600, { color: theme.text }]}>
+                  Cancel
+                </LCText>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={doLogout}
                 style={[s.btn, s.btnPrimary, { flex: 1 }]}
               >
-                <Text style={[s.f600, { color: THEME.light.white }]}>Logout</Text>
+                <LCText style={[s.f600, { color: THEME.light.white }]}>
+                  Logout
+                </LCText>
               </TouchableOpacity>
             </View>
           </View>
@@ -1288,12 +1286,11 @@ export default function DriverSettingsScreen({ navigation }) {
   );
 }
 
-/* --------------- Small components --------------- */
 function InfoRow({ theme, s, icon, text }) {
   return (
     <View style={s.infoRow}>
       <MaterialCommunityIcons name={icon} size={18} color={theme.brand} />
-      <Text
+      <LCText
         style={{
           marginLeft: 8,
           color: theme.text,
@@ -1302,7 +1299,7 @@ function InfoRow({ theme, s, icon, text }) {
         }}
       >
         {text}
-      </Text>
+      </LCText>
     </View>
   );
 }
@@ -1316,7 +1313,6 @@ function EditRow({ theme, s, icon, children }) {
   );
 }
 
-/* Terms & Privacy */
 function TermsAndPrivacyModals({ theme, s }) {
   const [open, setOpen] = useState(false);
   return (
@@ -1328,7 +1324,7 @@ function TermsAndPrivacyModals({ theme, s }) {
             size={20}
             color={theme.brand}
           />
-          <Text
+          <LCText
             style={{
               marginLeft: 8,
               color: theme.text,
@@ -1336,14 +1332,14 @@ function TermsAndPrivacyModals({ theme, s }) {
             }}
           >
             Terms & Privacy
-          </Text>
+          </LCText>
         </View>
       </TouchableOpacity>
       <Modal visible={open} transparent animationType="fade">
         <View style={s.modalOverlay}>
           <View style={[s.modalBox, { maxHeight: "75%" }]}>
             <View style={s.modalHeader}>
-              <Text
+              <LCText
                 style={{
                   fontFamily: "Poppins_700Bold",
                   fontSize: 16,
@@ -1351,13 +1347,13 @@ function TermsAndPrivacyModals({ theme, s }) {
                 }}
               >
                 LigtasCommute Terms and Privacy
-              </Text>
+              </LCText>
               <TouchableOpacity onPress={() => setOpen(false)}>
                 <Ionicons name="close" size={18} color={theme.brand} />
               </TouchableOpacity>
             </View>
             <ScrollView>
-              <Text
+              <LCText
                 style={{
                   fontFamily: "Poppins_400Regular",
                   color: theme.text,
@@ -1382,20 +1378,20 @@ function TermsAndPrivacyModals({ theme, s }) {
                 Your data is stored securely and not shared with advertisers.{"\n\n"}
                 8. Changes to Terms{"\n"}
                 Continued use after updates means you accept the new terms.
-              </Text>
+              </LCText>
             </ScrollView>
             <TouchableOpacity
               onPress={() => setOpen(false)}
               style={[s.btn, s.btnPrimary, { marginTop: 12 }]}
             >
-              <Text
+              <LCText
                 style={{
                   color: THEME.light.white,
                   fontFamily: "Poppins_600SemiBold",
                 }}
               >
                 OK
-              </Text>
+              </LCText>
             </TouchableOpacity>
           </View>
         </View>
@@ -1404,7 +1400,6 @@ function TermsAndPrivacyModals({ theme, s }) {
   );
 }
 
-/* Help & Support */
 function HelpSupportModals({ theme, s }) {
   const [open, setOpen] = useState(false);
   return (
@@ -1416,7 +1411,7 @@ function HelpSupportModals({ theme, s }) {
             size={20}
             color={theme.brand}
           />
-          <Text
+          <LCText
             style={{
               marginLeft: 8,
               color: theme.text,
@@ -1424,14 +1419,14 @@ function HelpSupportModals({ theme, s }) {
             }}
           >
             Help & Support
-          </Text>
+          </LCText>
         </View>
       </TouchableOpacity>
       <Modal visible={open} transparent animationType="fade">
         <View style={s.modalOverlay}>
           <View style={[s.modalBox, { maxHeight: "75%" }]}>
             <View style={s.modalHeader}>
-              <Text
+              <LCText
                 style={{
                   fontFamily: "Poppins_700Bold",
                   fontSize: 16,
@@ -1439,13 +1434,13 @@ function HelpSupportModals({ theme, s }) {
                 }}
               >
                 Help & Support
-              </Text>
+              </LCText>
               <TouchableOpacity onPress={() => setOpen(false)}>
                 <Ionicons name="close" size={18} color={theme.brand} />
               </TouchableOpacity>
             </View>
             <ScrollView>
-              <Text
+              <LCText
                 style={{
                   fontFamily: "Poppins_400Regular",
                   color: theme.text,
@@ -1461,20 +1456,20 @@ function HelpSupportModals({ theme, s }) {
                 • Can’t scan QR code? Check camera permissions.{"\n"}
                 • Location not updating? Make sure GPS is on.{"\n"}
                 • Still stuck? Contact support@ligtascommute.com
-              </Text>
+              </LCText>
             </ScrollView>
             <TouchableOpacity
               onPress={() => setOpen(false)}
               style={[s.btn, s.btnPrimary, { marginTop: 12 }]}
             >
-              <Text
+              <LCText
                 style={{
                   color: THEME.light.white,
                   fontFamily: "Poppins_600SemiBold",
                 }}
               >
                 OK
-              </Text>
+              </LCText>
             </TouchableOpacity>
           </View>
         </View>

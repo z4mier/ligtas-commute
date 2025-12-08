@@ -2,7 +2,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   SafeAreaView,
   ActivityIndicator,
@@ -20,6 +19,7 @@ import {
 } from "@expo-google-fonts/poppins";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL } from "../constants/config";
+import LCText from "../components/LCText";
 
 const C = {
   bg: "#F3F4F6",
@@ -97,6 +97,17 @@ function cleanPlace(s, fallback = "Unknown destination") {
   return s.trim();
 }
 
+// sort helper
+function sortTrips(list, order = "desc") {
+  const copy = [...list];
+  copy.sort((a, b) => {
+    const da = new Date(a.endedAt || a.startedAt || 0).getTime();
+    const db = new Date(b.endedAt || b.startedAt || 0).getTime();
+    return order === "asc" ? da - db : db - da; // desc = newest → oldest
+  });
+  return copy;
+}
+
 export default function RecentTrips({ navigation }) {
   const insets = useSafeAreaInsets();
 
@@ -110,6 +121,7 @@ export default function RecentTrips({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [sortOrder, setSortOrder] = useState("desc"); // "desc" = newest first, "asc" = oldest first
 
   const loadTrips = useCallback(
     async (isRefresh = false) => {
@@ -141,14 +153,9 @@ export default function RecentTrips({ navigation }) {
         const data = await res.json().catch(() => []);
         const list = Array.isArray(data) ? data : [];
 
-        // optional: sort newest first
-        list.sort((a, b) => {
-          const da = new Date(a.endedAt || a.startedAt || 0).getTime();
-          const db = new Date(b.endedAt || b.startedAt || 0).getTime();
-          return db - da;
-        });
-
-        setTrips(list);
+        // sort based on current sortOrder
+        const sorted = sortTrips(list, sortOrder);
+        setTrips(sorted);
       } catch (e) {
         console.log("[RecentTrips] load error:", e);
         setError("Unable to load your trips. Please try again.");
@@ -161,7 +168,7 @@ export default function RecentTrips({ navigation }) {
         }
       }
     },
-    [navigation]
+    [navigation, sortOrder]
   );
 
   useEffect(() => {
@@ -171,6 +178,12 @@ export default function RecentTrips({ navigation }) {
   }, [navigation, loadTrips]);
 
   const onRefresh = () => loadTrips(true);
+
+  const handleSortChange = (order) => {
+    if (order === sortOrder) return;
+    setSortOrder(order);
+    setTrips((prev) => sortTrips(prev, order));
+  };
 
   const renderTrip = ({ item: trip }) => {
     const title = `Ride to ${cleanPlace(trip.destLabel)}`;
@@ -199,10 +212,12 @@ export default function RecentTrips({ navigation }) {
         </View>
 
         <View style={{ flex: 1 }}>
-          <Text style={styles.tripTitle} numberOfLines={1}>
+          <LCText variant="label" style={styles.tripTitle} numberOfLines={1}>
             {title}
-          </Text>
-          <Text style={styles.tripSubtitle}>{dateTimeStr}</Text>
+          </LCText>
+          <LCText variant="tiny" style={styles.tripSubtitle}>
+            {dateTimeStr}
+          </LCText>
 
           {(driverName || busLabel) && (
             <View style={styles.tripMetaRow}>
@@ -213,9 +228,13 @@ export default function RecentTrips({ navigation }) {
                     size={13}
                     color={C.brand}
                   />
-                  <Text style={styles.tripMetaText} numberOfLines={1}>
+                  <LCText
+                    variant="tiny"
+                    style={styles.tripMetaText}
+                    numberOfLines={1}
+                  >
                     {driverName}
-                  </Text>
+                  </LCText>
                 </View>
               )}
               {busLabel && (
@@ -225,9 +244,13 @@ export default function RecentTrips({ navigation }) {
                     size={13}
                     color={C.brand}
                   />
-                  <Text style={styles.tripMetaText} numberOfLines={1}>
+                  <LCText
+                    variant="tiny"
+                    style={styles.tripMetaText}
+                    numberOfLines={1}
+                  >
                     {busLabel}
-                  </Text>
+                  </LCText>
                 </View>
               )}
             </View>
@@ -267,9 +290,13 @@ export default function RecentTrips({ navigation }) {
             color={C.text}
           />
         </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>
+        <LCText
+          variant="label"
+          style={styles.headerTitle}
+          numberOfLines={1}
+        >
           Your trips
-        </Text>
+        </LCText>
         <View style={{ width: 24 }} />
       </View>
 
@@ -277,7 +304,9 @@ export default function RecentTrips({ navigation }) {
       {loading ? (
         <View style={[styles.center, { flex: 1 }]}>
           <ActivityIndicator />
-          <Text style={styles.loadingText}>Loading your trips…</Text>
+          <LCText variant="tiny" style={styles.loadingText}>
+            Loading your trips…
+          </LCText>
         </View>
       ) : trips.length === 0 ? (
         <View style={[styles.center, { flex: 1, paddingHorizontal: 32 }]}>
@@ -286,16 +315,24 @@ export default function RecentTrips({ navigation }) {
             size={32}
             color={C.hint}
           />
-          <Text style={styles.emptyTitle}>No trips yet</Text>
-          <Text style={styles.emptySub}>
+          <LCText variant="label" style={styles.emptyTitle}>
+            No trips yet
+          </LCText>
+          <LCText variant="tiny" style={styles.emptySub}>
             Your completed rides will appear here after you finish a trip.
-          </Text>
-          {!!error && <Text style={styles.errorText}>{error}</Text>}
+          </LCText>
+          {!!error && (
+            <LCText variant="tiny" style={styles.errorText}>
+              {error}
+            </LCText>
+          )}
           <TouchableOpacity
             style={styles.retryBtn}
             onPress={() => loadTrips(false)}
           >
-            <Text style={styles.retryBtnText}>Retry</Text>
+            <LCText variant="label" style={styles.retryBtnText}>
+              Retry
+            </LCText>
           </TouchableOpacity>
         </View>
       ) : (
@@ -313,12 +350,70 @@ export default function RecentTrips({ navigation }) {
           }
           ListHeaderComponent={
             <>
-              <Text style={styles.summaryText}>
-                Showing{" "}
-                <Text style={styles.summaryStrong}>{trips.length}</Text>{" "}
-                completed trip{trips.length === 1 ? "" : "s"}.
-              </Text>
-              {!!error && <Text style={styles.errorText}>{error}</Text>}
+              <View style={styles.listHeaderRow}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <LCText variant="tiny" style={styles.summaryText}>
+                    Showing{" "}
+                    <LCText
+                      variant="tiny"
+                      style={styles.summaryStrong}
+                    >
+                      {trips.length}
+                    </LCText>{" "}
+                    completed trip{trips.length === 1 ? "" : "s"}.
+                  </LCText>
+                </View>
+
+                <View style={styles.sortRow}>
+                  <LCText variant="tiny" style={styles.sortLabel}>
+                    Sort:
+                  </LCText>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.sortChip,
+                      sortOrder === "desc" && styles.sortChipActive,
+                    ]}
+                    onPress={() => handleSortChange("desc")}
+                    activeOpacity={0.8}
+                  >
+                    <LCText
+                      variant="tiny"
+                      style={[
+                        styles.sortChipText,
+                        sortOrder === "desc" && styles.sortChipTextActive,
+                      ]}
+                    >
+                      Newest
+                    </LCText>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.sortChip,
+                      sortOrder === "asc" && styles.sortChipActive,
+                    ]}
+                    onPress={() => handleSortChange("asc")}
+                    activeOpacity={0.8}
+                  >
+                    <LCText
+                      variant="tiny"
+                      style={[
+                        styles.sortChipText,
+                        sortOrder === "asc" && styles.sortChipTextActive,
+                      ]}
+                    >
+                      Oldest
+                    </LCText>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {!!error && (
+                <LCText variant="tiny" style={styles.errorText}>
+                  {error}
+                </LCText>
+              )}
             </>
           }
         />
@@ -350,7 +445,7 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: "center",
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 16,
+    fontSize: 13,
     color: C.text,
   },
 
@@ -366,16 +461,53 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
   },
 
+  listHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 4,
+    marginBottom: 4,
+  },
+
   summaryText: {
     fontFamily: "Poppins_400Regular",
     fontSize: 12,
     color: C.sub,
-    marginTop: 4,
-    marginBottom: 4,
   },
   summaryStrong: {
     fontFamily: "Poppins_700Bold",
     color: C.text,
+  },
+
+  sortRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  sortLabel: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 11,
+    color: C.sub,
+    marginRight: 4,
+  },
+  sortChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: "#FFFFFF",
+    marginLeft: 4,
+  },
+  sortChipActive: {
+    backgroundColor: C.brand,
+    borderColor: C.brand,
+  },
+  sortChipText: {
+    fontFamily: "Poppins_500Medium",
+    fontSize: 11,
+    color: C.text,
+  },
+  sortChipTextActive: {
+    color: "#FFFFFF",
   },
 
   tripRow: {

@@ -1,13 +1,7 @@
 // apps/mobile/screens/DriverRatings.js
-import React, {
-  useEffect,
-  useState,
-  useCallback,
-  useMemo,
-} from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   ActivityIndicator,
   FlatList,
@@ -25,8 +19,8 @@ import {
   Poppins_600SemiBold,
   Poppins_700Bold,
 } from "@expo-google-fonts/poppins";
+import LCText from "../components/LCText";
 
-/* ---------- Colors (match DriverDashboard & Reports) ---------- */
 const C = {
   bg: "#F3F4F6",
   card: "#FFFFFF",
@@ -99,7 +93,6 @@ export default function DriverRatings({ navigation }) {
 
   const hasRatings = totalRatings > 0 && (avgRating || 0) > 0;
 
-  // --- average + count display (4.5 / 5, "3 ratings") --- //
   let avgDisplay = "No ratings yet";
   let countDisplay = "";
 
@@ -113,7 +106,7 @@ export default function DriverRatings({ navigation }) {
   }
 
   const renderStars = (score, size = 18) => {
-    const s = Math.round(score || 0); // 0–5
+    const s = Math.round(score || 0);
     return (
       <View style={styles.starRow}>
         {Array.from({ length: 5 }).map((_, idx) => (
@@ -134,7 +127,6 @@ export default function DriverRatings({ navigation }) {
 
     return (
       <View style={styles.ratingCard}>
-        {/* Header: Anonymous + stars */}
         <View style={styles.cardHeaderRow}>
           <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
             <View style={styles.avatarTiny}>
@@ -144,26 +136,24 @@ export default function DriverRatings({ navigation }) {
                 color={C.sub}
               />
             </View>
-            <Text style={styles.anonName}>Anonymous</Text>
+            <LCText style={styles.anonName}>Anonymous</LCText>
           </View>
           {renderStars(item.score)}
         </View>
 
-        {/* Comment block */}
         <View style={{ marginTop: 4 }}>
           {hasComment ? (
-            <Text style={styles.commentText}>{item.comment}</Text>
+            <LCText style={styles.commentText}>{item.comment}</LCText>
           ) : (
             <>
-              <Text style={styles.commentTitle}>No written comment</Text>
-              <Text style={styles.commentSub}>
+              <LCText style={styles.commentTitle}>No written comment</LCText>
+              <LCText style={styles.commentSub}>
                 Passenger chose to rate this trip without a message.
-              </Text>
+              </LCText>
             </>
           )}
         </View>
 
-        {/* Footer – same feel as reports: rated via LigtasCommute */}
         <View style={styles.cardFooter}>
           <MaterialCommunityIcons
             name="shield-check"
@@ -171,13 +161,14 @@ export default function DriverRatings({ navigation }) {
             color={C.sub}
             style={{ marginRight: 4 }}
           />
-          <Text style={styles.cardFooterText}>Rated via LigtasCommute</Text>
+          <LCText style={styles.cardFooterText}>
+            Rated via LigtasCommute
+          </LCText>
         </View>
       </View>
     );
   };
 
-  // ---------- SORTING LOGIC (Newest ↔ Oldest) ---------- //
   const sortedItems = useMemo(() => {
     if (!Array.isArray(items)) return [];
     const arr = [...items];
@@ -199,9 +190,9 @@ export default function DriverRatings({ navigation }) {
       const tb = getDateValue(b);
 
       if (sortMode === "NEWEST") {
-        return tb - ta; // newest first
+        return tb - ta;
       } else {
-        return ta - tb; // oldest first
+        return ta - tb;
       }
     });
 
@@ -226,7 +217,6 @@ export default function DriverRatings({ navigation }) {
     <SafeAreaView style={[styles.safe, { backgroundColor: C.bg }]}>
       <StatusBar style="dark" />
 
-      {/* Top header */}
       <View style={styles.topBar}>
         <TouchableOpacity
           onPress={() => navigation?.goBack?.()}
@@ -239,18 +229,17 @@ export default function DriverRatings({ navigation }) {
           />
         </TouchableOpacity>
 
-        <Text style={styles.topTitle}>View Ratings</Text>
+        <LCText style={styles.topTitle}>View Ratings</LCText>
 
         <View style={{ width: 32 }} />
       </View>
 
-      {/* Summary card – blue like DriverDashboard headerCard */}
       <View style={styles.summaryCard}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.summaryLabel}>Average rating</Text>
-          <Text style={styles.summaryScore}>
+          <LCText style={styles.summaryLabel}>Average rating</LCText>
+          <LCText style={styles.summaryScore}>
             {hasRatings ? avgDisplay : "—"}
-          </Text>
+          </LCText>
         </View>
         <View style={styles.summaryRight}>
           <View style={styles.summaryIconWrap}>
@@ -260,13 +249,12 @@ export default function DriverRatings({ navigation }) {
               color="#FBBF24"
             />
           </View>
-          <Text style={styles.summaryCount}>
+          <LCText style={styles.summaryCount}>
             {hasRatings ? countDisplay : "0 ratings"}
-          </Text>
+          </LCText>
         </View>
       </View>
 
-      {/* Sort / Filter button (only if there are ratings and no error) */}
       {hasRatings && !loading && !errorMsg ? (
         <View style={styles.toolbarRow}>
           <TouchableOpacity style={styles.sortBtn} onPress={toggleSortMode}>
@@ -276,16 +264,15 @@ export default function DriverRatings({ navigation }) {
               color={C.text}
               style={{ marginRight: 6 }}
             />
-            <Text style={styles.sortLabel}>
+            <LCText style={styles.sortLabel}>
               {sortMode === "NEWEST"
                 ? "Newest to oldest"
                 : "Oldest to newest"}
-            </Text>
+            </LCText>
           </TouchableOpacity>
         </View>
       ) : null}
 
-      {/* Error state */}
       {errorMsg ? (
         <View style={styles.errorWrap}>
           <MaterialCommunityIcons
@@ -293,28 +280,26 @@ export default function DriverRatings({ navigation }) {
             size={18}
             color={C.danger}
           />
-          <Text style={styles.errorText}>{errorMsg}</Text>
+          <LCText style={styles.errorText}>{errorMsg}</LCText>
         </View>
       ) : null}
 
-      {/* Content */}
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator size="small" />
         </View>
       ) : !hasRatings ? (
         <View style={styles.center}>
-          {/* Empty state like "No commuter reports" */}
           <MaterialCommunityIcons
             name="clipboard-check-outline"
             size={42}
             color={C.sub}
             style={{ marginBottom: 10 }}
           />
-          <Text style={styles.emptyText}>No commuter ratings</Text>
-          <Text style={styles.emptySubText}>
+          <LCText style={styles.emptyText}>No commuter ratings</LCText>
+          <LCText style={styles.emptySubText}>
             You currently have no ratings from commuters. Keep driving safely!
-          </Text>
+          </LCText>
         </View>
       ) : (
         <FlatList
@@ -336,7 +321,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  /* top header */
   topBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -360,7 +344,6 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_600SemiBold",
   },
 
-  /* summary card – BLUE like DriverDashboard headerCard */
   summaryCard: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -402,7 +385,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  /* toolbar (sort button) */
   toolbarRow: {
     flexDirection: "row",
     justifyContent: "flex-end",
@@ -446,7 +428,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  // Empty state styles (match "No commuter reports" vibe)
   emptyText: {
     fontSize: 15,
     color: C.text,
@@ -467,7 +448,6 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
 
-  /* rating card – styled to match reports look */
   ratingCard: {
     backgroundColor: C.card,
     borderRadius: 16,

@@ -2,7 +2,6 @@
 import React, { useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   SafeAreaView,
   TouchableOpacity,
@@ -25,8 +24,8 @@ import {
 } from "@expo-google-fonts/poppins";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL } from "../constants/config";
-
 import { addRatingSubmitted, addIncidentSubmitted } from "../lib/notify";
+import LCText from "../components/LCText";
 
 const C = {
   bg: "#F3F4F6",
@@ -60,15 +59,12 @@ const INCIDENT_CATEGORIES = [
 function buildAbsoluteAvatarUrl(raw) {
   if (!raw) return null;
 
-  // already absolute (http/https)
   if (/^https?:\/\//i.test(raw)) return raw;
 
-  // normalise base (no trailing slash)
   let base = (API_URL || "").replace(/\/+$/, "");
 
-  // if API_URL ends with "/api", strip it so images use root host
   if (base.toLowerCase().endsWith("/api")) {
-    base = base.slice(0, -4); // remove "/api"
+    base = base.slice(0, -4);
   }
 
   const path = raw.startsWith("/") ? raw : `/${raw}`;
@@ -118,7 +114,6 @@ export default function TripDetails({ route, navigation }) {
   const [reportNotes, setReportNotes] = useState("");
   const [submittingReport, setSubmittingReport] = useState(false);
 
-  // 🔥 image error fallback state
   const [avatarError, setAvatarError] = useState(false);
 
   const [fontsLoaded] = useFonts({
@@ -131,12 +126,16 @@ export default function TripDetails({ route, navigation }) {
   if (!trip) {
     return (
       <SafeAreaView style={[styles.screen, styles.center]}>
-        <Text style={styles.errorText}>No trip data.</Text>
+        <LCText variant="tiny" style={styles.errorText}>
+          No trip data.
+        </LCText>
         <TouchableOpacity
           style={styles.backBtnInline}
           onPress={() => navigation.goBack()}
         >
-          <Text style={styles.backBtnInlineText}>Go back</Text>
+          <LCText variant="tiny" style={styles.backBtnInlineText}>
+            Go back
+          </LCText>
         </TouchableOpacity>
       </SafeAreaView>
     );
@@ -172,9 +171,8 @@ export default function TripDetails({ route, navigation }) {
     rawDriver?.username ||
     "Your driver";
 
-  // 🔥 Avatar logic: use what backend sends
   const candidateAvatar =
-    trip.driverAvatar || // from /trips/recent mapping
+    trip.driverAvatar ||
     trip.driver_avatar ||
     trip.avatar ||
     rawDriver?.profileUrl ||
@@ -193,7 +191,6 @@ export default function TripDetails({ route, navigation }) {
       ? driverName.trim().charAt(0).toUpperCase()
       : "?";
 
-  // ✅ 7-DAY LIMIT: rating + reporting disabled after 7 days
   const isExpired = (() => {
     if (!started) return false;
     const d = new Date(started);
@@ -204,9 +201,6 @@ export default function TripDetails({ route, navigation }) {
     return diffDays > 7;
   })();
 
-  /* ------------------------------------------------------------------
-   * SUBMIT RATING
-   * ------------------------------------------------------------------ */
   const onSubmitRating = async () => {
     if (isExpired) {
       Alert.alert(
@@ -278,9 +272,6 @@ export default function TripDetails({ route, navigation }) {
     }
   };
 
-  /* ------------------------------------------------------------------
-   * SUBMIT INCIDENT REPORT
-   * ------------------------------------------------------------------ */
   const onSubmitReport = async () => {
     if (isExpired) {
       Alert.alert(
@@ -366,13 +357,17 @@ export default function TripDetails({ route, navigation }) {
         >
           <MaterialCommunityIcons
             name="chevron-left"
-            size={24}
+            size={22}
             color={C.text}
           />
         </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>
+        <LCText
+          variant="label"
+          style={styles.headerTitle}
+          numberOfLines={1}
+        >
           Trip details
-        </Text>
+        </LCText>
         <View style={{ width: 24 }} />
       </View>
 
@@ -382,7 +377,9 @@ export default function TripDetails({ route, navigation }) {
         showsVerticalScrollIndicator={false}
       >
         {/* DATE / TIME */}
-        <Text style={styles.dateText}>{dateTimeStr}</Text>
+        <LCText variant="tiny" style={styles.dateText}>
+          {dateTimeStr}
+        </LCText>
 
         {/* DRIVER CARD */}
         <View style={styles.mainCard}>
@@ -396,18 +393,25 @@ export default function TripDetails({ route, navigation }) {
                     console.log(
                       "[TripDetails] avatar load failed, fallback to initial"
                     );
-                      setAvatarError(true);
+                    setAvatarError(true);
                   }}
                 />
               ) : (
-                <Text style={styles.tripAvatarInitial}>{driverInitial}</Text>
+                <LCText
+                  variant="label"
+                  style={styles.tripAvatarInitial}
+                >
+                  {driverInitial}
+                </LCText>
               )}
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.tripTitle} numberOfLines={1}>
+              <LCText variant="label" style={styles.tripTitle} numberOfLines={1}>
                 {driverName}
-              </Text>
-              <Text style={styles.tripSub}>LigtasCommute Driver</Text>
+              </LCText>
+              <LCText variant="tiny" style={styles.tripSub}>
+                LigtasCommute Driver
+              </LCText>
             </View>
           </View>
         </View>
@@ -417,11 +421,13 @@ export default function TripDetails({ route, navigation }) {
           <View style={styles.mapPlaceholder}>
             <MaterialCommunityIcons
               name="map-outline"
-              size={22}
+              size={20}
               color={C.sub}
             />
             <View style={{ flex: 1 }}>
-              <Text style={styles.mapPlaceholderTitle}>Route Overview</Text>
+              <LCText variant="label" style={styles.mapPlaceholderTitle}>
+                Route Overview
+              </LCText>
             </View>
           </View>
 
@@ -429,10 +435,16 @@ export default function TripDetails({ route, navigation }) {
             <View style={styles.routeRow}>
               <View style={styles.routeDotOrigin} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.routeLabel}>Pickup</Text>
-                <Text style={styles.routeText} numberOfLines={2}>
+                <LCText variant="tiny" style={styles.routeLabel}>
+                  Pickup
+                </LCText>
+                <LCText
+                  variant="tiny"
+                  style={styles.routeText}
+                  numberOfLines={2}
+                >
                   {origin}
-                </Text>
+                </LCText>
               </View>
             </View>
 
@@ -441,10 +453,16 @@ export default function TripDetails({ route, navigation }) {
             <View style={styles.routeRow}>
               <View style={styles.routeDotDest} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.routeLabel}>Drop-off</Text>
-                <Text style={styles.routeText} numberOfLines={2}>
+                <LCText variant="tiny" style={styles.routeLabel}>
+                  Drop-off
+                </LCText>
+                <LCText
+                  variant="tiny"
+                  style={styles.routeText}
+                  numberOfLines={2}
+                >
                   {destination}
-                </Text>
+                </LCText>
               </View>
             </View>
           </View>
@@ -454,12 +472,12 @@ export default function TripDetails({ route, navigation }) {
         <View style={styles.ratingCard}>
           {mode === "form" ? (
             <>
-              <Text style={styles.ratingTitle}>
+              <LCText variant="label" style={styles.ratingTitle}>
                 Help us improve your LigtasCommute experience
-              </Text>
-              <Text style={styles.ratingSub}>
+              </LCText>
+              <LCText variant="tiny" style={styles.ratingSub}>
                 Rate this ride with {driverName}.
-              </Text>
+              </LCText>
 
               <View
                 style={[
@@ -480,7 +498,7 @@ export default function TripDetails({ route, navigation }) {
                     >
                       <MaterialCommunityIcons
                         name={active ? "star" : "star-outline"}
-                        size={32}
+                        size={26}
                         color={active ? "#FACC15" : C.hint}
                       />
                     </TouchableOpacity>
@@ -489,14 +507,14 @@ export default function TripDetails({ route, navigation }) {
               </View>
 
               {rating > 0 && (
-                <Text style={styles.ratingLabelText}>
+                <LCText variant="tiny" style={styles.ratingLabelText}>
                   {rating} ★ • {RATING_LABELS[rating] || ""}
-                </Text>
+                </LCText>
               )}
 
-              <Text style={styles.notesLabel}>
+              <LCText variant="tiny" style={styles.notesLabel}>
                 Additional feedback (optional)
-              </Text>
+              </LCText>
               <TextInput
                 style={[
                   styles.notesInput,
@@ -514,10 +532,10 @@ export default function TripDetails({ route, navigation }) {
               />
 
               {isExpired && (
-                <Text style={styles.expiredText}>
+                <LCText variant="tiny" style={styles.expiredText}>
                   Rating and reports are available within 7 days after
                   your trip.
-                </Text>
+                </LCText>
               )}
 
               <TouchableOpacity
@@ -535,9 +553,9 @@ export default function TripDetails({ route, navigation }) {
                 {submitting ? (
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
-                  <Text style={styles.submitBtnText}>
+                  <LCText variant="label" style={styles.submitBtnText}>
                     Submit rating
-                  </Text>
+                  </LCText>
                 )}
               </TouchableOpacity>
             </>
@@ -545,23 +563,28 @@ export default function TripDetails({ route, navigation }) {
             <>
               <View style={styles.ratingSummaryPill}>
                 <View style={styles.ratingSummaryRow}>
-                  <Text style={styles.summaryLabel}>Ride rating</Text>
+                  <LCText variant="label" style={styles.summaryLabel}>
+                    Ride rating
+                  </LCText>
                   <View style={styles.summaryValueRow}>
-                    <Text style={styles.summaryRatingText}>
+                    <LCText variant="label" style={styles.summaryRatingText}>
                       {rating || initialRating || "—"}
-                    </Text>
+                    </LCText>
                     {!!(rating || initialRating) && (
                       <>
                         <MaterialCommunityIcons
                           name="star"
-                          size={14}
+                          size={12}
                           color="#FACC15"
                           style={{ marginHorizontal: 2 }}
                         />
-                        <Text style={styles.summaryLabelSmall}>
+                        <LCText
+                          variant="tiny"
+                          style={styles.summaryLabelSmall}
+                        >
                           •{" "}
                           {RATING_LABELS[rating || initialRating] || ""}
-                        </Text>
+                        </LCText>
                       </>
                     )}
                   </View>
@@ -570,7 +593,7 @@ export default function TripDetails({ route, navigation }) {
             </>
           )}
 
-          {/* ALWAYS VISIBLE: REPORT LINK (but disabled after 7 days) */}
+          {/* REPORT LINK */}
           <TouchableOpacity
             style={[
               styles.reportLinkBtn,
@@ -587,7 +610,9 @@ export default function TripDetails({ route, navigation }) {
               setReportModalVisible(true);
             }}
           >
-            <Text style={styles.reportLinkText}>Report An Issue</Text>
+            <LCText variant="label" style={styles.reportLinkText}>
+              Report An Issue
+            </LCText>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -601,12 +626,16 @@ export default function TripDetails({ route, navigation }) {
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Report an issue</Text>
-            <Text style={styles.modalSub}>
+            <LCText variant="label" style={styles.modalTitle}>
+              Report an issue
+            </LCText>
+            <LCText variant="tiny" style={styles.modalSub}>
               Tell us what happened on this trip so we can review it.
-            </Text>
+            </LCText>
 
-            <Text style={styles.modalLabel}>Category (select one or more)</Text>
+            <LCText variant="tiny" style={styles.modalLabel}>
+              Category (select one or more)
+            </LCText>
             <View style={styles.categoryPillsRow}>
               {INCIDENT_CATEGORIES.map((cat) => {
                 const active = reportCategories.includes(cat);
@@ -620,20 +649,23 @@ export default function TripDetails({ route, navigation }) {
                     onPress={() => toggleCategory(cat)}
                     disabled={submittingReport}
                   >
-                    <Text
+                    <LCText
+                      variant="tiny"
                       style={[
                         styles.categoryPillText,
                         active && styles.categoryPillTextActive,
                       ]}
                     >
                       {cat}
-                    </Text>
+                    </LCText>
                   </TouchableOpacity>
                 );
               })}
             </View>
 
-            <Text style={styles.modalLabel}>What happened?</Text>
+            <LCText variant="tiny" style={styles.modalLabel}>
+              What happened?
+            </LCText>
             <TextInput
               style={styles.modalTextArea}
               placeholder="Describe the issue (optional but helpful)…"
@@ -652,7 +684,9 @@ export default function TripDetails({ route, navigation }) {
                 }
                 disabled={submittingReport}
               >
-                <Text style={styles.modalBtnSecondaryText}>Cancel</Text>
+                <LCText variant="tiny" style={styles.modalBtnSecondaryText}>
+                  Cancel
+                </LCText>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
@@ -666,9 +700,9 @@ export default function TripDetails({ route, navigation }) {
                 {submittingReport ? (
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
-                  <Text style={styles.modalBtnPrimaryText}>
+                  <LCText variant="tiny" style={styles.modalBtnPrimaryText}>
                     Submit report
-                  </Text>
+                  </LCText>
                 )}
               </TouchableOpacity>
             </View>
@@ -702,7 +736,7 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: "center",
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 16,
+    fontSize: 12,
     color: C.text,
   },
 
@@ -711,14 +745,14 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 10,
     fontFamily: "Poppins_400Regular",
-    fontSize: 12,
+    fontSize: 11,
     color: C.sub,
   },
 
   mainCard: {
     backgroundColor: C.card,
     borderRadius: 16,
-    padding: 14,
+    padding: 12,
     borderWidth: 1,
     borderColor: C.border,
     marginBottom: 10,
@@ -738,13 +772,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   tripAvatar: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: C.brand,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 12,
+    marginRight: 10,
     overflow: "hidden",
   },
   tripAvatarImg: {
@@ -753,17 +787,17 @@ const styles = StyleSheet.create({
   },
   tripAvatarInitial: {
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 18,
+    fontSize: 12,
     color: "#FFFFFF",
   },
   tripTitle: {
     fontFamily: "Poppins_700Bold",
-    fontSize: 15,
+    fontSize: 12,
     color: C.text,
   },
   tripSub: {
     fontFamily: "Poppins_500Medium",
-    fontSize: 12,
+    fontSize: 11,
     color: C.sub,
     marginTop: 2,
   },
@@ -790,17 +824,17 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: C.border,
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 10,
     backgroundColor: "#EFF6FF",
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 6,
     marginBottom: 10,
   },
   mapPlaceholderTitle: {
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 12,
+    fontSize: 11,
     color: C.text,
   },
 
@@ -817,44 +851,44 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
   },
   routeDotOrigin: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: C.accent,
-    marginRight: 10,
+    marginRight: 8,
     marginTop: 3,
   },
   routeDotDest: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: C.danger,
-    marginRight: 10,
+    marginRight: 8,
     marginTop: 3,
   },
   routeLabel: {
     fontFamily: "Poppins_500Medium",
-    fontSize: 11,
+    fontSize: 10,
     color: C.sub,
   },
   routeText: {
     fontFamily: "Poppins_400Regular",
-    fontSize: 12,
+    fontSize: 11,
     color: C.text,
     marginTop: 1,
   },
   routeLine: {
-    height: 18,
+    height: 16,
     borderLeftWidth: 1,
     borderLeftColor: C.border,
-    marginLeft: 5,
+    marginLeft: 4,
     marginVertical: 4,
   },
 
   ratingCard: {
     backgroundColor: C.card,
     borderRadius: 16,
-    padding: 16,
+    padding: 14,
     borderWidth: 1,
     borderColor: C.border,
     ...Platform.select({
@@ -869,32 +903,32 @@ const styles = StyleSheet.create({
   },
   ratingTitle: {
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 15,
+    fontSize: 12,
     color: C.text,
   },
   ratingSub: {
     fontFamily: "Poppins_400Regular",
-    fontSize: 12,
+    fontSize: 11,
     color: C.sub,
     marginTop: 4,
   },
   starsRow: {
     flexDirection: "row",
     justifyContent: "center",
-    marginTop: 14,
+    marginTop: 12,
     marginBottom: 6,
     gap: 4,
   },
   ratingLabelText: {
     textAlign: "center",
     fontFamily: "Poppins_500Medium",
-    fontSize: 12,
+    fontSize: 11,
     color: C.text,
     marginBottom: 8,
   },
   notesLabel: {
     fontFamily: "Poppins_500Medium",
-    fontSize: 12,
+    fontSize: 11,
     color: C.text,
     marginTop: 8,
     marginBottom: 4,
@@ -907,7 +941,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     fontFamily: "Poppins_400Regular",
-    fontSize: 12,
+    fontSize: 11,
     color: C.text,
     textAlignVertical: "top",
     backgroundColor: "#F9FAFB",
@@ -915,7 +949,7 @@ const styles = StyleSheet.create({
   expiredText: {
     marginTop: 6,
     fontFamily: "Poppins_400Regular",
-    fontSize: 11,
+    fontSize: 10,
     color: C.sub,
     textAlign: "center",
   },
@@ -925,7 +959,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.border,
     paddingVertical: 8,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     backgroundColor: "#F9FAFB",
   },
   ratingSummaryRow: {
@@ -935,7 +969,7 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontFamily: "Poppins_500Medium",
-    fontSize: 13,
+    fontSize: 12,
     color: C.text,
   },
   summaryValueRow: {
@@ -944,12 +978,12 @@ const styles = StyleSheet.create({
   },
   summaryRatingText: {
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 13,
+    fontSize: 12,
     color: C.text,
   },
   summaryLabelSmall: {
     fontFamily: "Poppins_400Regular",
-    fontSize: 12,
+    fontSize: 11,
     color: C.sub,
   },
   reportLinkBtn: {
@@ -958,7 +992,7 @@ const styles = StyleSheet.create({
   },
   reportLinkText: {
     fontFamily: "Poppins_500Medium",
-    fontSize: 13,
+    fontSize: 12,
     color: C.accent,
   },
 
@@ -966,19 +1000,19 @@ const styles = StyleSheet.create({
     marginTop: 14,
     borderRadius: 999,
     backgroundColor: C.brand,
-    paddingVertical: 12,
+    paddingVertical: 10,
     alignItems: "center",
     justifyContent: "center",
   },
   submitBtnText: {
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 13,
+    fontSize: 12,
     color: "#FFFFFF",
   },
 
   errorText: {
     fontFamily: "Poppins_400Regular",
-    fontSize: 13,
+    fontSize: 11,
     color: C.text,
     marginBottom: 8,
   },
@@ -991,7 +1025,7 @@ const styles = StyleSheet.create({
   },
   backBtnInlineText: {
     fontFamily: "Poppins_500Medium",
-    fontSize: 12,
+    fontSize: 11,
     color: C.brand,
   },
 
@@ -1006,23 +1040,23 @@ const styles = StyleSheet.create({
     width: "100%",
     borderRadius: 16,
     backgroundColor: "#FFFFFF",
-    padding: 16,
+    padding: 14,
   },
   modalTitle: {
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 15,
+    fontSize: 12,
     color: C.text,
   },
   modalSub: {
     fontFamily: "Poppins_400Regular",
-    fontSize: 12,
+    fontSize: 11,
     color: C.sub,
     marginTop: 4,
     marginBottom: 8,
   },
   modalLabel: {
     fontFamily: "Poppins_500Medium",
-    fontSize: 12,
+    fontSize: 11,
     color: C.text,
     marginTop: 8,
     marginBottom: 4,
@@ -1045,7 +1079,7 @@ const styles = StyleSheet.create({
   },
   categoryPillText: {
     fontFamily: "Poppins_400Regular",
-    fontSize: 11,
+    fontSize: 10,
     color: C.text,
   },
   categoryPillTextActive: {
@@ -1059,7 +1093,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     fontFamily: "Poppins_400Regular",
-    fontSize: 12,
+    fontSize: 11,
     color: C.text,
     textAlignVertical: "top",
     backgroundColor: "#F9FAFB",
@@ -1072,7 +1106,7 @@ const styles = StyleSheet.create({
   },
   modalBtn: {
     borderRadius: 999,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 8,
   },
   modalBtnSecondary: {
@@ -1082,7 +1116,7 @@ const styles = StyleSheet.create({
   },
   modalBtnSecondaryText: {
     fontFamily: "Poppins_500Medium",
-    fontSize: 12,
+    fontSize: 11,
     color: C.text,
   },
   modalBtnPrimary: {
@@ -1090,7 +1124,7 @@ const styles = StyleSheet.create({
   },
   modalBtnPrimaryText: {
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 12,
+    fontSize: 11,
     color: "#FFFFFF",
   },
 });

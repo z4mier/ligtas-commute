@@ -70,7 +70,7 @@ export default function Notifications({ navigation }) {
           >
             <MaterialCommunityIcons
               name="chevron-left"
-              size={26}
+              size={22}
               color={C.text}
             />
           </TouchableOpacity>
@@ -86,7 +86,7 @@ export default function Notifications({ navigation }) {
           <View style={s.emptyWrap}>
             <MaterialCommunityIcons
               name="bell-off-outline"
-              size={32}
+              size={30}
               color={C.hint}
             />
             <Text style={s.emptyTitle}>No notifications</Text>
@@ -115,8 +115,8 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 12,
-    paddingTop: Platform.OS === "android" ? 12 : 18,
-    paddingBottom: 8,
+    paddingTop: Platform.OS === "android" ? 10 : 16,
+    paddingBottom: 6,
     backgroundColor: C.bg,
     borderBottomWidth: 1,
     borderBottomColor: C.border,
@@ -124,23 +124,23 @@ const s = StyleSheet.create({
   title: {
     fontFamily: "Poppins_700Bold",
     color: C.text,
-    fontSize: 16,
+    fontSize: 12,
     marginLeft: 4,
   },
   markAll: {
     color: C.brand,
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 12,
+    fontSize: 10,
   },
-  scroll: { padding: 12, paddingBottom: 40 },
+  scroll: { padding: 10, paddingBottom: 32 },
   card: {
     backgroundColor: C.card,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: C.border,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    marginBottom: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    marginBottom: 8,
     ...Platform.select({
       ios: {
         shadowColor: "#000",
@@ -154,30 +154,30 @@ const s = StyleSheet.create({
   cardTitle: {
     fontFamily: "Poppins_700Bold",
     color: C.text,
-    fontSize: 13,
+    fontSize: 12,
   },
   cardBody: {
     fontFamily: "Poppins_400Regular",
     color: C.sub,
-    fontSize: 11.5,
+    fontSize: 11,
     marginTop: 2,
   },
   cardTime: {
     fontFamily: "Poppins_400Regular",
     color: C.hint,
-    fontSize: 11,
+    fontSize: 10,
     marginTop: 6,
   },
-  emptyWrap: { alignItems: "center", paddingTop: 40, gap: 6 },
+  emptyWrap: { alignItems: "center", paddingTop: 32, gap: 6 },
   emptyTitle: {
     fontFamily: "Poppins_700Bold",
     color: C.text,
-    fontSize: 14,
+    fontSize: 12,
   },
   emptySub: {
     fontFamily: "Poppins_400Regular",
     color: C.hint,
-    fontSize: 12,
+    fontSize: 11,
     textAlign: "center",
   },
 });

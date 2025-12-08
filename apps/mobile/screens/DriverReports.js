@@ -2,7 +2,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   ActivityIndicator,
   FlatList,
@@ -20,8 +19,8 @@ import {
   Poppins_700Bold,
 } from "@expo-google-fonts/poppins";
 import { API_URL } from "../constants/config";
+import LCText from "../components/LCText";
 
-/* ---------- Theme (match dashboard) ---------- */
 const C = {
   bg: "#F3F4F6",
   card: "#FFFFFF",
@@ -45,6 +44,7 @@ export default function DriverReports({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [reports, setReports] = useState([]);
   const [totalReports, setTotalReports] = useState(0);
+  const [sortOrder, setSortOrder] = useState("newest");
 
   const loadReports = useCallback(async () => {
     setLoading(true);
@@ -108,6 +108,33 @@ export default function DriverReports({ navigation }) {
     );
   }
 
+  const sortedReports = [...reports].sort((a, b) => {
+    const getTime = (item) => {
+      const t =
+        item.createdAt ||
+        item.created_at ||
+        item.submittedAt ||
+        item.submitted_at ||
+        0;
+      const d = new Date(t);
+      const n = d.getTime();
+      return Number.isNaN(n) ? 0 : n;
+    };
+
+    const at = getTime(a);
+    const bt = getTime(b);
+
+    if (sortOrder === "newest") return bt - at;
+    return at - bt;
+  });
+
+  const sortLabel =
+    sortOrder === "newest" ? "Newest to oldest" : "Oldest to newest";
+
+  const toggleSortOrder = () => {
+    setSortOrder((prev) => (prev === "newest" ? "oldest" : "newest"));
+  };
+
   const renderItem = ({ item }) => {
     const categoryLabel =
       Array.isArray(item.categories) && item.categories.length > 0
@@ -121,7 +148,6 @@ export default function DriverReports({ navigation }) {
 
     return (
       <View style={styles.card}>
-        {/* Top row: anonymous + category (no status pill) */}
         <View style={styles.cardTopRow}>
           <View style={{ flex: 1 }}>
             <View style={styles.cardAnonRow}>
@@ -133,26 +159,24 @@ export default function DriverReports({ navigation }) {
                 />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.cardAnonLabel} numberOfLines={1}>
+                <LCText style={styles.cardAnonLabel} numberOfLines={1}>
                   Anonymous
-                </Text>
+                </LCText>
                 <View style={styles.cardMetaRow}>
                   <View style={styles.dot} />
-                  <Text style={styles.cardMetaText} numberOfLines={1}>
+                  <LCText style={styles.cardMetaText} numberOfLines={1}>
                     {categoryLabel}
-                  </Text>
+                  </LCText>
                 </View>
               </View>
             </View>
           </View>
         </View>
 
-        {/* Message / body */}
-        <Text style={styles.cardMessage} numberOfLines={4}>
+        <LCText style={styles.cardMessage} numberOfLines={4}>
           {bodyText}
-        </Text>
+        </LCText>
 
-        {/* Footer – source text */}
         <View style={styles.cardFooter}>
           <MaterialCommunityIcons
             name="shield-check"
@@ -160,7 +184,9 @@ export default function DriverReports({ navigation }) {
             color={C.sub}
             style={{ marginRight: 4 }}
           />
-          <Text style={styles.cardFooterText}>Reported via LigtasCommute</Text>
+          <LCText style={styles.cardFooterText}>
+            Reported via LigtasCommute
+          </LCText>
         </View>
       </View>
     );
@@ -170,7 +196,6 @@ export default function DriverReports({ navigation }) {
     <SafeAreaView style={[styles.safe, { backgroundColor: C.bg }]}>
       <StatusBar style="dark" />
 
-      {/* Top bar (like ratings page) */}
       <View style={styles.topBar}>
         <TouchableOpacity
           style={styles.backBtn}
@@ -183,17 +208,16 @@ export default function DriverReports({ navigation }) {
             color={C.text}
           />
         </TouchableOpacity>
-        <Text style={styles.topTitle}>View Reports</Text>
+        <LCText style={styles.topTitle}>View Reports</LCText>
         <View style={{ width: 32 }} />
       </View>
 
-      {/* Commuter reports header (blue) */}
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerLabel}>Commuter reports</Text>
-          <Text style={styles.headerValue}>
+          <LCText style={styles.headerLabel}>Commuter reports</LCText>
+          <LCText style={styles.headerValue}>
             {loading ? "—" : totalReports}
-          </Text>
+          </LCText>
         </View>
         <View style={styles.headerRight}>
           <MaterialCommunityIcons
@@ -204,15 +228,29 @@ export default function DriverReports({ navigation }) {
         </View>
       </View>
 
-      {/* List / Empty / Loading */}
+      <View style={styles.sortWrapper}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={toggleSortOrder}
+          style={styles.sortPill}
+        >
+          <MaterialCommunityIcons
+            name="filter-variant"
+            size={16}
+            color={C.text}
+            style={{ marginRight: 6 }}
+          />
+          <LCText style={styles.sortText}>{sortLabel}</LCText>
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.listContainer}>
         {loading ? (
           <View style={styles.center}>
             <ActivityIndicator size="small" color={C.sub} />
-            <Text style={styles.loadingText}>Loading reports…</Text>
+            <LCText style={styles.loadingText}>Loading reports…</LCText>
           </View>
-        ) : reports.length === 0 ? (
-          // 👇 Centered empty state, same text style as screenshot
+        ) : sortedReports.length === 0 ? (
           <View style={styles.center}>
             <MaterialCommunityIcons
               name="clipboard-check-outline"
@@ -220,15 +258,15 @@ export default function DriverReports({ navigation }) {
               color={C.sub}
               style={{ marginBottom: 10 }}
             />
-            <Text style={styles.emptyTitle}>No commuter reports</Text>
-            <Text style={styles.emptySubtitle}>
+            <LCText style={styles.emptyTitle}>No commuter reports</LCText>
+            <LCText style={styles.emptySubtitle}>
               You currently have no reports from commuters. Keep driving
               safely!
-            </Text>
+            </LCText>
           </View>
         ) : (
           <FlatList
-            data={reports}
+            data={sortedReports}
             keyExtractor={(item) => item.id}
             renderItem={renderItem}
             contentContainerStyle={{ paddingBottom: 24 }}
@@ -242,13 +280,10 @@ export default function DriverReports({ navigation }) {
   );
 }
 
-/* ---------- Styles ---------- */
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
   },
-
-  /* top bar */
   topBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -272,8 +307,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: C.text,
   },
-
-  /* blue header – same family as Average Rating */
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -300,13 +333,31 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
+  sortWrapper: {
+    marginHorizontal: 16,
+    marginTop: 6,
+    marginBottom: 4,
+    flexDirection: "row",
+    justifyContent: "flex-end",
+  },
+  sortPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 999,
+    backgroundColor: "#E5E7EB",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  sortText: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 11,
+    color: C.text,
+  },
   listContainer: {
     flex: 1,
     marginHorizontal: 16,
     marginTop: 4,
   },
-
   center: {
     flex: 1,
     alignItems: "center",
@@ -318,8 +369,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: C.sub,
   },
-
-  // Empty state text styles (match “No commuter reports” look)
   emptyTitle: {
     fontFamily: "Poppins_600SemiBold",
     fontSize: 15,
@@ -333,7 +382,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingHorizontal: 32,
   },
-
   card: {
     backgroundColor: C.card,
     borderRadius: 16,
@@ -382,7 +430,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: C.sub,
   },
-
   cardMessage: {
     fontFamily: "Poppins_400Regular",
     fontSize: 12,
@@ -390,7 +437,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
     marginBottom: 10,
   },
-
   cardFooter: {
     flexDirection: "row",
     alignItems: "center",

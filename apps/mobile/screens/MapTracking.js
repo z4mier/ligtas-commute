@@ -2,7 +2,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
-  Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
@@ -24,15 +23,11 @@ import { API_URL } from "../constants/config";
 import { WebView } from "react-native-webview";
 import { useNavigation } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
-/* ---------- notifications ---------- */
 import { addIncidentSubmitted } from "../lib/notify";
+import LCText from "../components/LCText"; // ⬅️ use your LCText component
 
-/* ---------- theme ---------- */
 const C = {
   brand: "#0B132B",
-
-  // Text & surfaces
   text: "#111827",
   sub: "#6B7280",
   hint: "#9CA3AF",
@@ -40,24 +35,16 @@ const C = {
   card: "#FFFFFF",
   page: "#FFFFFF",
   border: "#E5E7EB",
-
-  // Map markers
-tealDot: "#22C55E",
-destPin: "#F43F5E",        // keep red pin for destination
-blue: "#1D4ED8",          // user live dot
-blueTrail: "#38BDF8",     // soft highlight / secondary line
-breadcrumb: "rgba(59,130,246,0.9)", // travel history path
-routeLine: "#0EA5E9",     // MAIN route polyline (bright cyan-blue)
+  tealDot: "#22C55E",
+  destPin: "#F43F5E",
+  blue: "#1D4ED8",
+  blueTrail: "#38BDF8",
+  breadcrumb: "rgba(59,130,246,0.9)",
+  routeLine: "#0EA5E9",
 };
 
-
-/* DEV – show Sim button */
-const SHOW_SIM = true;
-
-// Street View Key
 const GMAPS_JS_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_JS_KEY || "";
 
-/* ---------- Background tracking ---------- */
 const BG_TASK = "LC_TRACK_TASK";
 let BG_TASK_DEFINED = false;
 
@@ -70,7 +57,6 @@ try {
   }
 } catch {}
 
-/* ---------- Background tracking helpers ---------- */
 async function startBackgroundTracking() {
   try {
     const bgPerm = await Location.getBackgroundPermissionsAsync();
@@ -102,17 +88,16 @@ async function stopBackgroundTracking() {
   } catch {}
 }
 
-/* ---------- polyline decode ---------- */
 function decodePolyline(str) {
-  let index = 0,
-    lat = 0,
-    lng = 0,
-    coords = [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+  const coords = [];
 
   while (index < str.length) {
-    let b,
-      shift = 0,
-      result = 0;
+    let b;
+    let shift = 0;
+    let result = 0;
 
     do {
       b = str.charCodeAt(index++) - 63;
@@ -140,7 +125,6 @@ function decodePolyline(str) {
   return coords;
 }
 
-/* ---------- utils ---------- */
 const haversine = (a, b) => {
   const R = 6371e3;
   const φ1 = (a.latitude * Math.PI) / 180;
@@ -155,8 +139,6 @@ const haversine = (a, b) => {
   return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 };
 
-const delay = (ms) => new Promise((r) => setTimeout(r, ms));
-
 const cleanPlaceName = (s) => {
   if (!s) return "";
   return s
@@ -170,20 +152,19 @@ const cleanPlaceName = (s) => {
 };
 
 function bearingTo(a, b) {
-  const φ1 = a.latitude * (Math.PI / 180);
-  const φ2 = b.latitude * (Math.PI / 180);
-  const Δλ = (b.longitude - a.longitude) * (Math.PI / 180);
+  const φ1 = (a.latitude * Math.PI) / 180;
+  const φ2 = (b.latitude * Math.PI) / 180;
+  const Δλ = ((b.longitude - a.longitude) * Math.PI) / 180;
 
   const y = Math.sin(Δλ) * Math.cos(φ2);
   const x =
     Math.cos(φ1) * Math.sin(φ2) -
     Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
 
-  let θ = Math.atan2(y, x) * (180 / Math.PI);
+  let θ = (Math.atan2(y, x) * 180) / Math.PI;
   return θ < 0 ? θ + 360 : θ;
 }
 
-/* ---------- auth fetch (with token) ---------- */
 async function authFetch(path, options = {}) {
   let token =
     (await AsyncStorage.getItem("authToken")) ||
@@ -206,7 +187,6 @@ async function authFetch(path, options = {}) {
   });
 }
 
-/* Street View HTML for WebView */
 function streetViewHTML(apiKey) {
   return `
 <!doctype html>
@@ -255,23 +235,18 @@ document.addEventListener('message',e=>{try{const m=JSON.parse(e.data||'{}');if(
 </html>`;
 }
 
-/* ---------- screen ---------- */
 export default function MapTracking({ route }) {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
 
-  // 🔹 driver from QR / AsyncStorage
   const [driver, setDriver] = useState(route?.params?.driver || null);
-  console.log("[MapTracking] initial route driver =", route?.params?.driver);
 
-  // Sync driver: route param ➜ AsyncStorage, or load from AsyncStorage
   useEffect(() => {
     (async () => {
       try {
         if (route?.params?.driver) {
           const d = route.params.driver;
 
-          // Normalize a bit
           const driverProfileId =
             d.driverProfileId ||
             d.driverId ||
@@ -293,13 +268,11 @@ export default function MapTracking({ route }) {
             "LC_CURRENT_DRIVER",
             JSON.stringify(normalized)
           );
-          console.log("[MapTracking] stored driver in AsyncStorage", normalized);
         } else {
           const cached = await AsyncStorage.getItem("LC_CURRENT_DRIVER");
           if (cached) {
             const parsed = JSON.parse(cached);
             setDriver(parsed);
-            console.log("[MapTracking] loaded driver from AsyncStorage", parsed);
           }
         }
       } catch (e) {
@@ -311,11 +284,9 @@ export default function MapTracking({ route }) {
   const mapRef = useRef(null);
   const watchRef = useRef(null);
 
-  // 🔹 Separate search for starting point & destination
   const [pickupSearch, setPickupSearch] = useState("");
   const [destSearch, setDestSearch] = useState("");
-
-  const [activeField, setActiveField] = useState("dest"); // "pickup" or "dest"
+  const [activeField, setActiveField] = useState("dest");
   const [suggestions, setSuggestions] = useState([]);
   const [fetching, setFetching] = useState(false);
   const [showSuggest, setShowSuggest] = useState(false);
@@ -324,9 +295,7 @@ export default function MapTracking({ route }) {
   const [origin, setOrigin] = useState(null);
   const [originText, setOriginText] = useState("Getting location…");
   const [dest, setDest] = useState(null);
-
-  // 👉 showRoutePins = true ONLY if both origin & dest are set
-  const showRoutePins = !!(origin && dest);
+  const showRoutePins = !!dest;
 
   const [devicePos, setDevicePos] = useState(null);
   const [heading, setHeading] = useState(0);
@@ -338,22 +307,17 @@ export default function MapTracking({ route }) {
   const [, setStepIdx] = useState(0);
   const [error, setError] = useState("");
 
-  // Speed (km/h)
   const [speedKmh, setSpeedKmh] = useState(null);
 
-  // Trip stats
   const [tripStartAt, setTripStartAt] = useState(null);
   const [tripDistance, setTripDistance] = useState(0);
   const [lastPoint, setLastPoint] = useState(null);
   const [lastUpdateAt, setLastUpdateAt] = useState(null);
 
-  // Trip id on backend
   const [tripId, setTripId] = useState(null);
 
-  // Arrived sheet
   const [arrivedSheet, setArrivedSheet] = useState(false);
 
-  // Incident report (MULTI-SELECT)
   const CATEGORY_OPTIONS = [
     "Reckless Driving",
     "Overloading",
@@ -365,18 +329,9 @@ export default function MapTracking({ route }) {
   const [reportNotes, setReportNotes] = useState("");
   const [reportOpen, setReportOpen] = useState(false);
 
-  // Success toast (incident)
   const [thanksOpen, setThanksOpen] = useState(false);
   const [lastReportCats, setLastReportCats] = useState([]);
 
-  // Sim
-  const [simulating, setSimulating] = useState(false);
-  const simRef = useRef(false);
-  useEffect(() => {
-    simRef.current = simulating;
-  }, [simulating]);
-
-  // Street View
   const [showStreet, setShowStreet] = useState(false);
   const webRef = useRef(null);
   const streetHTML = streetViewHTML(GMAPS_JS_KEY);
@@ -386,7 +341,6 @@ export default function MapTracking({ route }) {
     } catch {}
   };
 
-  /* ---------- ANIM: pulsing user location dot (always live) ---------- */
   const pulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     const loop = Animated.loop(
@@ -418,7 +372,6 @@ export default function MapTracking({ route }) {
     opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.6, 0] }),
   };
 
-  /* ---------- camera helpers ---------- */
   const lastCameraAt = useRef(0);
   const lastCamCenter = useRef(null);
   function animateCameraFollow(center, hdg = 0, zoom = 18.2) {
@@ -458,7 +411,6 @@ export default function MapTracking({ route }) {
     );
   };
 
-  /* ---------- geo helpers ---------- */
   const reverseGeocode = async (coord) => {
     try {
       const list = await Location.reverseGeocodeAsync(coord);
@@ -470,7 +422,6 @@ export default function MapTracking({ route }) {
     }
   };
 
-  /* ---------- init ---------- */
   useEffect(() => {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -491,12 +442,11 @@ export default function MapTracking({ route }) {
       const label = (await reverseGeocode(cur)) || "Current location";
       setOrigin({ ...cur, name: label });
       setOriginText(label);
-      setPickupSearch(label); // 🔹 show in Starting point input
+      setPickupSearch(label);
       animateTo(cur);
     })();
   }, []);
 
-  /* ---------- autocomplete (per active field) ---------- */
   useEffect(() => {
     if (!showSuggest) return;
 
@@ -555,7 +505,6 @@ export default function MapTracking({ route }) {
     });
   };
 
-  /* Throttled directions */
   const lastDirectionsAt = useRef(0);
   const fetchDirections = async (o, d, force = false) => {
     const now = Date.now();
@@ -568,7 +517,6 @@ export default function MapTracking({ route }) {
       );
       const data = await r.json();
 
-      // 🔹 FRIENDLY HANDLING FOR ZERO_RESULTS + OTHER STATUSES
       if (data?.status && data.status !== "OK") {
         let msg =
           "Directions are not available for this route right now. Please adjust your starting point or destination.";
@@ -648,13 +596,8 @@ export default function MapTracking({ route }) {
     }
   };
 
-  /* ---------- trips: start / complete on backend ---------- */
   const startTripOnServer = async (startFrom) => {
     try {
-      console.log("[trip] starting at", startFrom);
-      console.log("[trip] using driver =", driver);
-
-      // 🔎 Try all possible driver IDs from the scanned object
       const resolvedDriverId =
         driver?.driverProfileId ||
         driver?.driverId ||
@@ -663,10 +606,8 @@ export default function MapTracking({ route }) {
         driver?.driver?.id ||
         null;
 
-      // 🔎 Try to resolve bus id
       const resolvedBusId = driver?.busId || driver?.bus?.id || null;
 
-      // 🧾 Snapshot fields — para ma-display sa TripDetails maski walay real FK
       const snapshotDriverName =
         driver?.name ||
         driver?.fullName ||
@@ -686,14 +627,10 @@ export default function MapTracking({ route }) {
         originLat: startFrom.latitude,
         originLng: startFrom.longitude,
         originLabel: origin?.name || originText || "Current location",
-
-        // 🆕 snapshot fields
         driverName: snapshotDriverName,
         busNumber: snapshotBusNumber,
         busPlate: snapshotBusPlate,
       };
-
-      console.log("[trip.start] payload =", payload);
 
       const res = await authFetch("/commuter/trips/start", {
         method: "POST",
@@ -703,7 +640,6 @@ export default function MapTracking({ route }) {
       const body = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        console.log("[trip] startTrip error:", res.status, body);
         setError(
           body.error ||
             "Failed to start trip. Please make sure a driver & bus are selected."
@@ -712,7 +648,6 @@ export default function MapTracking({ route }) {
       }
 
       const id = body?.trip?.id || body?.id || null;
-      console.log("[trip] started id =", id, "resp body =", body);
       return id;
     } catch (e) {
       console.log("[trip] startTrip exception:", e);
@@ -723,8 +658,6 @@ export default function MapTracking({ route }) {
 
   const completeTripOnServer = async () => {
     try {
-      console.log("[trip] completing trip", { tripId, dest });
-
       const res = await authFetch("/commuter/trips/complete", {
         method: "POST",
         body: JSON.stringify({
@@ -738,13 +671,11 @@ export default function MapTracking({ route }) {
       const body = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        console.log("[trip] completeTrip error:", res.status, body);
         setError(body.error || "Could not complete trip.");
         return;
       }
 
       const id = body?.trip?.id || body?.id || null;
-      console.log("[trip] completed id =", id, "resp body =", body);
       setTripId(id);
     } catch (e) {
       console.log("[trip] completeTrip exception:", e);
@@ -752,7 +683,6 @@ export default function MapTracking({ route }) {
     }
   };
 
-  /* ---------- navigation ---------- */
   const startNavigation = async () => {
     if (!dest) return;
 
@@ -790,7 +720,7 @@ export default function MapTracking({ route }) {
     animateCameraFollow(startFrom, heading, 18.2);
 
     await fetchDirections(startFrom, dest, true);
-    setNavMode(true); // 👈 from this point, we hide the origin pin
+    setNavMode(true);
     setTripStartAt(Date.now());
     setTripDistance(0);
     setLastPoint(startFrom);
@@ -878,7 +808,6 @@ export default function MapTracking({ route }) {
     setNavMode(false);
     setShowStreet(false);
     setReportOpen(false);
-    setSimulating(false);
     setDest(null);
     setDestSearch("");
     setRouteCoords([]);
@@ -915,7 +844,7 @@ export default function MapTracking({ route }) {
     const label = (await reverseGeocode(cur)) || "Current location";
     setOrigin({ ...cur, name: label });
     setOriginText(label);
-    setPickupSearch(label); // 🔹 update Starting point field
+    setPickupSearch(label);
     if (navMode) animateCameraFollow(cur, heading, 18.2);
     else animateTo(cur);
 
@@ -930,7 +859,6 @@ export default function MapTracking({ route }) {
     }
   };
 
-  // 🔹 Explicit "use current location as starting point" icon
   const setCurrentLocationAsOrigin = async () => {
     await recenterToUser();
     setShowSuggest(false);
@@ -1036,7 +964,7 @@ export default function MapTracking({ route }) {
         .filter(Boolean);
       return parts.length > 1 ? parts[0] : t;
     };
-    return `${pickShort(a)} → ${pickShort(b)}`;
+    return `${pickShort(a)} \u2192 ${pickShort(b)}`;
   })();
 
   const durationMins = tripStartAt
@@ -1048,62 +976,6 @@ export default function MapTracking({ route }) {
       ? Math.round((tripDistance / 1000) / (durationMins / 60))
       : 0;
 
-  /* ---------- DEV simulate ---------- */
-  async function simulateAlongRoute() {
-    if (!dest) return;
-    let coords = routeCoords;
-    const start = origin || devicePos;
-    if ((!coords || !coords.length) && start) {
-      coords = [
-        start,
-        {
-          latitude: start.latitude + (dest.latitude - start.latitude) * 0.33,
-          longitude: start.longitude + (dest.longitude - start.longitude) * 0.33,
-        },
-        {
-          latitude: start.latitude + (dest.latitude - start.latitude) * 0.66,
-          longitude: start.longitude + (dest.longitude - start.longitude) * 0.66,
-        },
-        dest,
-      ];
-      setRouteCoords(coords);
-    }
-
-    setBreadcrumbs([]);
-
-    if (!navMode) {
-      setNavMode(true);
-      setTripStartAt(Date.now());
-      setTripDistance(0);
-      setLastPoint(start ?? coords[0]);
-      startBackgroundTracking().catch(() => {});
-    }
-    setSimulating(true);
-    simRef.current = true;
-    for (let i = 0; i < coords.length; i++) {
-      if (!simRef.current) break;
-      const cur = coords[i];
-      setDevicePos(cur);
-      setBreadcrumbs((p) => [...p.slice(-120), cur]);
-      if (lastPoint) setTripDistance((d) => d + haversine(lastPoint, cur));
-      setLastPoint(cur);
-      setSpeedKmh(20);
-      animateCameraFollow(cur, heading, 18.2);
-      if (showStreet && dest)
-        sendToStreet({
-          type: "update",
-          lat: cur.latitude,
-          lng: cur.longitude,
-          heading: bearingTo(cur, dest),
-        });
-      await delay(700);
-    }
-    setSimulating(false);
-    simRef.current = false;
-    endNavigation(true);
-  }
-
-  /* ---------- incident submit ---------- */
   const submitIncident = async () => {
     if (!reportCats.length) {
       setError("Choose at least one category.");
@@ -1142,7 +1014,6 @@ export default function MapTracking({ route }) {
 
   const query = activeField === "pickup" ? pickupSearch : destSearch;
 
-  /* ---------- render ---------- */
   return (
     <SafeAreaView style={[s.safe, { paddingTop: insets.top }]}>
       <MapView
@@ -1163,22 +1034,24 @@ export default function MapTracking({ route }) {
           longitudeDelta: 0.08,
         }}
       >
-        {/* 👉 Start point pin – hide once navMode = true */}
-        {showRoutePins && origin && !navMode && (
-          <Marker
-            coordinate={origin}
-            title={origin.name || "Starting point"}
-            description="Pickup location"
-          >
-            <MaterialCommunityIcons
-              name="map-marker"
-              size={36}
-              color={C.blue}
-            />
-          </Marker>
-        )}
+        {origin &&
+          !navMode &&
+          !(devicePos && haversine(origin, devicePos) < 20) && (
+            <Marker
+              coordinate={origin}
+              title={origin.name || "Start point"}
+              description="Pickup location"
+            >
+              <View style={{ alignItems: "center" }}>
+                <MaterialCommunityIcons
+                  name="map-marker"
+                  size={30}
+                  color={C.tealDot}
+                />
+              </View>
+            </Marker>
+          )}
 
-        {/* 👉 Destination pin – stays visible even during navigation */}
         {showRoutePins && dest && (
           <Marker
             coordinate={dest}
@@ -1187,16 +1060,25 @@ export default function MapTracking({ route }) {
           >
             <MaterialCommunityIcons
               name="map-marker"
-              size={36}
+              size={32}
               color={C.destPin}
             />
           </Marker>
         )}
 
-        {/* 👉 Live moving circle – commuter POV */}
         {devicePos && (
-          <Marker coordinate={devicePos} title="Live location">
+          <Marker
+            coordinate={devicePos}
+            title="Current location"
+            description={originText}
+          >
             <View style={{ alignItems: "center", justifyContent: "center" }}>
+              <MaterialCommunityIcons
+                name="map-marker"
+                size={38}
+                color={C.blue}
+                style={{ marginBottom: 4 }}
+              />
               <Animated.View style={[s.pulse, pulseStyle]} />
               <View style={s.blueDot} />
             </View>
@@ -1207,7 +1089,7 @@ export default function MapTracking({ route }) {
           <Polyline
             coordinates={routeCoords}
             strokeWidth={6}
-            strokeColor={C.routeLine} // 🔴 red route line
+            strokeColor={C.routeLine}
           />
         )}
 
@@ -1220,35 +1102,6 @@ export default function MapTracking({ route }) {
         )}
       </MapView>
 
-      {/* DEV Sim */}
-      {SHOW_SIM && dest && (
-        <TouchableOpacity
-          onPress={() => {
-            if (simulating) {
-              setSimulating(false);
-              simRef.current = false;
-              return;
-            }
-            simulateAlongRoute();
-          }}
-          style={[
-            s.simBtn,
-            { top: (navMode ? 110 : 160) + insets.top, right: 16 },
-          ]}
-          activeOpacity={0.9}
-        >
-          <MaterialCommunityIcons
-            name={simulating ? "pause-circle" : "play-circle"}
-            size={20}
-            color={C.brand}
-          />
-          <Text style={{ color: C.text, fontWeight: "700" }}>
-            {simulating ? "Stop" : "Sim"}
-          </Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Search card (pre-nav) */}
       {!navMode && (
         <View style={[s.searchWrap, { top: 10 + insets.top }]}>
           <View style={s.searchCard}>
@@ -1273,9 +1126,8 @@ export default function MapTracking({ route }) {
             </View>
 
             <View style={{ flex: 1 }}>
-              {/* STARTING POINT (editable) */}
               <View style={s.row}>
-                <Text style={s.rowLabel}>Starting point</Text>
+                <LCText style={s.rowLabel}>Starting point</LCText>
                 <View style={s.inputWrap}>
                   <TextInput
                     style={s.input}
@@ -1321,9 +1173,8 @@ export default function MapTracking({ route }) {
 
               <View style={s.rowDivider} />
 
-              {/* DESTINATION */}
               <View style={s.row}>
-                <Text style={s.rowLabel}>Where to go?</Text>
+                <LCText style={s.rowLabel}>Where to go?</LCText>
                 <View style={s.inputWrap}>
                   <TextInput
                     style={s.input}
@@ -1367,7 +1218,7 @@ export default function MapTracking({ route }) {
                   recents.length > 0 ? (
                     <View>
                       <View style={s.suggestHdr}>
-                        <Text style={s.suggestHdrTxt}>Recent</Text>
+                        <LCText style={s.suggestHdrTxt}>Recent</LCText>
                       </View>
                       {recents.map((r) => (
                         <TouchableOpacity
@@ -1380,12 +1231,12 @@ export default function MapTracking({ route }) {
                             size={18}
                             color={C.text}
                           />
-                          <Text
+                          <LCText
                             numberOfLines={2}
                             style={s.suggestText}
                           >
                             {r.description}
-                          </Text>
+                          </LCText>
                         </TouchableOpacity>
                       ))}
                     </View>
@@ -1404,12 +1255,12 @@ export default function MapTracking({ route }) {
                             size={18}
                             color={C.text}
                           />
-                          <Text
+                          <LCText
                             numberOfLines={2}
                             style={s.suggestText}
                           >
                             {item.description}
-                          </Text>
+                          </LCText>
                         </TouchableOpacity>
                       )}
                       ListEmptyComponent={
@@ -1424,14 +1275,14 @@ export default function MapTracking({ route }) {
                           </View>
                         ) : query.trim().length >= 2 ? (
                           <View style={{ padding: 12 }}>
-                            <Text
+                            <LCText
                               style={{
                                 color: C.sub,
                                 textAlign: "center",
                               }}
                             >
                               No results
-                            </Text>
+                            </LCText>
                           </View>
                         ) : null
                       }
@@ -1444,7 +1295,6 @@ export default function MapTracking({ route }) {
         </View>
       )}
 
-      {/* Bottom sheet (pre-nav) */}
       {!navMode && dest && routeCoords.length > 0 && eta && (
         <View
           style={[
@@ -1454,15 +1304,15 @@ export default function MapTracking({ route }) {
         >
           <View style={s.sheetCard}>
             <View style={{ flex: 1 }}>
-              <Text
+              <LCText
                 style={s.routeTitle}
                 numberOfLines={1}
               >
                 {routeTitle || "Your route"}
-              </Text>
-              <Text style={s.sheetEta}>
+              </LCText>
+              <LCText style={s.sheetEta}>
                 {eta.durationText} • {eta.distanceText}
-              </Text>
+              </LCText>
               {!!(driver?.name || driver?.routeName) && (
                 <View style={s.sheetLine}>
                   <MaterialCommunityIcons
@@ -1470,7 +1320,7 @@ export default function MapTracking({ route }) {
                     size={16}
                     color={C.sub}
                   />
-                  <Text
+                  <LCText
                     numberOfLines={1}
                     style={s.sheetSub}
                   >
@@ -1479,7 +1329,7 @@ export default function MapTracking({ route }) {
                           driver?.name || "driver"
                         } • ${driver.routeName}`
                       : `Taken by ${driver?.name}`}
-                  </Text>
+                  </LCText>
                 </View>
               )}
             </View>
@@ -1498,7 +1348,6 @@ export default function MapTracking({ route }) {
         </View>
       )}
 
-      {/* Bottom during nav (ETA only) */}
       {navMode && (
         <View
           style={[
@@ -1508,17 +1357,16 @@ export default function MapTracking({ route }) {
         >
           <View style={s.navBottom}>
             <View style={{ flex: 1 }}>
-              <Text style={s.arriveEtaTitle}>Arrive in</Text>
-              <Text style={s.arriveEtaValue}>
+              <LCText style={s.arriveEtaTitle}>Arrive in</LCText>
+              <LCText style={s.arriveEtaValue}>
                 {eta?.durationText || "—"} •{" "}
                 {eta?.distanceText || "—"}
-              </Text>
+              </LCText>
             </View>
           </View>
         </View>
       )}
 
-      {/* Crosshairs (recenter) */}
       <TouchableOpacity
         style={[
           s.locFab,
@@ -1534,7 +1382,6 @@ export default function MapTracking({ route }) {
         />
       </TouchableOpacity>
 
-      {/* Speed bubble – only AFTER Start */}
       {navMode && (
         <View
           style={[
@@ -1542,14 +1389,13 @@ export default function MapTracking({ route }) {
             { bottom: 96 + insets.bottom },
           ]}
         >
-          <Text style={s.speedValue}>
+          <LCText style={s.speedValue}>
             {speedKmh === null ? "--" : String(speedKmh)}
-          </Text>
-          <Text style={s.speedUnit}>km/h</Text>
+          </LCText>
+          <LCText style={s.speedUnit}>km/h</LCText>
         </View>
       )}
 
-      {/* Arrived sheet */}
       {arrivedSheet && (
         <View
           style={[
@@ -1566,15 +1412,15 @@ export default function MapTracking({ route }) {
               />
             </View>
 
-            <Text style={s.arrivedTitle}>
+            <LCText style={s.arrivedTitle}>
               Destination Reached
-            </Text>
-            <Text
+            </LCText>
+            <LCText
               style={s.arrivedPlace}
               numberOfLines={2}
             >
               {cleanPlaceName(dest?.name) || "Destination"}
-            </Text>
+            </LCText>
 
             <View style={s.statsRow}>
               <View style={s.statBox}>
@@ -1583,10 +1429,10 @@ export default function MapTracking({ route }) {
                   size={18}
                   color={C.sub}
                 />
-                <Text style={s.statVal}>
+                <LCText style={s.statVal}>
                   {durationMins} mins
-                </Text>
-                <Text style={s.statLbl}>Duration</Text>
+                </LCText>
+                <LCText style={s.statLbl}>Duration</LCText>
               </View>
               <View style={s.statBox}>
                 <MaterialCommunityIcons
@@ -1594,10 +1440,10 @@ export default function MapTracking({ route }) {
                   size={18}
                   color={C.sub}
                 />
-                <Text style={s.statVal}>
+                <LCText style={s.statVal}>
                   {distanceKm} km
-                </Text>
-                <Text style={s.statLbl}>Distance</Text>
+                </LCText>
+                <LCText style={s.statLbl}>Distance</LCText>
               </View>
               <View style={s.statBox}>
                 <MaterialCommunityIcons
@@ -1605,10 +1451,10 @@ export default function MapTracking({ route }) {
                   size={18}
                   color={C.sub}
                 />
-                <Text style={s.statVal}>
+                <LCText style={s.statVal}>
                   {avgSpeed} km/h
-                </Text>
-                <Text style={s.statLbl}>Avg Speed</Text>
+                </LCText>
+                <LCText style={s.statLbl}>Avg Speed</LCText>
               </View>
             </View>
 
@@ -1621,14 +1467,13 @@ export default function MapTracking({ route }) {
                 }}
                 activeOpacity={0.9}
               >
-                <Text style={s.primaryBtnTxt}>Done</Text>
+                <LCText style={s.primaryBtnTxt}>Done</LCText>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       )}
 
-      {/* Report sheet (MULTI-SELECT) */}
       <Modal
         visible={reportOpen}
         transparent
@@ -1638,7 +1483,7 @@ export default function MapTracking({ route }) {
         <View style={s.sheetOverlay}>
           <View style={s.reportSheet}>
             <View style={s.sheetHeader}>
-              <Text style={s.sheetTitle}>Report Incident</Text>
+              <LCText style={s.sheetTitle}>Report Incident</LCText>
               <TouchableOpacity
                 onPress={() => setReportOpen(false)}
               >
@@ -1650,7 +1495,7 @@ export default function MapTracking({ route }) {
               </TouchableOpacity>
             </View>
 
-            <Text style={s.sheetLabel}>Quick categories</Text>
+            <LCText style={s.sheetLabel}>Quick categories</LCText>
             <View style={s.catWrap}>
               {CATEGORY_OPTIONS.map((cat) => {
                 const active = reportCats.includes(cat);
@@ -1669,24 +1514,24 @@ export default function MapTracking({ route }) {
                       )
                     }
                   >
-                    <Text
+                    <LCText
                       style={[
                         s.catTxt,
                         active && s.catTxtActive,
                       ]}
                     >
                       {cat}
-                    </Text>
+                    </LCText>
                   </TouchableOpacity>
                 );
               })}
             </View>
 
-            <Text
+            <LCText
               style={[s.sheetLabel, { marginTop: 10 }]}
             >
               Notes (optional)
-            </Text>
+            </LCText>
             <RNTextInput
               multiline
               numberOfLines={4}
@@ -1707,7 +1552,7 @@ export default function MapTracking({ route }) {
               disabled={!reportCats.length}
               onPress={submitIncident}
             >
-              <Text style={s.submitTxt}>Submit Report</Text>
+              <LCText style={s.submitTxt}>Submit Report</LCText>
             </TouchableOpacity>
 
             <View style={s.attachInfo}>
@@ -1716,16 +1561,15 @@ export default function MapTracking({ route }) {
                 size={16}
                 color={C.sub}
               />
-              <Text style={s.attachTxt}>
+              <LCText style={s.attachTxt}>
                 Time, GPS, bus/driver and route will be attached
                 automatically.
-              </Text>
+              </LCText>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Street View */}
       <Modal
         visible={showStreet}
         animationType="slide"
@@ -1762,7 +1606,7 @@ export default function MapTracking({ route }) {
                 size={18}
                 color="#fff"
               />
-              <Text
+              <LCText
                 style={{
                   color: "#fff",
                   fontWeight: "800",
@@ -1771,7 +1615,7 @@ export default function MapTracking({ route }) {
               >
                 {cleanPlaceName(dest?.name) ||
                   "Street View"}
-              </Text>
+              </LCText>
             </View>
             <TouchableOpacity
               onPress={() => setShowStreet(false)}
@@ -1814,7 +1658,7 @@ export default function MapTracking({ route }) {
                 padding: 20,
               }}
             >
-              <Text
+              <LCText
                 style={{
                   color: "#fff",
                   textAlign: "center",
@@ -1822,13 +1666,12 @@ export default function MapTracking({ route }) {
               >
                 Set EXPO_PUBLIC_GOOGLE_MAPS_JS_KEY to enable
                 Street View.
-              </Text>
+              </LCText>
             </View>
           )}
         </SafeAreaView>
       </Modal>
 
-      {/* Success toast (incident) */}
       <Modal
         visible={thanksOpen}
         transparent
@@ -1846,10 +1689,10 @@ export default function MapTracking({ route }) {
                 color="#fff"
               />
             </View>
-            <Text style={s.thanksTitle}>Report sent</Text>
-            <Text style={s.thanksMsg}>
+            <LCText style={s.thanksTitle}>Report sent</LCText>
+            <LCText style={s.thanksMsg}>
               Your report has been submitted. Stay safe.
-            </Text>
+            </LCText>
             <TouchableOpacity
               style={s.okBtn}
               onPress={async () => {
@@ -1862,7 +1705,7 @@ export default function MapTracking({ route }) {
                 }
               }}
             >
-              <Text style={s.okTxt}>Continue</Text>
+              <LCText style={s.okTxt}>Continue</LCText>
             </TouchableOpacity>
           </View>
         </View>
@@ -1872,24 +1715,23 @@ export default function MapTracking({ route }) {
         <View
           style={[s.errToast, { bottom: 72 + insets.bottom }]}
         >
-          <Text style={s.errTxt}>{error}</Text>
+          <LCText style={s.errTxt}>{error}</LCText>
         </View>
       )}
     </SafeAreaView>
   );
 }
 
-/* ---------- styles ---------- */
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.page },
-
-  /* pulsing user dot */
   pulse: {
     position: "absolute",
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(37,99,235,0.25)",
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "rgba(37,99,235,0.18)",
+    borderWidth: 1.5,
+    borderColor: "rgba(37,99,235,0.6)",
   },
   blueDot: {
     width: 14,
@@ -1898,9 +1740,8 @@ const s = StyleSheet.create({
     backgroundColor: C.blue,
     borderWidth: 2,
     borderColor: "#fff",
+    position: "absolute",
   },
-
-  /* Search */
   searchWrap: {
     position: "absolute",
     left: 12,
@@ -1950,7 +1791,6 @@ const s = StyleSheet.create({
     marginVertical: 6,
     borderRadius: 999,
   },
-
   row: { paddingHorizontal: 8, paddingVertical: 6 },
   rowLabel: {
     color: C.sub,
@@ -1963,10 +1803,8 @@ const s = StyleSheet.create({
     backgroundColor: C.border,
     marginHorizontal: 8,
   },
-
   inputWrap: { flexDirection: "row", alignItems: "center", gap: 8 },
   input: { flex: 1, color: C.text, paddingVertical: 0, minHeight: 20 },
-
   suggestBox: {
     marginTop: 8,
     borderWidth: 1,
@@ -2000,8 +1838,6 @@ const s = StyleSheet.create({
     borderBottomColor: C.border,
   },
   suggestText: { color: C.text, flex: 1 },
-
-  /* Bottom sheet */
   sheetWrap: {
     position: "absolute",
     left: 12,
@@ -2034,8 +1870,6 @@ const s = StyleSheet.create({
     marginTop: 4,
   },
   sheetSub: { color: C.sub, flex: 1 },
-
-  /* Start button */
   startPill: {
     width: 48,
     height: 48,
@@ -2049,8 +1883,6 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     elevation: 6,
   },
-
-  /* Nav bottom */
   bottomBar: {
     position: "absolute",
     left: 12,
@@ -2076,24 +1908,6 @@ const s = StyleSheet.create({
   },
   arriveEtaTitle: { color: C.sub, fontSize: 12 },
   arriveEtaValue: { color: C.text, fontWeight: "800" },
-
-  /* Sim button */
-  simBtn: {
-    position: "absolute",
-    right: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: C.border,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    elevation: 3,
-  },
-
-  /* FABs */
   locFab: {
     position: "absolute",
     right: 16,
@@ -2108,8 +1922,6 @@ const s = StyleSheet.create({
     elevation: 3,
     zIndex: 15,
   },
-
-  /* Speed bubble (bottom-left) */
   speedBubble: {
     position: "absolute",
     left: 16,
@@ -2135,8 +1947,6 @@ const s = StyleSheet.create({
     marginBottom: 2,
   },
   speedUnit: { fontSize: 12, fontWeight: "700", color: C.sub },
-
-  /* Arrived sheet */
   arrivedWrap: {
     position: "absolute",
     left: 12,
@@ -2181,7 +1991,6 @@ const s = StyleSheet.create({
   },
   statVal: { color: C.text, fontWeight: "800", marginTop: 4 },
   statLbl: { color: C.sub, fontSize: 12 },
-
   arrivedActions: {
     width: "100%",
     flexDirection: "row",
@@ -2201,8 +2010,6 @@ const s = StyleSheet.create({
     elevation: 3,
   },
   primaryBtnTxt: { color: "#fff", fontWeight: "800" },
-
-  /* Shared input / submit styles */
   notes: {
     borderWidth: 1,
     borderColor: C.border,
@@ -2221,8 +2028,6 @@ const s = StyleSheet.create({
     alignItems: "center",
   },
   submitTxt: { color: "#fff", fontWeight: "700" },
-
-  /* Report sheet */
   sheetOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",
@@ -2268,8 +2073,6 @@ const s = StyleSheet.create({
     marginTop: 10,
   },
   attachTxt: { color: C.sub, flex: 1, fontSize: 12 },
-
-  /* Success modal */
   thanksOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",
@@ -2308,8 +2111,6 @@ const s = StyleSheet.create({
     borderRadius: 999,
   },
   okTxt: { color: "#fff", fontWeight: "800" },
-
-  /* Error toast */
   errToast: {
     position: "absolute",
     left: 12,
@@ -2322,4 +2123,3 @@ const s = StyleSheet.create({
   },
   errTxt: { color: "#991B1B", textAlign: "center" },
 });
-

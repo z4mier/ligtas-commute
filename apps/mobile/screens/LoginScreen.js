@@ -2,7 +2,6 @@
 import React, { useState, useMemo, useRef } from "react";
 import {
   View,
-  Text,
   TextInput,
   TouchableOpacity,
   Pressable,
@@ -27,6 +26,7 @@ import {
 } from "@expo-google-fonts/poppins";
 import { StatusBar } from "expo-status-bar";
 import { API_URL } from "../constants/config";
+import LCText from "../components/LCText";
 
 export default function LoginScreen({ navigation }) {
   const [fontsLoaded] = useFonts({
@@ -36,10 +36,10 @@ export default function LoginScreen({ navigation }) {
   });
 
   const { width, height } = useWindowDimensions();
-  const HERO_H = Math.min(height * 0.28, 260);
-  const CIRCLE = Math.max(width * 3.4, 1700);
-  const CURVE_DEPTH = Math.round(HERO_H * 0.9);
-  const ICON = Math.min(100, Math.max(120, HERO_H * 0.9));
+  const HERO_H = Math.min(height * 0.24, 220);
+  const CIRCLE = Math.max(width * 3.2, 1400);
+  const CURVE_DEPTH = Math.round(HERO_H * 0.8);
+  const ICON = Math.min(72, HERO_H * 0.55);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -146,7 +146,6 @@ export default function LoginScreen({ navigation }) {
     <SafeAreaView style={styles.screen} edges={["bottom"]}>
       <StatusBar style="light" translucent backgroundColor="transparent" />
 
-      {/* Curved hero */}
       <View style={[styles.curveHero, { height: HERO_H }]}>
         <View
           style={[
@@ -171,31 +170,42 @@ export default function LoginScreen({ navigation }) {
               tintColor: "#FFFFFF",
             }}
           />
-          <Text style={[styles.brandTitle, styles.f700]}>
-            <Text style={styles.f700}>Ligtas</Text>Commute
-          </Text>
-          <Text style={[styles.subtle, styles.f400]}>
+          <LCText
+            variant="title"
+            style={[styles.brandTitle, styles.f700]}
+          >
+            <LCText variant="title" style={styles.f700}>
+              Ligtas
+            </LCText>
+            Commute
+          </LCText>
+          <LCText variant="tiny" style={[styles.subtle, styles.f400]}>
             Safety that rides with you
-          </Text>
+          </LCText>
         </View>
       </View>
 
-      {/* Login form body */}
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{ flex: 1 }}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
           <ScrollView
-            contentContainerStyle={{ paddingBottom: 28 }}
+            contentContainerStyle={{ paddingBottom: 24 }}
             style={styles.bodyPad}
             keyboardShouldPersistTaps="handled"
           >
-            <Text style={[styles.h2, styles.center, styles.f600]}>Login</Text>
+            <LCText
+              variant="heading"
+              style={[styles.h2, styles.center, styles.f600]}
+            >
+              Login
+            </LCText>
 
-            {/* Email */}
             <View style={styles.fieldBlock}>
-              <Text style={[styles.label, styles.f600]}>Email Address</Text>
+              <LCText variant="label" style={[styles.label, styles.f600]}>
+                Email Address
+              </LCText>
               <View
                 style={[
                   styles.inputWrap,
@@ -204,7 +214,7 @@ export default function LoginScreen({ navigation }) {
               >
                 <MaterialCommunityIcons
                   name="email-outline"
-                  size={20}
+                  size={18}
                   color={errors.email ? "#EF4444" : "#6B7280"}
                   style={styles.leftIcon}
                 />
@@ -226,13 +236,16 @@ export default function LoginScreen({ navigation }) {
                 />
               </View>
               {errors.email ? (
-                <Text style={styles.errorText}>{errors.email}</Text>
+                <LCText variant="tiny" style={styles.errorText}>
+                  {errors.email}
+                </LCText>
               ) : null}
             </View>
 
-            {/* Password */}
             <View style={{ marginBottom: 4 }}>
-              <Text style={[styles.label, styles.f600]}>Password</Text>
+              <LCText variant="label" style={[styles.label, styles.f600]}>
+                Password
+              </LCText>
               <View
                 style={[
                   styles.inputWrap,
@@ -241,7 +254,7 @@ export default function LoginScreen({ navigation }) {
               >
                 <MaterialCommunityIcons
                   name="lock-outline"
-                  size={20}
+                  size={18}
                   color={errors.password ? "#EF4444" : "#6B7280"}
                   style={styles.leftIcon}
                 />
@@ -266,32 +279,39 @@ export default function LoginScreen({ navigation }) {
                 >
                   <Ionicons
                     name={showPassword ? "eye-off-outline" : "eye-outline"}
-                    size={20}
+                    size={18}
                     color="#6B7280"
                   />
                 </TouchableOpacity>
               </View>
               {errors.password ? (
-                <Text style={styles.errorText}>{errors.password}</Text>
+                <LCText variant="tiny" style={styles.errorText}>
+                  {errors.password}
+                </LCText>
               ) : null}
             </View>
 
-            {/* Forgot password link */}
             <View style={styles.forgotRow}>
               <TouchableOpacity
                 onPress={() => navigation.navigate("ForgotPassword")}
                 hitSlop={8}
               >
-                <Text style={[styles.forgotText, styles.f400]}>
+                <LCText
+                  variant="label"
+                  style={[styles.forgotText, styles.f400]}
+                >
                   Forgot password?
-                </Text>
+                </LCText>
               </TouchableOpacity>
             </View>
 
             {errors.general ? (
-              <Text style={[styles.errorText, { marginBottom: 8 }]}>
+              <LCText
+                variant="tiny"
+                style={[styles.errorText, { marginBottom: 6 }]}
+              >
                 {errors.general}
-              </Text>
+              </LCText>
             ) : null}
 
             <TouchableOpacity
@@ -299,28 +319,38 @@ export default function LoginScreen({ navigation }) {
               disabled={disabled || inFlight.current}
               style={[
                 styles.primaryBtn,
-                (disabled || inFlight.current) && { opacity: 0.7 },
+                (disabled || inFlight.current) && { opacity: 0.75 },
               ]}
             >
               {loading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={[styles.primaryBtnText, styles.f600]}>
+                <LCText
+                  variant="label"
+                  style={[styles.primaryBtnText, styles.f600]}
+                >
                   Sign in
-                </Text>
+                </LCText>
               )}
             </TouchableOpacity>
 
-            {/* Footer: Sign up */}
             <View style={styles.footerRow}>
-              <Text style={[styles.smallText, styles.subtle, styles.f400]}>
+              <LCText
+                variant="body"
+                style={[styles.smallText, styles.subtle, styles.f400]}
+              >
                 Don’t have an account?
-              </Text>
+              </LCText>
               <Pressable
                 onPress={() => navigation.navigate("Signup")}
                 hitSlop={8}
               >
-                <Text style={[styles.linkText, styles.f600]}>Sign up</Text>
+                <LCText
+                  variant="label"
+                  style={[styles.linkText, styles.f600]}
+                >
+                  Sign up
+                </LCText>
               </Pressable>
             </View>
           </ScrollView>
@@ -350,7 +380,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  bodyPad: { paddingHorizontal: 20 },
+  bodyPad: { paddingHorizontal: 18 },
   center: { textAlign: "center" },
 
   curveHero: {
@@ -360,23 +390,22 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   curveFill: { position: "absolute", alignSelf: "center" },
-  hero: { alignItems: "center", paddingBottom: 10 },
+  hero: { alignItems: "center", paddingBottom: 8 },
 
   brandTitle: {
     color: "#FFFFFF",
-    fontSize: 30,
-    marginTop: 10,
+    marginTop: 8,
     letterSpacing: 0.3,
   },
-  subtle: { color: "rgba(255,255,255,0.85)", fontSize: 14, marginTop: 4 },
+  subtle: { color: "rgba(255,255,255,0.85)", marginTop: 2 },
 
-  h2: { color: "#FFFFFF", fontSize: 22, marginTop: 8, marginBottom: 16 },
+  h2: { color: "#FFFFFF", marginTop: 6, marginBottom: 14 },
 
-  fieldBlock: { marginBottom: 12 },
-  label: { color: "#FFFFFF", fontSize: 12.5, marginBottom: 6 },
+  fieldBlock: { marginBottom: 10 },
+  label: { color: "#FFFFFF", marginBottom: 5 },
 
   inputWrap: {
-    height: 48,
+    height: 44,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -385,53 +414,52 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   inputError: { borderColor: "#EF4444" },
-  errorText: { color: "#EF4444", fontSize: 12, marginTop: 6 },
+  errorText: { color: "#EF4444", marginTop: 4 },
 
-  leftIcon: { position: "absolute", left: 12, zIndex: 1 },
+  leftIcon: { position: "absolute", left: 10, zIndex: 1 },
   rightIconBtn: { position: "absolute", right: 8, padding: 6 },
 
   input: {
     flex: 1,
     height: "100%",
-    paddingLeft: 44,
-    paddingRight: 40,
-    fontSize: 14.5,
+    paddingLeft: 40,
+    paddingRight: 36,
+    fontSize: 10,
     color: "#0F1B2B",
   },
 
   forgotRow: {
     width: "100%",
     alignItems: "flex-end",
-    marginTop: 4,
+    marginTop: 2,
     marginBottom: 4,
   },
   forgotText: {
-    fontSize: 11.5,
+    fontSize: 10,
     color: "#FFFFFF",
-    textDecorationLine: "none", 
+    textDecorationLine: "none",
   },
 
   primaryBtn: {
-    height: 48,
+    height: 44,
     borderRadius: 10,
     backgroundColor: COLORS.brand,
     alignItems: "center",
     justifyContent: "center",
     marginTop: 8,
   },
-  primaryBtnText: { color: "#FFFFFF", fontSize: 16 },
+  primaryBtnText: { color: "#FFFFFF" },
 
   footerRow: {
     flexDirection: "row",
     justifyContent: "center",
-    alignItems: "center", 
-    marginTop: 16,
+    alignItems: "center",
+    marginTop: 14,
   },
-  smallText: { fontSize: 12.5 },
+  smallText: {},
   linkText: {
     color: COLORS.link,
-    fontSize: 13.5,
-    marginLeft: 4, 
-    textDecorationLine: "none", 
+    marginLeft: 4,
+    textDecorationLine: "none",
   },
 });

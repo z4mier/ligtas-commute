@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "LigtasCommute",
+    "slug": "ligtascommute",
+    "owner": "z4mier",
+    "android": {
+      "package": "com.z4mier.ligtascommute"
+    },
+    "updates": {
+      "enabled": false
+    },
+    "extra": {
+      "eas": {
+        "projectId": "b463af7c-519b-4029-a030-c3502629b963"
+      }
+    }
+  }
+}

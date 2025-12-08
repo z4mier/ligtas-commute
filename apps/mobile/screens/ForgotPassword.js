@@ -2,7 +2,6 @@
 import React, { useState, useRef } from "react";
 import {
   View,
-  Text,
   TextInput,
   TouchableOpacity,
   ScrollView,
@@ -23,8 +22,9 @@ import {
   Poppins_600SemiBold,
   Poppins_700Bold,
 } from "@expo-google-fonts/poppins";
-import { StatusBar } from "expo-status-bar"; // ✅ added
+import { StatusBar } from "expo-status-bar";
 import { API_URL } from "../constants/config";
+import LCText from "../components/LCText";
 
 const COLORS = {
   bgdark: "#0F1B2B",
@@ -42,10 +42,10 @@ export default function ForgotPassword({ navigation }) {
   });
 
   const { width, height } = useWindowDimensions();
-  const HERO_H = Math.min(height * 0.26, 240);
+  const HERO_H = Math.min(height * 0.24, 220);
   const CIRCLE = Math.max(width * 3.4, 1700);
   const CURVE_DEPTH = Math.round(HERO_H * 0.9);
-  const ICON = Math.min(90, Math.max(100, HERO_H * 0.85));
+  const ICON = Math.min(72, HERO_H * 0.6);
 
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
@@ -104,7 +104,6 @@ export default function ForgotPassword({ navigation }) {
         return;
       }
 
-      // ✅ Success
       navigation.navigate("ResetPassword", { email: key });
       return;
     } catch (_e) {
@@ -128,10 +127,8 @@ export default function ForgotPassword({ navigation }) {
 
   return (
     <SafeAreaView style={styles.screen} edges={["bottom"]}>
-      {/* ✅ status bar floats on top of hero */}
       <StatusBar style="light" translucent backgroundColor="transparent" />
 
-      {/* Curved hero */}
       <View style={[styles.curveHero, { height: HERO_H }]}>
         <View
           style={[
@@ -156,38 +153,47 @@ export default function ForgotPassword({ navigation }) {
               tintColor: "#FFFFFF",
             }}
           />
-          <Text style={[styles.brandTitle, styles.f700]}>
-            <Text style={styles.f700}>Ligtas</Text>Commute
-          </Text>
-          <Text style={[styles.subtle, styles.f400]}>
+          <LCText variant="title" style={[styles.brandTitle, styles.f700]}>
+            <LCText variant="title" style={styles.f700}>
+              Ligtas
+            </LCText>
+            Commute
+          </LCText>
+          <LCText variant="tiny" style={[styles.subtle, styles.f400]}>
             Reset your password safely
-          </Text>
+          </LCText>
         </View>
       </View>
 
-      {/* Body */}
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{ flex: 1 }}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
           <ScrollView
-            contentContainerStyle={{ paddingBottom: 28 }}
+            contentContainerStyle={{ paddingBottom: 24 }}
             style={styles.bodyPad}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Header text */}
-            <Text style={[styles.h2, styles.center, styles.f600]}>
+            <LCText
+              variant="heading"
+              style={[styles.h2, styles.center, styles.f600]}
+            >
               Forgot password
-            </Text>
-            <Text style={[styles.infoText, styles.center, styles.f400]}>
+            </LCText>
+
+            <LCText
+              variant="body"
+              style={[styles.infoText, styles.center, styles.f400]}
+            >
               Enter the email associated with your account and we&apos;ll send
               you a 6-digit code to reset your password.
-            </Text>
+            </LCText>
 
-            {/* Email field */}
             <View style={styles.fieldBlock}>
-              <Text style={[styles.label, styles.f600]}>Email Address</Text>
+              <LCText variant="label" style={[styles.label, styles.f600]}>
+                Email Address
+              </LCText>
               <View
                 style={[
                   styles.inputWrap,
@@ -196,7 +202,7 @@ export default function ForgotPassword({ navigation }) {
               >
                 <MaterialCommunityIcons
                   name="email-outline"
-                  size={20}
+                  size={18}
                   color={errors.email ? "#EF4444" : "#6B7280"}
                   style={styles.leftIcon}
                 />
@@ -218,18 +224,21 @@ export default function ForgotPassword({ navigation }) {
                 />
               </View>
               {errors.email ? (
-                <Text style={styles.errorText}>{errors.email}</Text>
+                <LCText variant="tiny" style={styles.errorText}>
+                  {errors.email}
+                </LCText>
               ) : null}
             </View>
 
-            {/* General error */}
             {errors.general ? (
-              <Text style={[styles.errorText, { marginBottom: 8 }]}>
+              <LCText
+                variant="tiny"
+                style={[styles.errorText, { marginBottom: 8 }]}
+              >
                 {errors.general}
-              </Text>
+              </LCText>
             ) : null}
 
-            {/* Submit button */}
             <TouchableOpacity
               onPress={handleSubmit}
               disabled={loading || inFlight.current}
@@ -241,13 +250,12 @@ export default function ForgotPassword({ navigation }) {
               {loading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={[styles.primaryBtnText, styles.f600]}>
+                <LCText variant="label" style={[styles.primaryBtnText, styles.f600]}>
                   Send reset code
-                </Text>
+                </LCText>
               )}
             </TouchableOpacity>
 
-            {/* Back to login */}
             <TouchableOpacity
               onPress={() => navigation.goBack()}
               style={styles.backRow}
@@ -258,9 +266,9 @@ export default function ForgotPassword({ navigation }) {
                 color={COLORS.link}
                 style={{ marginRight: 4 }}
               />
-              <Text style={[styles.backText, styles.f600]}>
+              <LCText variant="label" style={[styles.backText, styles.f600]}>
                 Back to Login
-              </Text>
+              </LCText>
             </TouchableOpacity>
           </ScrollView>
         </TouchableWithoutFeedback>
@@ -281,7 +289,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  bodyPad: { paddingHorizontal: 20 },
+  bodyPad: { paddingHorizontal: 18 },
   center: { textAlign: "center" },
 
   curveHero: {
@@ -291,30 +299,34 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   curveFill: { position: "absolute", alignSelf: "center" },
-  hero: { alignItems: "center", paddingBottom: 10 },
+  hero: { alignItems: "center", paddingBottom: 8 },
 
   brandTitle: {
     color: "#FFFFFF",
-    fontSize: 26,
-    marginTop: 10,
+    fontSize: 22,
+    marginTop: 8,
     letterSpacing: 0.3,
   },
-  subtle: { color: "rgba(255,255,255,0.85)", fontSize: 13, marginTop: 4 },
+  subtle: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 12,
+    marginTop: 3,
+  },
 
-  h2: { color: "#FFFFFF", fontSize: 20, marginTop: 8, marginBottom: 8 },
+  h2: { color: "#FFFFFF", fontSize: 15, marginTop: 8, marginBottom: 8 },
 
   infoText: {
     color: "rgba(255,255,255,0.8)",
-    fontSize: 13,
-    marginBottom: 18,
+    fontSize: 11,
+    marginBottom: 16,
     paddingHorizontal: 4,
   },
 
-  fieldBlock: { marginBottom: 14 },
-  label: { color: "#FFFFFF", fontSize: 12.5, marginBottom: 6 },
+  fieldBlock: { marginBottom: 12 },
+  label: { color: "#FFFFFF", fontSize: 11.5, marginBottom: 4 },
 
   inputWrap: {
-    height: 48,
+    height: 44,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -323,38 +335,38 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   inputError: { borderColor: "#EF4444" },
-  errorText: { color: "#EF4444", fontSize: 12, marginTop: 6 },
+  errorText: { color: "#EF4444", fontSize: 11.5, marginTop: 4 },
 
-  leftIcon: { position: "absolute", left: 12, zIndex: 1 },
+  leftIcon: { position: "absolute", left: 10, zIndex: 1 },
 
   input: {
     flex: 1,
     height: "100%",
-    paddingLeft: 44,
+    paddingLeft: 40,
     paddingRight: 16,
-    fontSize: 14.5,
+    fontSize: 10,
     color: "#0F1B2B",
   },
 
   primaryBtn: {
-    height: 48,
+    height: 44,
     borderRadius: 10,
     backgroundColor: COLORS.brand,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 8,
+    marginTop: 10,
   },
-  primaryBtnText: { color: "#FFFFFF", fontSize: 15 },
+  primaryBtnText: { color: "#FFFFFF", fontSize: 11 },
 
   backRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 16,
+    marginTop: 14,
   },
   backText: {
     color: COLORS.link,
     textDecorationLine: "none",
-    fontSize: 13.5,
+    fontSize: 10,
   },
 });

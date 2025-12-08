@@ -3,7 +3,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import {
   View,
-  Text,
   ScrollView,
   TouchableOpacity,
   StyleSheet,
@@ -23,18 +22,16 @@ import {
 import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL } from "../constants/config";
+import LCText from "../components/LCText";
 
-/* ---------- Storage keys for local badges ---------- */
 const STORAGE_KEYS = {
   ratingLastSeen: "DRIVER_RATING_LAST_SEEN_COUNT",
   reportLastSeen: "DRIVER_REPORT_LAST_SEEN_COUNT",
   tripLastSeen: "DRIVER_TRIP_LAST_SEEN_COUNT",
 };
 
-/* ---------- Storage key for trip history ---------- */
 const TRIP_HISTORY_KEY = "driverTrips";
 
-/* ---------- Colors ---------- */
 const C = {
   bg: "#F3F4F6",
   card: "#FFFFFF",
@@ -47,7 +44,6 @@ const C = {
   success: "#10B981",
 };
 
-/* ---------- Tiny helpers ---------- */
 const QuickBox = ({
   icon,
   title,
@@ -99,9 +95,9 @@ const QuickBox = ({
     >
       {hasBadge && (
         <View style={styles.badge}>
-          <Text style={styles.badgeText}>
+          <LCText style={styles.badgeText}>
             {badgeCount > 99 ? "99+" : badgeCount}
-          </Text>
+          </LCText>
         </View>
       )}
 
@@ -113,22 +109,23 @@ const QuickBox = ({
       >
         <MaterialCommunityIcons name={icon} size={20} color={iconColor} />
       </View>
-      <Text
+
+      <LCText
         style={[styles.quickBoxTitle, { color: titleColor }]}
         numberOfLines={1}
       >
         {title}
-      </Text>
+      </LCText>
+
       {!!subtitle && (
-        <Text style={styles.quickBoxSubtitle} numberOfLines={2}>
+        <LCText style={styles.quickBoxSubtitle} numberOfLines={2}>
           {subtitle}
-        </Text>
+        </LCText>
       )}
     </TouchableOpacity>
   );
 };
 
-/* ---------- Route label builder ---------- */
 function buildLoopRouteLabel(forward, back) {
   if (!forward && !back) return null;
 
@@ -152,17 +149,15 @@ function buildLoopRouteLabel(forward, back) {
   return seq.join(" → ");
 }
 
-/* ---------- Helper: ensure avatar URL is absolute ---------- */
 function buildAbsoluteAvatarUrl(raw) {
   if (!raw) return null;
-  if (/^https?:\/\//i.test(raw)) return raw; // already absolute
+  if (/^https?:\/\//i.test(raw)) return raw; 
 
   const base = (API_URL || "").replace(/\/+$/, "");
   const path = raw.startsWith("/") ? raw : `/${raw}`;
   return `${base}${path}`;
 }
 
-/* ---------- Helper: pick first non-empty field ---------- */
 function pick(obj, keys) {
   for (const k of keys) {
     const v = obj?.[k];
@@ -198,11 +193,9 @@ export default function DriverDashboard({ navigation }) {
 
   const [refreshing, setRefreshing] = useState(false);
 
-  // duty status – synced with API (/driver/duty)
   const [isOnDuty, setIsOnDuty] = useState(false);
   const [dutyUpdating, setDutyUpdating] = useState(false);
 
-  // bus + route info for header
   const [busInfo, setBusInfo] = useState({
     number: null,
     plate: null,
@@ -210,7 +203,6 @@ export default function DriverDashboard({ navigation }) {
     presetDest: null,
   });
 
-  // current trip session (local for now)
   const [currentTrip, setCurrentTrip] = useState(null);
 
   const reload = useCallback(async () => {
@@ -225,7 +217,6 @@ export default function DriverDashboard({ navigation }) {
         Authorization: token ? `Bearer ${token}` : "",
       };
 
-      /* -------- ratings (with unread badge) -------- */
       try {
         const res = await fetch(`${API_URL}/driver/ratings`, { headers });
         const data = await res.json().catch(() => ({}));
@@ -250,7 +241,6 @@ export default function DriverDashboard({ navigation }) {
         setRatingUnread(0);
       }
 
-      /* -------- reports (with unread badge) -------- */
       try {
         const res = await fetch(`${API_URL}/driver/reports`, { headers });
         const data = await res.json().catch(() => ({}));
@@ -276,7 +266,6 @@ export default function DriverDashboard({ navigation }) {
         setReportUnread(0);
       }
 
-      /* -------- trip history (local) with unread badge -------- */
       try {
         const raw = await AsyncStorage.getItem(TRIP_HISTORY_KEY);
         const arr = raw ? JSON.parse(raw) : [];
@@ -293,9 +282,7 @@ export default function DriverDashboard({ navigation }) {
         setTripUnread(0);
       }
 
-      /* -------- profile / name + bus + route for header + duty -------- */
       try {
-        // MAIN SOURCE – same as old working version
         const r = await fetch(`${API_URL}/users/me`, { headers });
         if (!r.ok) {
           console.log("[DriverDashboard] /users/me not ok", r.status);
@@ -306,7 +293,6 @@ export default function DriverDashboard({ navigation }) {
         const driverProfileFromUser =
           profileData.driver || profileData.driverProfile || {};
 
-        // OPTIONAL extra calls just to help with avatar (non-breaking)
         let extraDriver = {};
         try {
           const r1 = await fetch(`${API_URL}/driver/profile`, { headers });
@@ -327,15 +313,12 @@ export default function DriverDashboard({ navigation }) {
 
         const mergedDriver = {
           ...extraDriver,
-          ...driverProfileFromUser, // prefer the attached driver on the user
+          ...driverProfileFromUser,
         };
 
         const fullName =
-          mergedDriver.fullName ||
-          profileData.fullName ||
-          "Driver";
+          mergedDriver.fullName || profileData.fullName || "Driver";
 
-        // AVATAR – combine all possible fields from mergedDriver + profileData
         const rawAvatar =
           pick(mergedDriver, [
             "profileUrl",
@@ -353,20 +336,13 @@ export default function DriverDashboard({ navigation }) {
           ]) ??
           null;
 
-        const email =
-          profileData.email ||
-          mergedDriver.email ||
-          "";
-        const phone =
-          profileData.phone ||
-          mergedDriver.phone ||
-          "";
+        const email = profileData.email || mergedDriver.email || "";
+        const phone = profileData.phone || mergedDriver.phone || "";
 
         const avatar = buildAbsoluteAvatarUrl(rawAvatar);
 
         setDriver({ fullName, avatar, email, phone });
 
-        // driver id – keep old behavior
         setDriverId(
           driverProfileFromUser.driverId ||
             driverProfileFromUser.id ||
@@ -375,19 +351,16 @@ export default function DriverDashboard({ navigation }) {
             null
         );
 
-        // duty status – same as before, but with fallback to mergedDriver
-        const rawStatus =
-          (driverProfileFromUser.status ||
-            mergedDriver.status ||
-            ""
-          ).toUpperCase();
+        const rawStatus = (
+          driverProfileFromUser.status ||
+          mergedDriver.status ||
+          ""
+        ).toUpperCase();
         const onDutyFromApi =
           rawStatus === "ON_DUTY" || rawStatus === "ACTIVE";
         setIsOnDuty(onDutyFromApi);
 
-        // BUS + ROUTE – EXACTLY same logic as old version
-        const bus =
-          driverProfileFromUser.bus || profileData.bus || null;
+        const bus = driverProfileFromUser.bus || profileData.bus || null;
 
         let number = null;
         let plate = null;
@@ -472,8 +445,6 @@ export default function DriverDashboard({ navigation }) {
     setRefreshing(false);
   }, [reload]);
 
-  /* ---------- Duty handlers (with confirmation + API) ---------- */
-
   const updateDutyOnServer = async (nextStatusBool) => {
     if (dutyUpdating) return;
     setDutyUpdating(true);
@@ -541,8 +512,6 @@ export default function DriverDashboard({ navigation }) {
     );
   };
 
-  /* ---------- Trip handlers (local, history saved from DriverTracking) ---------- */
-
   const startTripSession = () => {
     if (!busInfo.routeLabel) {
       Alert.alert("No route", "Ask the admin to set up your bus route first.");
@@ -599,8 +568,6 @@ export default function DriverDashboard({ navigation }) {
       startTripSession();
     }
   };
-
-  /* ---------- Open reports / ratings / trips (clear badges) ---------- */
 
   const openReports = async () => {
     try {
@@ -684,7 +651,6 @@ export default function DriverDashboard({ navigation }) {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
         >
-          {/* Header Card – profile + bus/route */}
           <View style={styles.headerCard}>
             <View style={styles.headerRow}>
               <View style={styles.headerLeft}>
@@ -695,79 +661,81 @@ export default function DriverDashboard({ navigation }) {
                       style={styles.avatarImg}
                     />
                   ) : (
-                    <Text style={styles.avatarLetter}>
+                    <LCText style={styles.avatarLetter}>
                       {(driver?.fullName?.[0] || "D").toUpperCase()}
-                    </Text>
+                    </LCText>
                   )}
                 </View>
 
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.driverName} numberOfLines={1}>
+                  <LCText style={styles.driverName} numberOfLines={1}>
                     {driver?.fullName || "—"}
-                  </Text>
+                  </LCText>
 
-                  <Text style={styles.busLine} numberOfLines={1}>
+                  <LCText style={styles.busLine} numberOfLines={1}>
                     {busLine}
-                  </Text>
+                  </LCText>
 
-                  <Text style={styles.routeLine} numberOfLines={2}>
+                  <LCText style={styles.routeLine} numberOfLines={2}>
                     {routeLine}
-                  </Text>
+                  </LCText>
                 </View>
               </View>
             </View>
           </View>
 
-          {/* Live Status Section */}
           <View style={styles.section}>
             <View style={styles.sectionHead}>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
                 <MaterialCommunityIcons name="radar" size={18} color={C.text} />
-                <Text style={styles.sectionTitle}>  Live status</Text>
+                <LCText style={styles.sectionTitle}>  Live status</LCText>
               </View>
             </View>
 
             <View style={styles.liveCard}>
-              {/* OFF DUTY */}
+
               {!isOnDuty && (
                 <>
-                  <Text style={styles.liveLabel}>You are OFF duty</Text>
-                  <Text
+                  <LCText style={styles.liveLabel}>You are OFF duty</LCText>
+                  <LCText
                     style={[styles.liveMeta, { marginLeft: 0, marginTop: 4 }]}
                   >
                     Tap{" "}
-                    <Text style={{ fontWeight: "600" }}>"Start duty"</Text> below
-                    to make yourself available for trips.
-                  </Text>
+                    <LCText style={{ fontWeight: "600" }}>
+                      "Start duty"
+                    </LCText>{" "}
+                    below to make yourself available for trips.
+                  </LCText>
                 </>
               )}
 
-              {/* ON DUTY, NO ACTIVE TRIP */}
               {isOnDuty && !hasActiveTrip && (
                 <>
                   <View style={styles.dutyPill}>
                     <View style={styles.dutyDot} />
-                    <Text style={styles.dutyPillText}>On duty</Text>
+                    <LCText style={styles.dutyPillText}>On duty</LCText>
                   </View>
 
-                  <Text
+                  <LCText
                     style={[styles.liveMeta, { marginLeft: 0, marginTop: 8 }]}
                   >
                     You are available for trips.
-                  </Text>
+                  </LCText>
 
                   {routeLine !== "Route not set" && (
-                    <Text
-                      style={[styles.liveMeta, { marginLeft: 0, marginTop: 2 }]}
+                    <LCText
+                      style={[
+                        styles.liveMeta,
+                        { marginLeft: 0, marginTop: 2 },
+                      ]}
                       numberOfLines={2}
                     >
                       Route: {routeLine}
-                    </Text>
+                    </LCText>
                   )}
                 </>
               )}
 
-              {/* ACTIVE TRIP */}
               {isOnDuty && hasActiveTrip && (
                 <>
                   <View
@@ -782,30 +750,29 @@ export default function DriverDashboard({ navigation }) {
                       color={C.brand}
                       style={{ marginRight: 6 }}
                     />
-                    <Text
+                    <LCText
                       style={[styles.dutyPillText, { color: C.brand }]}
                     >
                       Trip in progress
-                    </Text>
+                    </LCText>
                   </View>
 
-                  <Text
+                  <LCText
                     style={[styles.liveMeta, { marginLeft: 0, marginTop: 8 }]}
                   >
                     {currentTrip.routeLabel || routeLine || "Route not set"}
-                  </Text>
+                  </LCText>
 
-                  <Text
+                  <LCText
                     style={[styles.liveMeta, { marginLeft: 0, marginTop: 2 }]}
                   >
                     Keep the app open while driving so tracking stays accurate.
-                  </Text>
+                  </LCText>
                 </>
               )}
             </View>
           </View>
 
-          {/* Quick Actions Grid */}
           <View style={styles.section}>
             <View style={styles.sectionHead}>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -814,7 +781,7 @@ export default function DriverDashboard({ navigation }) {
                   size={18}
                   color={C.text}
                 />
-                <Text style={styles.sectionTitle}>  Quick actions</Text>
+                <LCText style={styles.sectionTitle}>  Quick actions</LCText>
               </View>
               {loading || dutyUpdating ? (
                 <ActivityIndicator size="small" color={C.sub} />
@@ -822,7 +789,6 @@ export default function DriverDashboard({ navigation }) {
             </View>
 
             <View style={styles.quickGrid}>
-              {/* 1. Start / End Duty */}
               <QuickBox
                 icon={isOnDuty ? "power" : "play-circle-outline"}
                 title={isOnDuty ? "End duty" : "Start duty"}
@@ -835,7 +801,6 @@ export default function DriverDashboard({ navigation }) {
                 onPress={() => confirmDutyChange(!isOnDuty)}
               />
 
-              {/* 2. Start / End Trip */}
               <QuickBox
                 icon={
                   hasActiveTrip ? "stop-circle-outline" : "navigation-variant"
@@ -852,25 +817,21 @@ export default function DriverDashboard({ navigation }) {
                 onPress={handleTripAction}
               />
 
-              {/* 3. Passenger Reports (with badge) */}
               <QuickBox
                 icon="alert-circle-outline"
-                title="Passenger reports"
+                title="Reports"
                 subtitle="View issues reported by commuters"
                 onPress={openReports}
                 badgeCount={reportUnread}
               />
 
-              {/* 4. Trip History (with badge) */}
               <QuickBox
                 icon="history"
-                title="Trip history"
+                title="Trip History"
                 subtitle="View completed trips"
                 onPress={openTripHistory}
                 badgeCount={tripUnread}
               />
-
-              {/* 5. Ratings (with badge) */}
               <QuickBox
                 icon="star-circle-outline"
                 title="Ratings"
@@ -878,8 +839,6 @@ export default function DriverDashboard({ navigation }) {
                 onPress={openRatings}
                 badgeCount={ratingUnread}
               />
-
-              {/* 6. Profile Settings */}
               <QuickBox
                 icon="account-circle-outline"
                 title="Profile"
@@ -894,7 +853,6 @@ export default function DriverDashboard({ navigation }) {
   );
 }
 
-/* ---------- Styles ---------- */
 const styles = StyleSheet.create({
   safe: { flex: 1 },
 

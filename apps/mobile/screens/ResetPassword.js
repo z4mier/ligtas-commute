@@ -2,7 +2,6 @@
 import React, { useState, useRef } from "react";
 import {
   View,
-  Text,
   TextInput,
   TouchableOpacity,
   ScrollView,
@@ -23,8 +22,9 @@ import {
   Poppins_600SemiBold,
   Poppins_700Bold,
 } from "@expo-google-fonts/poppins";
-import { StatusBar } from "expo-status-bar"; // ✅ added
+import { StatusBar } from "expo-status-bar";
 import { API_URL } from "../constants/config";
+import LCText from "../components/LCText";
 
 const COLORS = {
   bgdark: "#0F1B2B",
@@ -56,15 +56,14 @@ export default function ResetPassword({ navigation, route }) {
   const [success, setSuccess] = useState(false);
   const inFlight = useRef(false);
 
-  // 👁️ Show / hide password toggles
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
   const { width, height } = useWindowDimensions();
-  const HERO_H = Math.min(height * 0.26, 240);
+  const HERO_H = Math.min(height * 0.24, 220);
   const CIRCLE = Math.max(width * 3.4, 1700);
   const CURVE_DEPTH = Math.round(HERO_H * 0.9);
-  const ICON = Math.min(90, Math.max(100, HERO_H * 0.85));
+  const ICON = Math.min(70, Math.max(72, HERO_H * 0.8)); // keeping your original logic
 
   function validate() {
     const e = {};
@@ -133,7 +132,6 @@ export default function ResetPassword({ navigation, route }) {
         return;
       }
 
-      // ✅ Success
       setSuccess(true);
       setErrors({
         code: undefined,
@@ -169,10 +167,8 @@ export default function ResetPassword({ navigation, route }) {
 
   return (
     <SafeAreaView style={styles.screen} edges={["bottom"]}>
-      {/* ✅ Status bar over hero */}
       <StatusBar style="light" translucent backgroundColor="transparent" />
 
-      {/* Curved hero */}
       <View style={[styles.curveHero, { height: HERO_H }]}>
         <View
           style={[
@@ -197,38 +193,53 @@ export default function ResetPassword({ navigation, route }) {
               tintColor: "#FFFFFF",
             }}
           />
-          <Text style={[styles.brandTitle, styles.f700]}>
-            <Text style={styles.f700}>Ligtas</Text>Commute
-          </Text>
-          <Text style={[styles.subtle, styles.f400]}>
+          <LCText variant="title" style={[styles.brandTitle, styles.f700]}>
+            <LCText variant="title" style={styles.f700}>
+              Ligtas
+            </LCText>
+            Commute
+          </LCText>
+          <LCText variant="tiny" style={[styles.subtle, styles.f400]}>
             Set a new password for your account
-          </Text>
+          </LCText>
         </View>
       </View>
 
-      {/* Body */}
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{ flex: 1 }}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
           <ScrollView
-            contentContainerStyle={{ paddingBottom: 28 }}
+            contentContainerStyle={{ paddingBottom: 24 }}
             style={styles.bodyPad}
             keyboardShouldPersistTaps="handled"
           >
-            <Text style={[styles.h2, styles.center, styles.f600]}>
+            <LCText
+              variant="heading"
+              style={[styles.h2, styles.center, styles.f600]}
+            >
               Enter reset code
-            </Text>
-            <Text style={[styles.infoText, styles.center, styles.f400]}>
-              We sent a 6-digit code to{" "}
-              <Text style={{ fontWeight: "600" }}>{routeEmail}</Text>. Enter the
-              code and choose a new password.
-            </Text>
+            </LCText>
 
-            {/* Code */}
+            <LCText
+              variant="body"
+              style={[styles.infoText, styles.center, styles.f400]}
+            >
+              We sent a 6-digit code to{" "}
+              <LCText
+                variant="body"
+                style={{ fontWeight: "600" }}
+              >
+                {routeEmail}
+              </LCText>
+              . Enter the code and choose a new password.
+            </LCText>
+
             <View style={styles.fieldBlock}>
-              <Text style={[styles.label, styles.f600]}>Reset code</Text>
+              <LCText variant="label" style={[styles.label, styles.f600]}>
+                Reset code
+              </LCText>
               <View
                 style={[
                   styles.inputWrap,
@@ -237,7 +248,7 @@ export default function ResetPassword({ navigation, route }) {
               >
                 <MaterialCommunityIcons
                   name="shield-key-outline"
-                  size={20}
+                  size={18}
                   color={errors.code ? "#EF4444" : "#6B7280"}
                   style={styles.leftIcon}
                 />
@@ -259,13 +270,16 @@ export default function ResetPassword({ navigation, route }) {
                 />
               </View>
               {errors.code ? (
-                <Text style={styles.errorText}>{errors.code}</Text>
+                <LCText variant="tiny" style={styles.errorText}>
+                  {errors.code}
+                </LCText>
               ) : null}
             </View>
 
-            {/* New password */}
             <View style={styles.fieldBlock}>
-              <Text style={[styles.label, styles.f600]}>New password</Text>
+              <LCText variant="label" style={[styles.label, styles.f600]}>
+                New password
+              </LCText>
               <View
                 style={[
                   styles.inputWrap,
@@ -274,7 +288,7 @@ export default function ResetPassword({ navigation, route }) {
               >
                 <MaterialCommunityIcons
                   name="lock-outline"
-                  size={20}
+                  size={18}
                   color={errors.password ? "#EF4444" : "#6B7280"}
                   style={styles.leftIcon}
                 />
@@ -300,21 +314,22 @@ export default function ResetPassword({ navigation, route }) {
                 >
                   <Ionicons
                     name={showPassword ? "eye-off-outline" : "eye-outline"}
-                    size={20}
+                    size={18}
                     color="#6B7280"
                   />
                 </TouchableOpacity>
               </View>
               {errors.password ? (
-                <Text style={styles.errorText}>{errors.password}</Text>
+                <LCText variant="tiny" style={styles.errorText}>
+                  {errors.password}
+                </LCText>
               ) : null}
             </View>
 
-            {/* Confirm password */}
             <View style={styles.fieldBlock}>
-              <Text style={[styles.label, styles.f600]}>
+              <LCText variant="label" style={[styles.label, styles.f600]}>
                 Confirm password
-              </Text>
+              </LCText>
               <View
                 style={[
                   styles.inputWrap,
@@ -323,7 +338,7 @@ export default function ResetPassword({ navigation, route }) {
               >
                 <MaterialCommunityIcons
                   name="lock-check-outline"
-                  size={20}
+                  size={18}
                   color={errors.confirm ? "#EF4444" : "#6B7280"}
                   style={styles.leftIcon}
                 />
@@ -349,35 +364,37 @@ export default function ResetPassword({ navigation, route }) {
                 >
                   <Ionicons
                     name={showConfirm ? "eye-off-outline" : "eye-outline"}
-                    size={20}
+                    size={18}
                     color="#6B7280"
                   />
                 </TouchableOpacity>
               </View>
               {errors.confirm ? (
-                <Text style={styles.errorText}>{errors.confirm}</Text>
+                <LCText variant="tiny" style={styles.errorText}>
+                  {errors.confirm}
+                </LCText>
               ) : null}
             </View>
 
-            {/* General error */}
             {errors.general ? (
-              <Text style={[styles.errorText, { marginBottom: 8 }]}>
+              <LCText
+                variant="tiny"
+                style={[styles.errorText, { marginBottom: 8 }]}
+              >
                 {errors.general}
-              </Text>
+              </LCText>
             ) : null}
 
-            {/* Success */}
             {success && !errors.general ? (
               <View style={styles.successBox}>
                 <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-                <Text style={[styles.successText, styles.f400]}>
+                <LCText variant="tiny" style={[styles.successText, styles.f400]}>
                   Password updated successfully. You can now log in with your
                   new password.
-                </Text>
+                </LCText>
               </View>
             ) : null}
 
-            {/* Submit button */}
             <TouchableOpacity
               onPress={handleReset}
               disabled={loading || inFlight.current || redirecting}
@@ -391,13 +408,12 @@ export default function ResetPassword({ navigation, route }) {
               {loading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={[styles.primaryBtnText, styles.f600]}>
+                <LCText variant="label" style={[styles.primaryBtnText, styles.f600]}>
                   Reset password
-                </Text>
+                </LCText>
               )}
             </TouchableOpacity>
 
-            {/* Back to login */}
             <TouchableOpacity
               onPress={() =>
                 navigation.reset({ index: 0, routes: [{ name: "Login" }] })
@@ -410,9 +426,9 @@ export default function ResetPassword({ navigation, route }) {
                 color={COLORS.link}
                 style={{ marginRight: 4 }}
               />
-              <Text style={[styles.backText, styles.f600]}>
+              <LCText variant="label" style={[styles.backText, styles.f600]}>
                 Back to Login
-              </Text>
+              </LCText>
             </TouchableOpacity>
           </ScrollView>
         </TouchableWithoutFeedback>
@@ -433,7 +449,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  bodyPad: { paddingHorizontal: 20 },
+  bodyPad: { paddingHorizontal: 18 },
   center: { textAlign: "center" },
 
   curveHero: {
@@ -443,30 +459,34 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   curveFill: { position: "absolute", alignSelf: "center" },
-  hero: { alignItems: "center", paddingBottom: 10 },
+  hero: { alignItems: "center", paddingBottom: 8 },
 
   brandTitle: {
     color: "#FFFFFF",
-    fontSize: 26,
-    marginTop: 10,
+    fontSize: 20,
+    marginTop: 8,
     letterSpacing: 0.3,
   },
-  subtle: { color: "rgba(255,255,255,0.85)", fontSize: 13, marginTop: 4 },
+  subtle: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 10,
+    marginTop: 3,
+  },
 
-  h2: { color: "#FFFFFF", fontSize: 20, marginTop: 8, marginBottom: 8 },
+  h2: { color: "#FFFFFF", fontSize: 13, marginTop: 8, marginBottom: 8 },
 
   infoText: {
     color: "rgba(255,255,255,0.8)",
-    fontSize: 13,
-    marginBottom: 18,
+    fontSize: 10,
+    marginBottom: 16,
     paddingHorizontal: 4,
   },
 
-  fieldBlock: { marginBottom: 14 },
-  label: { color: "#FFFFFF", fontSize: 12.5, marginBottom: 6 },
+  fieldBlock: { marginBottom: 12 },
+  label: { color: "#FFFFFF", fontSize: 11.5, marginBottom: 4 },
 
   inputWrap: {
-    height: 48,
+    height: 44,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -475,40 +495,40 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   inputError: { borderColor: "#EF4444" },
-  errorText: { color: "#EF4444", fontSize: 12, marginTop: 6 },
+  errorText: { color: "#EF4444", fontSize: 11.5, marginTop: 4 },
 
-  leftIcon: { position: "absolute", left: 12, zIndex: 1 },
-  rightIcon: { position: "absolute", right: 12, zIndex: 1 },
+  leftIcon: { position: "absolute", left: 10, zIndex: 1 },
+  rightIcon: { position: "absolute", right: 10, zIndex: 1 },
 
   input: {
     flex: 1,
     height: "100%",
-    paddingLeft: 44,
-    paddingRight: 44,
-    fontSize: 14.5,
+    paddingLeft: 40,
+    paddingRight: 40,
+    fontSize: 10,
     color: "#0F1B2B",
   },
 
   primaryBtn: {
-    height: 48,
+    height: 44,
     borderRadius: 10,
     backgroundColor: COLORS.brand,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 8,
+    marginTop: 10,
   },
-  primaryBtnText: { color: "#FFFFFF", fontSize: 15 },
+  primaryBtnText: { color: "#FFFFFF", fontSize: 11 },
 
   backRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 16,
+    marginTop: 14,
   },
   backText: {
     color: COLORS.link,
     textDecorationLine: "none",
-    fontSize: 13.5,
+    fontSize: 10,
   },
 
   successBox: {
@@ -525,7 +545,7 @@ const styles = StyleSheet.create({
   },
   successText: {
     color: "#D1FAE5",
-    fontSize: 12,
+    fontSize: 11,
     flex: 1,
   },
 });

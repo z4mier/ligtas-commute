@@ -8,7 +8,6 @@ import React, {
 } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
@@ -28,6 +27,7 @@ import {
   Poppins_700Bold,
 } from "@expo-google-fonts/poppins";
 import { API_URL } from "../constants/config";
+import LCText from "../components/LCText";
 
 const C = {
   bg: "#F3F4F6",
@@ -44,7 +44,6 @@ const C = {
 
 const HEADER_H = 48;
 
-/** Try reading token from various keys & shapes */
 async function getAuthToken() {
   const tokenKeys = [
     "authToken",
@@ -98,7 +97,6 @@ async function getAuthToken() {
   return null;
 }
 
-/* --------- helper: make route pretty like "SBT — Santander / Lilo-an Port — SBT" --------- */
 function prettyRouteLabel(forward, back, rawLabel) {
   if (rawLabel && String(rawLabel).trim()) return String(rawLabel).trim();
 
@@ -136,7 +134,6 @@ function prettyRouteLabel(forward, back, rawLabel) {
   return `${f} — ${r}`;
 }
 
-/** Friendlier message for invalid QR errors */
 function prettyScanError(raw) {
   if (!raw) {
     return "We couldn’t read this QR code. Please try again.";
@@ -159,7 +156,6 @@ function prettyScanError(raw) {
   return raw;
 }
 
-/** Build absolute avatar URL */
 function buildAvatarUrl(raw) {
   if (!raw) return null;
   if (/^https?:\/\//i.test(raw)) return raw;
@@ -198,7 +194,6 @@ export default function BusScanner({ navigation }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [permission]);
 
-  /** Reset scanning */
   const resetScan = useCallback(() => {
     scanLock.current = false;
     setScanning(true);
@@ -206,7 +201,6 @@ export default function BusScanner({ navigation }) {
     setErrorModalVisible(false);
   }, []);
 
-  /** Close screen */
   const closeAndBack = useCallback(() => {
     setInfoOpen(false);
     setDriver(null);
@@ -245,7 +239,6 @@ export default function BusScanner({ navigation }) {
     return t;
   };
 
-  /** Build driver object from API response */
   const normalizeDriverFromApi = (out) => {
     const driverProfileId =
       out.driverProfileId ?? out.driverId ?? out.id ?? out.profileId ?? null;
@@ -286,7 +279,6 @@ export default function BusScanner({ navigation }) {
       status === "ON_DUTY" ??
       false;
 
-    // 🔥 Normalize avatar to ABSOLUTE URL here
     const rawAvatar =
       out.driverAvatar ??
       out.profileUrl ??
@@ -332,7 +324,6 @@ export default function BusScanner({ navigation }) {
     };
   };
 
-  /** MAIN HANDLER FOR SCANNED PAYLOAD (BUS QR) */
   const handlePayload = async (data) => {
     try {
       console.log("[BusScanner] scanned data =", data);
@@ -389,7 +380,6 @@ export default function BusScanner({ navigation }) {
     }
   };
 
-  /** Camera callback */
   const onBarcodeScanned = ({ data }) => {
     if (!scanning || scanLock.current || infoOpen) return;
 
@@ -423,10 +413,6 @@ export default function BusScanner({ navigation }) {
     );
   }, [driver]);
 
-  /** =============================
-   *   PERMISSION / LOADING STATES
-   *  ============================= */
-
   if (!fontsLoaded) {
     return (
       <SafeAreaView style={[s.screen, s.center]}>
@@ -439,7 +425,9 @@ export default function BusScanner({ navigation }) {
     return (
       <SafeAreaView style={[s.screen, s.center]}>
         <MaterialCommunityIcons name="web" size={34} color={C.hint} />
-        <Text style={[s.hint, s.f400]}>Camera not available on web</Text>
+        <LCText variant="tiny" style={[s.hint, s.f400]}>
+          Camera not available on web
+        </LCText>
       </SafeAreaView>
     );
   }
@@ -448,7 +436,9 @@ export default function BusScanner({ navigation }) {
     return (
       <SafeAreaView style={[s.screen, s.center]}>
         <ActivityIndicator />
-        <Text style={[s.hint, s.f400]}>Requesting camera permission…</Text>
+        <LCText variant="tiny" style={[s.hint, s.f400]}>
+          Requesting camera permission…
+        </LCText>
       </SafeAreaView>
     );
   }
@@ -456,23 +446,22 @@ export default function BusScanner({ navigation }) {
   if (!hasPermission) {
     return (
       <SafeAreaView style={[s.screen, s.center]}>
-        <Text style={[s.hint, s.f400]}>Camera permission required</Text>
+        <LCText variant="tiny" style={[s.hint, s.f400]}>
+          Camera permission required
+        </LCText>
         <TouchableOpacity style={s.primaryBtn} onPress={requestPermission}>
-          <Text style={[s.primaryBtnTxt, s.f600]}>Enable</Text>
+          <LCText variant="label" style={[s.primaryBtnTxt, s.f600]}>
+            Enable
+          </LCText>
         </TouchableOpacity>
       </SafeAreaView>
     );
   }
 
-  /** =============================
-   *        MAIN UI
-   *  ============================= */
-
   return (
     <SafeAreaView style={s.screen}>
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
-      {/* HEADER */}
       <View
         style={[
           s.topBar,
@@ -482,11 +471,12 @@ export default function BusScanner({ navigation }) {
         <TouchableOpacity style={s.iconBtn} onPress={closeAndBack}>
           <MaterialCommunityIcons name="arrow-left" size={22} color={C.text} />
         </TouchableOpacity>
-        <Text style={[s.topTitle, s.f600]}>Scan Bus QR</Text>
+        <LCText variant="label" style={[s.topTitle, s.f600]}>
+          Scan Bus QR
+        </LCText>
         <View style={{ width: 36 }} />
       </View>
 
-      {/* CAMERA */}
       <View style={s.cameraWrap}>
         {scanning ? (
           <CameraView
@@ -500,9 +490,12 @@ export default function BusScanner({ navigation }) {
             {loadingLookup ? (
               <>
                 <ActivityIndicator />
-                <Text style={[s.hint, s.f400, { marginTop: 8 }]}>
+                <LCText
+                  variant="tiny"
+                  style={[s.hint, s.f400, { marginTop: 8 }]}
+                >
                   Looking up driver and bus…
-                </Text>
+                </LCText>
               </>
             ) : (
               <>
@@ -511,7 +504,8 @@ export default function BusScanner({ navigation }) {
                   size={34}
                   color={C.hint}
                 />
-                <Text
+                <LCText
+                  variant="tiny"
                   style={[
                     s.hint,
                     s.f400,
@@ -519,30 +513,29 @@ export default function BusScanner({ navigation }) {
                   ]}
                 >
                   {errorModalVisible ? "" : error || "Processing…"}
-                </Text>
+                </LCText>
               </>
             )}
           </View>
         )}
 
-        {/* Scan frame */}
         <View pointerEvents="none" style={s.overlay}>
           <View style={s.frame} />
-          <Text style={[s.overlayHint, s.f400]}>
+          <LCText variant="tiny" style={[s.overlayHint, s.f400]}>
             Align QR inside the frame
-          </Text>
+          </LCText>
         </View>
       </View>
 
-      {/* RESCAN BUTTON (manual) */}
       <View style={[s.actionsRow, { paddingBottom: 14 + insets.bottom }]}>
         <TouchableOpacity style={s.secondaryBtn} onPress={resetScan}>
           <MaterialCommunityIcons name="reload" size={18} color={C.brand} />
-          <Text style={[s.secondaryBtnTxt, s.f600]}>Rescan</Text>
+          <LCText variant="label" style={[s.secondaryBtnTxt, s.f600]}>
+            Rescan
+          </LCText>
         </TouchableOpacity>
       </View>
 
-      {/* DRIVER + BUS INFO MODAL */}
       <Modal
         visible={infoOpen}
         transparent
@@ -555,7 +548,6 @@ export default function BusScanner({ navigation }) {
         <View style={s.modalBg} />
         <View style={s.infoCardWrap}>
           <View style={s.infoCard}>
-            {/* Header */}
             <View style={s.infoHeader}>
               <View
                 style={{
@@ -590,9 +582,9 @@ export default function BusScanner({ navigation }) {
                       flexWrap: "wrap",
                     }}
                   >
-                    <Text style={[s.infoTitle, s.f600]}>
+                    <LCText variant="label" style={[s.infoTitle, s.f600]}>
                       {driver?.name ?? "Unknown Driver"}
-                    </Text>
+                    </LCText>
                     <View
                       style={[
                         s.statusPill,
@@ -609,7 +601,8 @@ export default function BusScanner({ navigation }) {
                           { backgroundColor: isOnDuty ? C.green : C.hint },
                         ]}
                       />
-                      <Text
+                      <LCText
+                        variant="tiny"
                         style={[
                           s.statusPillTxt,
                           s.f600,
@@ -617,12 +610,14 @@ export default function BusScanner({ navigation }) {
                         ]}
                       >
                         {isOnDuty ? "On duty" : "Off duty"}
-                      </Text>
+                      </LCText>
                     </View>
                   </View>
 
                   {!!timeText && (
-                    <Text style={[s.infoSub, s.f400]}>{timeText}</Text>
+                    <LCText variant="tiny" style={[s.infoSub, s.f400]}>
+                      {timeText}
+                    </LCText>
                   )}
                 </View>
               </View>
@@ -637,7 +632,6 @@ export default function BusScanner({ navigation }) {
               </TouchableOpacity>
             </View>
 
-            {/* Info sections */}
             <View style={[s.infoBox, { marginTop: 14 }]}>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
                 <MaterialCommunityIcons
@@ -645,30 +639,39 @@ export default function BusScanner({ navigation }) {
                   size={20}
                   color={C.brand}
                 />
-                <Text style={[s.sectionTitle, s.f600, { marginLeft: 6 }]}>
+                <LCText
+                  variant="label"
+                  style={[s.sectionTitle, s.f600, { marginLeft: 6 }]}
+                >
                   Assigned Bus
-                </Text>
+                </LCText>
               </View>
 
               <View style={{ marginTop: 8 }}>
-                <Text style={[s.label, s.f400]}>Bus Number</Text>
-                <Text style={[s.value, s.f600]}>
+                <LCText variant="tiny" style={[s.label, s.f400]}>
+                  Bus Number
+                </LCText>
+                <LCText variant="label" style={[s.value, s.f600]}>
                   {driver?.busNumber ?? "—"}
-                </Text>
+                </LCText>
               </View>
 
               <View style={{ marginTop: 8 }}>
-                <Text style={[s.label, s.f400]}>Plate Number</Text>
-                <Text style={[s.value, s.f600]}>
+                <LCText variant="tiny" style={[s.label, s.f400]}>
+                  Plate Number
+                </LCText>
+                <LCText variant="label" style={[s.value, s.f600]}>
                   {driver?.plateNumber ?? "—"}
-                </Text>
+                </LCText>
               </View>
 
               <View style={{ marginTop: 8 }}>
-                <Text style={[s.label, s.f400]}>Bus Type</Text>
-                <Text style={[s.value, s.f600]}>
+                <LCText variant="tiny" style={[s.label, s.f400]}>
+                  Bus Type
+                </LCText>
+                <LCText variant="label" style={[s.value, s.f600]}>
                   {busTypeLabel(driver?.busType) ?? "—"}
-                </Text>
+                </LCText>
               </View>
             </View>
 
@@ -679,25 +682,33 @@ export default function BusScanner({ navigation }) {
                   size={20}
                   color={C.brand}
                 />
-                <Text style={[s.sectionTitle, s.f600, { marginLeft: 6 }]}>
+                <LCText
+                  variant="label"
+                  style={[s.sectionTitle, s.f600, { marginLeft: 6 }]}
+                >
                   Route & Corridor
-                </Text>
+                </LCText>
               </View>
 
               <View style={{ marginTop: 8 }}>
-                <Text style={[s.label, s.f400]}>Corridor</Text>
-                <Text style={[s.value, s.f600]}>
+                <LCText variant="tiny" style={[s.label, s.f400]}>
+                  Corridor
+                </LCText>
+                <LCText variant="label" style={[s.value, s.f600]}>
                   {corridorLabel(driver?.corridor)}
-                </Text>
+                </LCText>
               </View>
 
               <View style={{ marginTop: 8 }}>
-                <Text style={[s.label, s.f400]}>Route</Text>
-                <Text style={[s.value, s.f600]}>{routeLine}</Text>
+                <LCText variant="tiny" style={[s.label, s.f400]}>
+                  Route
+                </LCText>
+                <LCText variant="label" style={[s.value, s.f600]}>
+                  {routeLine}
+                </LCText>
               </View>
             </View>
 
-            {/* 🔴 Off-duty warning text */}
             {!isOnDuty && (
               <View style={s.offDutyBox}>
                 <MaterialCommunityIcons
@@ -706,15 +717,19 @@ export default function BusScanner({ navigation }) {
                   color={C.redDark}
                   style={{ marginRight: 6 }}
                 />
-                <Text style={[s.offDutyText, s.f400]}>
+                <LCText variant="tiny" style={[s.offDutyText, s.f400]}>
                   This driver is currently marked as{" "}
-                  <Text style={{ fontWeight: "700" }}>Off duty</Text>. Are you
-                  sure you want to start tracking?
-                </Text>
+                  <LCText
+                    variant="tiny"
+                    style={{ fontWeight: "700", color: C.redDark }}
+                  >
+                    Off duty
+                  </LCText>
+                  . Are you sure you want to start tracking?
+                </LCText>
               </View>
             )}
 
-            {/* Start Tracking button */}
             <TouchableOpacity
               style={[s.primaryBtn, { marginTop: 14 }]}
               onPress={() => {
@@ -726,13 +741,14 @@ export default function BusScanner({ navigation }) {
                 });
               }}
             >
-              <Text style={[s.primaryBtnTxt, s.f600]}>Start Tracking</Text>
+              <LCText variant="label" style={[s.primaryBtnTxt, s.f600]}>
+                Start Tracking
+              </LCText>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* INVALID QR MODAL */}
       <Modal
         visible={errorModalVisible}
         transparent
@@ -749,17 +765,23 @@ export default function BusScanner({ navigation }) {
                 color={C.redDark}
               />
             </View>
-            <Text style={[s.errorTitle, s.f700]}>Invalid QR code</Text>
-            <Text style={[s.errorMsg, s.f400]}>{error}</Text>
-            <Text style={[s.errorHint, s.f400]}>
+            <LCText variant="label" style={[s.errorTitle, s.f700]}>
+              Invalid QR code
+            </LCText>
+            <LCText variant="tiny" style={[s.errorMsg, s.f400]}>
+              {error}
+            </LCText>
+            <LCText variant="tiny" style={[s.errorHint, s.f400]}>
               Only scan QR codes from buses registered in LigtasCommute.
-            </Text>
+            </LCText>
 
             <TouchableOpacity
               style={[s.primaryBtn, { marginTop: 16 }]}
               onPress={resetScan}
             >
-              <Text style={[s.primaryBtnTxt, s.f600]}>Scan again</Text>
+              <LCText variant="label" style={[s.primaryBtnTxt, s.f600]}>
+                Scan again
+              </LCText>
             </TouchableOpacity>
           </View>
         </View>
@@ -768,9 +790,6 @@ export default function BusScanner({ navigation }) {
   );
 }
 
-/** =============================
- *  STYLES
- *  ============================= */
 const s = StyleSheet.create({
   f400: { fontFamily: "Poppins_400Regular" },
   f600: { fontFamily: "Poppins_600SemiBold" },
@@ -797,7 +816,7 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  topTitle: { fontSize: 14, color: C.text },
+  topTitle: { fontSize: 12, color: C.text },
 
   cameraWrap: {
     flex: 1,
@@ -847,7 +866,7 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.border,
   },
-  secondaryBtnTxt: { color: C.brand, fontSize: 13 },
+  secondaryBtnTxt: { color: C.brand, fontSize: 10 },
 
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.18)" },
 
@@ -884,8 +903,8 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  infoTitle: { fontSize: 15, color: C.text },
-  infoSub: { color: C.sub, fontSize: 11, marginTop: 2 },
+  infoTitle: { fontSize: 12, color: C.text },
+  infoSub: { color: C.sub, fontSize: 10, marginTop: 2 },
 
   infoBox: {
     borderWidth: 1,
@@ -910,15 +929,14 @@ const s = StyleSheet.create({
     marginRight: 6,
   },
   statusPillTxt: {
-    fontSize: 11,
+    fontSize: 10,
   },
 
   sectionTitle: { fontSize: 12, color: C.text },
 
-  label: { fontSize: 11, color: C.sub, marginTop: 2 },
-  value: { fontSize: 13, color: C.text, marginTop: 2 },
+  label: { fontSize: 10, color: C.sub, marginTop: 2 },
+  value: { fontSize: 10, color: C.text, marginTop: 2 },
 
-  /* 🔴 off-duty warning styles */
   offDutyBox: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -927,7 +945,7 @@ const s = StyleSheet.create({
   },
   offDutyText: {
     flex: 1,
-    fontSize: 11,
+    fontSize: 10,
     color: C.redDark,
   },
 
@@ -938,11 +956,10 @@ const s = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 18,
   },
-  primaryBtnTxt: { color: "#fff", fontSize: 13 },
+  primaryBtnTxt: { color: "#fff", fontSize: 10 },
 
-  hint: { color: C.hint, fontSize: 13, marginTop: 4 },
+  hint: { color: C.hint, fontSize: 11, marginTop: 4 },
 
-  /* Error modal */
   errorCard: {
     width: "100%",
     maxWidth: 380,
@@ -966,18 +983,18 @@ const s = StyleSheet.create({
     marginBottom: 8,
   },
   errorTitle: {
-    fontSize: 16,
+    fontSize: 12,
     color: C.redDark,
     marginTop: 4,
   },
   errorMsg: {
-    fontSize: 13,
+    fontSize: 11,
     color: C.text,
     textAlign: "center",
     marginTop: 8,
   },
   errorHint: {
-    fontSize: 11,
+    fontSize: 10,
     color: C.sub,
     textAlign: "center",
     marginTop: 6,

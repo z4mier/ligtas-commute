@@ -1,4 +1,3 @@
-// apps/api/src/routes/admin-trips.js
 import express from "express";
 import { PrismaClient } from "@prisma/client";
 
@@ -12,7 +11,7 @@ router.get("/admin/trips", async (req, res, next) => {
     const where = {};
 
     if (status) {
-      where.status = String(status).toUpperCase(); 
+      where.status = String(status).toUpperCase();
     }
 
     if (driverId) {
@@ -27,23 +26,17 @@ router.get("/admin/trips", async (req, res, next) => {
       where,
       orderBy: { startedAt: "desc" },
       include: {
-        driverProfile: true, // for fullName
-        bus: true,           // for number & plate
+        driverProfile: true,
+        bus: true,
       },
     });
 
-    // Frontend already accepts either array or { items: [...] }.
-    // We'll keep it simple and return plain array.
     res.json(trips);
   } catch (err) {
     next(err);
   }
 });
 
-/**
- * Optional: /trips (non-admin) fallback
- * This matches the fallback in your listTrips() helper.
- */
 router.get("/trips", async (req, res, next) => {
   try {
     const { status, driverId, busId } = req.query;
@@ -78,4 +71,3 @@ router.get("/trips", async (req, res, next) => {
 });
 
 export default router;
-

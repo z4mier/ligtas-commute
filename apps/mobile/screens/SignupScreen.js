@@ -1,7 +1,7 @@
+// apps/mobile/screens/SignupScreen.js
 import React, { useRef, useState } from "react";
 import {
   View,
-  Text,
   TextInput,
   TouchableOpacity,
   Pressable,
@@ -21,6 +21,7 @@ import {
   Poppins_700Bold,
 } from "@expo-google-fonts/poppins";
 import { API_URL } from "../constants/config";
+import LCText from "../components/LCText";
 
 export default function SignupScreen({ navigation }) {
   const [fontsLoaded] = useFonts({
@@ -50,6 +51,7 @@ export default function SignupScreen({ navigation }) {
 
   const clearErr = (k) =>
     setErrors((e) => ({ ...e, [k]: undefined, general: undefined }));
+
   const isValidEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
   const normalizePhone = (v) => v.replace(/\D/g, "");
 
@@ -78,7 +80,7 @@ export default function SignupScreen({ navigation }) {
         body: JSON.stringify({ email: key }),
       });
     } catch {
-      // ignore network errors
+      return;
     }
   }
 
@@ -156,7 +158,7 @@ export default function SignupScreen({ navigation }) {
       >
         <ScrollView
           style={s.bodyPad}
-          contentContainerStyle={{ paddingBottom: 28 }}
+          contentContainerStyle={{ paddingBottom: 24 }}
           keyboardShouldPersistTaps="handled"
         >
           <TouchableOpacity
@@ -165,28 +167,30 @@ export default function SignupScreen({ navigation }) {
           >
             <Ionicons
               name="chevron-back"
-              size={20}
+              size={18}
               color="rgba(255,255,255,0.85)"
             />
-            <Text style={[s.backText, s.f400]}>Back</Text>
+            <LCText variant="label" style={[s.backText, s.f400]}>
+              Back
+            </LCText>
           </TouchableOpacity>
 
           <View style={s.header}>
             <Image
               source={require("../assets/images/logo.png")}
               style={{
-                width: 68,
-                height: 68,
+                width: 56,
+                height: 56,
                 resizeMode: "contain",
                 tintColor: "#FFFFFF",
               }}
             />
-            <Text style={[s.h2, s.f700]}>
-              Join <Text style={s.f700}>LigtasCommute</Text>
-            </Text>
-            <Text style={[s.subtle, s.f400]}>
+            <LCText variant="heading" style={[s.h2, s.f700]}>
+              Join <LCText variant="heading" style={s.f700}>LigtasCommute</LCText>
+            </LCText>
+            <LCText variant="tiny" style={[s.subtle, s.f400]}>
               Create your account to start safe commuting
-            </Text>
+            </LCText>
           </View>
 
           <Field
@@ -243,7 +247,7 @@ export default function SignupScreen({ navigation }) {
               >
                 <Ionicons
                   name={showPw ? "eye-off-outline" : "eye-outline"}
-                  size={20}
+                  size={18}
                   color="#6B7280"
                 />
               </TouchableOpacity>
@@ -267,7 +271,7 @@ export default function SignupScreen({ navigation }) {
               >
                 <Ionicons
                   name={showConfirm ? "eye-off-outline" : "eye-outline"}
-                  size={20}
+                  size={18}
                   color="#6B7280"
                 />
               </TouchableOpacity>
@@ -275,25 +279,48 @@ export default function SignupScreen({ navigation }) {
           />
 
           {errors.general ? (
-            <Text style={[s.errorText, { marginTop: 6 }]}>{errors.general}</Text>
+            <LCText variant="tiny" style={[s.errorText, { marginTop: 6 }]}>
+              {errors.general}
+            </LCText>
           ) : null}
 
           <TouchableOpacity
             onPress={createAccount}
             disabled={loading || inFlight.current}
-            style={s.primaryBtn}
+            style={[
+              s.primaryBtn,
+              (loading || inFlight.current) && { opacity: 0.8 },
+            ]}
           >
             {loading ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={[s.primaryBtnText, s.f600]}>Create Account</Text>
+              <LCText
+                variant="label"
+                style={[s.primaryBtnText, s.f600]}
+              >
+                Create Account
+              </LCText>
             )}
           </TouchableOpacity>
 
           <View style={s.footerRow}>
-            <Text style={[s.subtle, s.f400]}>Already have an account?</Text>
-            <Pressable onPress={() => navigation.replace("Login")} hitSlop={8}>
-              <Text style={[s.linkText, s.f600]}>Sign in</Text>
+            <LCText
+              variant="tiny"
+              style={[s.subtleFooter, s.f400]}
+            >
+              Already have an account?
+            </LCText>
+            <Pressable
+              onPress={() => navigation.replace("Login")}
+              hitSlop={8}
+            >
+              <LCText
+                variant="label"
+                style={[s.linkText, s.f600]}
+              >
+                Sign in
+              </LCText>
             </Pressable>
           </View>
         </ScrollView>
@@ -305,12 +332,14 @@ export default function SignupScreen({ navigation }) {
 function Field({ label, icon, rightIcon, error, ...inputProps }) {
   const hasErr = !!error;
   return (
-    <View style={{ marginTop: 12 }}>
-      <Text style={[s.label, s.f600]}>{label}</Text>
+    <View style={{ marginTop: 10 }}>
+      <LCText variant="label" style={[s.label, s.f600]}>
+        {label}
+      </LCText>
       <View style={[s.inputWrap, hasErr && s.inputError]}>
         <MaterialCommunityIcons
           name={icon}
-          size={20}
+          size={18}
           color={hasErr ? "#EF4444" : "#6B7280"}
           style={s.leftIcon}
         />
@@ -321,7 +350,11 @@ function Field({ label, icon, rightIcon, error, ...inputProps }) {
         />
         {rightIcon}
       </View>
-      {hasErr && <Text style={s.errorText}>{error}</Text>}
+      {hasErr && (
+        <LCText variant="tiny" style={s.errorText}>
+          {error}
+        </LCText>
+      )}
     </View>
   );
 }
@@ -346,19 +379,29 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  bodyPad: { paddingHorizontal: 20 },
+  bodyPad: { paddingHorizontal: 18 },
+
   backRow: { flexDirection: "row", alignItems: "center", marginTop: 6 },
-  backText: { color: "rgba(255,255,255,0.85)", marginLeft: 6 },
+  backText: {
+    color: "rgba(255,255,255,0.85)",
+    marginLeft: 4,
+  },
+
   header: { alignItems: "center", marginTop: 10 },
-  h2: { color: "#FFFFFF", fontSize: 22, marginTop: 16 },
+  h2: { color: "#FFFFFF", marginTop: 12 },
   subtle: {
     color: "rgba(255,255,255,0.85)",
     textAlign: "center",
     marginTop: 4,
   },
-  label: { color: "#FFFFFF", fontSize: 12.5, marginBottom: 6 },
+  subtleFooter: {
+    color: "rgba(255,255,255,0.85)",
+  },
+
+  label: { color: "#FFFFFF", marginBottom: 4 },
+
   inputWrap: {
-    height: 48,
+    height: 44,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -367,37 +410,40 @@ const s = StyleSheet.create({
     alignItems: "center",
   },
   inputError: { borderColor: "#EF4444" },
-  errorText: { color: "#EF4444", fontSize: 12, marginTop: 6 },
-  leftIcon: { position: "absolute", left: 12, zIndex: 1 },
+  errorText: { color: "#EF4444", marginTop: 4 },
+
+  leftIcon: { position: "absolute", left: 10, zIndex: 1 },
   rightIconBtn: { position: "absolute", right: 8, padding: 6 },
+
   input: {
     flex: 1,
     height: "100%",
-    paddingLeft: 44,
-    paddingRight: 40,
-    fontSize: 14.5,
+    paddingLeft: 40,
+    paddingRight: 36,
+    fontSize: 10, // actual visual size; LCText controls Text only
     color: "#0F1B2B",
   },
+
   primaryBtn: {
-    height: 48,
+    height: 44,
     borderRadius: 10,
     backgroundColor: COLORS.brand,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 16,
+    marginTop: 14,
   },
-  primaryBtnText: { color: "#FFFFFF", fontSize: 16 },
+  primaryBtnText: { color: "#FFFFFF" },
+
   footerRow: {
     flexDirection: "row",
     justifyContent: "center",
-    alignItems: "center", 
-    marginTop: 16,
+    alignItems: "center",
+    marginTop: 14,
     marginBottom: 18,
   },
   linkText: {
     color: COLORS.link,
-    fontSize: 13.5,
-    marginLeft: 4, 
-    textDecorationLine: "none", 
+    marginLeft: 4,
+    textDecorationLine: "none",
   },
 });

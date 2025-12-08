@@ -2,7 +2,6 @@
 import React, { useEffect, useState, useMemo } from "react";
 import {
   View,
-  Text,
   ScrollView,
   TouchableOpacity,
   StatusBar,
@@ -24,6 +23,7 @@ import {
 } from "@expo-google-fonts/poppins";
 import { API_URL } from "../constants/config";
 import * as Notify from "../lib/notify";
+import LCText from "../components/LCText"; // ✅ our custom Text
 
 const C = {
   bg: "#F3F4F6",
@@ -36,12 +36,10 @@ const C = {
   dot: "#EF4444",
 };
 
-const HEADER_TITLE_SIZE = 18;
-const HEADER_ICON_SIZE = 22;
-const LOGO_SIZE = 28;
-const HEADER_H = 48;
-
-/* ---------- Safety tips (for daily random tip) ---------- */
+const HEADER_TITLE_SIZE = 12;
+const HEADER_ICON_SIZE = 20;
+const LOGO_SIZE = 30;
+const HEADER_H = 44;
 
 const SAFETY_TIPS = [
   "Always check the driver's ID and bus number before boarding.",
@@ -52,15 +50,13 @@ const SAFETY_TIPS = [
   "Report unsafe driving or suspicious behavior through the app.",
 ];
 
-/* ---------- Shared auth helpers (same idea as BusScanner) ---------- */
-
 const TOKEN_KEYS = [
-  "authToken", // main commuter key (most likely)
+  "authToken",
   "AUTH_TOKEN",
   "LC_COMMUTER_TOKEN",
   "lc_user",
   "lc_token",
-  "token", // legacy
+  "token",
   "driverToken",
   "LC_DRIVER_TOKEN",
   "lc_admin",
@@ -74,23 +70,17 @@ async function getAuthToken() {
 
       const trimmed = String(raw).trim();
 
-      // JSON? e.g. { token: "...", role: "COMMUTER" }
       if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
         try {
           const obj = JSON.parse(trimmed);
           const candidate =
             obj.token || obj.jwt || obj.accessToken || obj.authToken;
           if (candidate) return candidate;
-        } catch {
-          // ignore parse error, try next key
-        }
+        } catch {}
       } else {
-        // plain token string
         return trimmed;
       }
-    } catch {
-      // ignore and try next key
-    }
+    } catch {}
   }
   return null;
 }
@@ -98,8 +88,6 @@ async function getAuthToken() {
 async function clearAuthToken() {
   await Promise.all(TOKEN_KEYS.map((k) => AsyncStorage.removeItem(k)));
 }
-
-/* ---------- utils ---------- */
 
 function timeAgo(ts) {
   if (!ts) return "";
@@ -115,7 +103,6 @@ function timeAgo(ts) {
   return `${d}d ago`;
 }
 
-// 👉 "13 Nov 2025, 02:29 am" style
 function fmtDateTime(x) {
   if (!x) return "—";
   const d = new Date(x);
@@ -148,7 +135,6 @@ export default function CommuterDashboard({ navigation }) {
   const [checking, setChecking] = useState(true);
   const [me, setMe] = useState(null);
 
-  // notifications
   const [notifications, setNotifications] = useState([]);
   const [notifOpen, setNotifOpen] = useState(false);
   const unreadCount = useMemo(
@@ -156,18 +142,15 @@ export default function CommuterDashboard({ navigation }) {
     [notifications]
   );
 
-  // recent trips from API
   const [recentTrips, setRecentTrips] = useState([]);
   const [loadingTrips, setLoadingTrips] = useState(false);
 
-  // "daily" safety tip – stable per day
   const todayTip = useMemo(() => {
     const today = new Date();
     const idx = today.getDate() % SAFETY_TIPS.length;
     return SAFETY_TIPS[idx];
   }, []);
 
-  // ---- auth + profile ----
   useEffect(() => {
     (async () => {
       try {
@@ -201,7 +184,6 @@ export default function CommuterDashboard({ navigation }) {
     return basis.split(" ")[0];
   }, [me]);
 
-  // ---- load notifications ----
   useEffect(() => {
     let mounted = true;
 
@@ -240,7 +222,6 @@ export default function CommuterDashboard({ navigation }) {
     navigation?.navigate?.("Notifications");
   };
 
-  // ---- load recent trips when dashboard gains focus ----
   useEffect(() => {
     const unsub = navigation.addListener("focus", async () => {
       try {
@@ -274,13 +255,12 @@ export default function CommuterDashboard({ navigation }) {
     return unsub;
   }, [navigation]);
 
-  // bottom nav actions
   const goSettings = () => navigation?.navigate?.("Settings");
-  const goQR = () => navigation?.navigate?.("QRScanner");
+  const goQR = () => navigation?.navigate?.("BusScanner");
   const goHome = () => navigation?.navigate?.("CommuterDashboard");
 
   const openAllTrips = () => {
-    navigation?.navigate?.("RecentTrips"); // create this screen for full history
+    navigation?.navigate?.("RecentTrips");
   };
 
   if (!fontsLoaded || checking) {
@@ -295,7 +275,7 @@ export default function CommuterDashboard({ navigation }) {
     <SafeAreaView style={s.screen} edges={["top", "bottom"]}>
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
-      {/* TOP BAR */}
+      {/* Top bar */}
       <View
         style={[
           s.topBar,
@@ -313,7 +293,8 @@ export default function CommuterDashboard({ navigation }) {
           />
         </View>
 
-        <Text
+        <LCText
+          variant="label"
           style={[
             s.brand,
             { fontSize: HEADER_TITLE_SIZE, lineHeight: HEADER_TITLE_SIZE + 2 },
@@ -321,7 +302,7 @@ export default function CommuterDashboard({ navigation }) {
           numberOfLines={1}
         >
           LigtasCommute
-        </Text>
+        </LCText>
 
         <TouchableOpacity style={s.notifBtn} onPress={() => setNotifOpen(true)}>
           <View style={{ position: "relative" }}>
@@ -335,7 +316,7 @@ export default function CommuterDashboard({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* NOTIFICATION DROPDOWN */}
+      {/* Notifications dropdown */}
       <Modal
         visible={notifOpen}
         transparent
@@ -355,19 +336,22 @@ export default function CommuterDashboard({ navigation }) {
         >
           <View style={s.notifCard}>
             <View style={s.notifHeader}>
-              <Text style={s.notifTitle}>Notifications</Text>
+              <LCText variant="label" style={s.notifTitle}>
+                Notifications
+              </LCText>
               <TouchableOpacity
                 onPress={markAllRead}
                 disabled={!notifications.length}
               >
-                <Text
+                <LCText
+                  variant="tiny"
                   style={[
                     s.notifMarkAll,
                     { color: notifications.length ? C.brand : C.hint },
                   ]}
                 >
                   Mark all as read
-                </Text>
+                </LCText>
               </TouchableOpacity>
             </View>
 
@@ -375,78 +359,101 @@ export default function CommuterDashboard({ navigation }) {
               <View style={s.notifEmpty}>
                 <MaterialCommunityIcons
                   name="bell-off-outline"
-                  size={28}
+                  size={22}
                   color={C.hint}
                 />
-                <Text style={s.emptyTitle}>No notifications yet</Text>
-                <Text style={s.emptySub}>
+                <LCText variant="label" style={s.emptyTitle}>
+                  No notifications yet
+                </LCText>
+                <LCText variant="tiny" style={s.emptySub}>
                   You’ll see important alerts and updates here.
-                </Text>
+                </LCText>
               </View>
             ) : (
               notifications.slice(0, 3).map((n) => (
                 <View key={String(n.id)} style={s.notifRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={s.notifRowTitle}>{n.title}</Text>
+                    <LCText variant="label" style={s.notifRowTitle}>
+                      {n.title}
+                    </LCText>
                     {!!n.body && (
-                      <Text style={s.notifRowBody}>{n.body}</Text>
+                      <LCText variant="tiny" style={s.notifRowBody}>
+                        {n.body}
+                      </LCText>
                     )}
-                    <Text style={s.notifRowTime}>{n.timeAgo}</Text>
+                    <LCText variant="tiny" style={s.notifRowTime}>
+                      {n.timeAgo}
+                    </LCText>
                   </View>
                   {!n.read && <View style={s.inlineDot} />}
                 </View>
               ))
             )}
 
-            <TouchableOpacity
-              style={s.viewAllBtn}
-              onPress={openAllNotifications}
-            >
-              <Text style={s.viewAllBtnTxt}>View all notifications</Text>
+            <TouchableOpacity style={s.viewAllBtn} onPress={openAllNotifications}>
+              <LCText variant="label" style={s.viewAllBtnTxt}>
+                View all notifications
+              </LCText>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* CONTENT */}
+      {/* Body */}
       <ScrollView
         contentContainerStyle={[
           s.scroll,
-          { paddingBottom: 120 + insets.bottom },
+          { paddingBottom: 110 + insets.bottom },
         ]}
       >
-        {/* GREETING */}
+        {/* Hero */}
         <View style={s.hero}>
-          <Text style={s.heroHello}>Hello,</Text>
-          <Text style={s.heroName}>{displayName || "Commuter"}</Text>
-          <Text style={s.heroSub}>Ready for a safer commute today?</Text>
+          <LCText variant="tiny" style={s.heroHello}>
+            Hello,
+          </LCText>
+          <LCText variant="heading" style={s.heroName}>
+            {displayName || "Commuter"}
+          </LCText>
+          <LCText variant="tiny" style={s.heroSub}>
+            Ready for a safer commute today?
+          </LCText>
         </View>
 
-        {/* 🔐 SAFETY TIP CARD (above recent trips) */}
+        {/* Safety card */}
         <View style={s.card}>
           <View style={s.safetyHeader}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
               <View style={s.safetyIconWrap}>
                 <MaterialCommunityIcons
                   name="shield-check"
-                  size={18}
+                  size={16}
                   color="#FFFFFF"
                 />
               </View>
-              <Text style={s.safetyTitle}>Tips for a safer commute</Text>
+              <LCText variant="label" style={s.safetyTitle}>
+                Tips for a safer commute
+              </LCText>
             </View>
-            <Text style={s.safetyBadge}>Daily tip</Text>
+            <LCText variant="tiny" style={s.safetyBadge}>
+              Daily tip
+            </LCText>
           </View>
-          <Text style={s.safetyBody}>{todayTip}</Text>
+          <LCText variant="body" style={s.safetyBody}>
+            {todayTip}
+          </LCText>
         </View>
 
-        {/* 1️⃣ RECENT TRIPS – MoveIt style */}
+        {/* Recent trips */}
         <View style={s.card}>
           <View style={s.sectionHeader}>
-            <Text style={s.sectionTitle}>Recent trips</Text>
+            <LCText variant="label" style={s.sectionTitle}>
+              Recent trips
+            </LCText>
             {recentTrips.length > 0 && (
               <TouchableOpacity onPress={openAllTrips}>
-                <Text style={s.viewAllTrips}>View all</Text>
+                <LCText variant="tiny" style={s.viewAllTrips}>
+                  View all
+                </LCText>
               </TouchableOpacity>
             )}
           </View>
@@ -454,19 +461,23 @@ export default function CommuterDashboard({ navigation }) {
           {loadingTrips ? (
             <View style={s.emptyWrap}>
               <ActivityIndicator />
-              <Text style={s.emptySub}>Loading your trips…</Text>
+              <LCText variant="tiny" style={s.emptySub}>
+                Loading your trips…
+              </LCText>
             </View>
           ) : recentTrips.length === 0 ? (
             <View style={s.emptyWrap}>
               <MaterialCommunityIcons
                 name="history"
-                size={28}
+                size={26}
                 color={C.hint}
               />
-              <Text style={s.emptyTitle}>No trips yet</Text>
-              <Text style={s.emptySub}>
+              <LCText variant="label" style={s.emptyTitle}>
+                No trips yet
+              </LCText>
+              <LCText variant="tiny" style={s.emptySub}>
                 Your completed rides will appear here after you finish a trip.
-              </Text>
+              </LCText>
             </View>
           ) : (
             recentTrips.slice(0, MAX_RECENT_SHOWN).map((trip) => {
@@ -492,21 +503,25 @@ export default function CommuterDashboard({ navigation }) {
                     navigation?.navigate?.("TripDetails", { trip })
                   }
                 >
-                  {/* avatar with bus icon */}
                   <View style={s.tripAvatar}>
                     <MaterialCommunityIcons
                       name="bus"
-                      size={20}
+                      size={18}
                       color="#FFFFFF"
                     />
                   </View>
 
-                  {/* main text */}
                   <View style={{ flex: 1 }}>
-                    <Text style={s.tripTitle} numberOfLines={1}>
+                    <LCText
+                      variant="label"
+                      style={s.tripTitle}
+                      numberOfLines={1}
+                    >
                       {title}
-                    </Text>
-                    <Text style={s.tripSubtitle}>{dateTimeStr}</Text>
+                    </LCText>
+                    <LCText variant="tiny" style={s.tripSubtitle}>
+                      {dateTimeStr}
+                    </LCText>
 
                     {(driverName || busLabel) && (
                       <View style={s.tripMetaRow}>
@@ -514,34 +529,41 @@ export default function CommuterDashboard({ navigation }) {
                           <View style={s.tripMetaChip}>
                             <MaterialCommunityIcons
                               name="account"
-                              size={13}
+                              size={12}
                               color={C.brand}
                             />
-                            <Text style={s.tripMetaText} numberOfLines={1}>
+                            <LCText
+                              variant="tiny"
+                              style={s.tripMetaText}
+                              numberOfLines={1}
+                            >
                               {driverName}
-                            </Text>
+                            </LCText>
                           </View>
                         )}
                         {busLabel && (
                           <View style={s.tripMetaChip}>
                             <MaterialCommunityIcons
                               name="bus"
-                              size={13}
+                              size={12}
                               color={C.brand}
                             />
-                            <Text style={s.tripMetaText} numberOfLines={1}>
-                              {busLabel}
-                            </Text>
+                              <LCText
+                                variant="tiny"
+                                style={s.tripMetaText}
+                                numberOfLines={1}
+                              >
+                                {busLabel}
+                              </LCText>
                           </View>
                         )}
                       </View>
                     )}
                   </View>
 
-                  {/* chevron */}
                   <MaterialCommunityIcons
                     name="chevron-right"
-                    size={20}
+                    size={18}
                     color={C.sub}
                   />
                 </TouchableOpacity>
@@ -549,43 +571,47 @@ export default function CommuterDashboard({ navigation }) {
             })
           )}
         </View>
-
-        {/* (Where's your bus / announcements sections can stay the same) */}
       </ScrollView>
 
-      {/* BOTTOM NAV */}
-      <View style={[s.tabbar, { paddingBottom: 10 + insets.bottom }]}>
+      {/* Bottom tabbar */}
+      <View style={[s.tabbar, { paddingBottom: 8 + insets.bottom }]}>
         <TouchableOpacity style={s.tab} onPress={goHome}>
           <View style={[s.iconWrap, s.iconWrapActive]}>
             <MaterialCommunityIcons
               name="home-variant"
-              size={24}
+              size={22}
               color="#fff"
             />
           </View>
-          <Text style={[s.tabLabel, s.tabActive]}>Home</Text>
+          <LCText variant="tiny" style={[s.tabLabel, s.tabActive]}>
+            Home
+          </LCText>
         </TouchableOpacity>
 
         <TouchableOpacity style={s.tab} onPress={goQR}>
           <View style={s.iconWrap}>
             <MaterialCommunityIcons
               name="qrcode-scan"
-              size={22}
+              size={20}
               color={C.brand}
             />
           </View>
-          <Text style={s.tabLabel}>Scan</Text>
+          <LCText variant="tiny" style={s.tabLabel}>
+            Scan
+          </LCText>
         </TouchableOpacity>
 
         <TouchableOpacity style={s.tab} onPress={goSettings}>
           <View style={s.iconWrap}>
             <MaterialCommunityIcons
               name="cog-outline"
-              size={22}
+              size={20}
               color={C.brand}
             />
           </View>
-          <Text style={s.tabLabel}>Settings</Text>
+          <LCText variant="tiny" style={s.tabLabel}>
+            Settings
+          </LCText>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -600,11 +626,11 @@ const s = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 14,
-    paddingBottom: 6,
+    paddingHorizontal: 12,
+    paddingBottom: 4,
     backgroundColor: C.bg,
   },
-  brandRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  brandRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   logo: { width: 28, height: 28 },
   brand: {
     fontFamily: "Poppins_700Bold",
@@ -622,49 +648,47 @@ const s = StyleSheet.create({
     backgroundColor: C.dot,
   },
 
-  scroll: { padding: 12 },
+  scroll: { padding: 10 },
 
-  /* HERO */
-  hero: { marginBottom: 8 },
+  hero: { marginBottom: 6 },
   heroHello: {
     fontFamily: "Poppins_400Regular",
-    fontSize: 13,
+    fontSize: 12,
     color: C.sub,
   },
   heroName: {
     fontFamily: "Poppins_700Bold",
-    fontSize: 20,
+    fontSize: 18,
     color: C.text,
   },
   heroSub: {
     fontFamily: "Poppins_400Regular",
-    fontSize: 11,
+    fontSize: 10,
     color: C.hint,
     marginTop: 2,
   },
 
-  /* GENERIC CARD */
   card: {
     backgroundColor: C.card,
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 14,
+    padding: 12,
     borderWidth: 1,
     borderColor: C.border,
-    marginBottom: 12,
+    marginBottom: 10,
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOpacity: 0.04,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.03,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 3 },
       },
-      android: { elevation: 2 },
+      android: { elevation: 1 },
     }),
   },
   sectionTitle: {
     fontFamily: "Poppins_600SemiBold",
     color: C.text,
-    fontSize: 14,
+    fontSize: 13,
   },
   sectionHeader: {
     flexDirection: "row",
@@ -673,148 +697,147 @@ const s = StyleSheet.create({
   },
   viewAllTrips: {
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 11,
+    fontSize: 10,
     color: C.brand,
   },
 
-  /* SAFETY TIP */
   safetyHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 6,
+    marginBottom: 4,
   },
   safetyIconWrap: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: C.brand,
     alignItems: "center",
     justifyContent: "center",
   },
   safetyTitle: {
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 13,
+    fontSize: 12,
     color: C.text,
   },
   safetyBadge: {
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 10,
+    fontSize: 9,
     color: "#10B981",
     backgroundColor: "#DCFCE7",
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
   safetyBody: {
-    marginTop: 4,
+    marginTop: 3,
     fontFamily: "Poppins_400Regular",
-    fontSize: 11.5,
+    fontSize: 10.5,
     color: C.sub,
   },
 
-  /* RECENT TRIPS */
   emptyWrap: {
     borderWidth: 1,
     borderColor: C.border,
-    borderRadius: 12,
-    paddingVertical: 18,
-    paddingHorizontal: 14,
+    borderRadius: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#FAFAFA",
-    marginTop: 8,
-    gap: 6,
+    marginTop: 6,
+    gap: 4,
   },
   emptyTitle: {
     fontFamily: "Poppins_600SemiBold",
     color: C.text,
-    fontSize: 12.5,
+    fontSize: 11.5,
     textAlign: "center",
   },
   emptySub: {
     fontFamily: "Poppins_400Regular",
     color: C.hint,
-    fontSize: 11,
+    fontSize: 10,
     textAlign: "center",
   },
+
   tripRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    borderRadius: 12,
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: C.border,
     backgroundColor: "#F9FAFB",
-    gap: 10,
+    gap: 8,
   },
   tripAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: C.brand,
     alignItems: "center",
     justifyContent: "center",
   },
   tripTitle: {
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 13,
+    fontSize: 12,
     color: C.text,
   },
   tripSubtitle: {
     fontFamily: "Poppins_400Regular",
-    fontSize: 11.5,
+    fontSize: 10.5,
     color: C.sub,
-    marginTop: 2,
+    marginTop: 1,
   },
   tripMetaRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 6,
-    marginTop: 6,
+    gap: 4,
+    marginTop: 4,
   },
   tripMetaChip: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
     borderRadius: 999,
     backgroundColor: "#EEF2FF",
     gap: 4,
   },
   tripMetaText: {
     fontFamily: "Poppins_500Medium",
-    fontSize: 11,
+    fontSize: 10,
     color: C.brand,
-    maxWidth: 120,
+    maxWidth: 110,
   },
 
-  /* WHERE'S YOUR BUS (styles kept for future sections) */
-  busSection: { marginBottom: 12 },
+  // (bus / announcements styles kept as-is in case you use later)
+  busSection: { marginBottom: 10 },
   busTitle: {
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 15,
+    fontSize: 13,
     color: C.text,
   },
   busSub: {
     fontFamily: "Poppins_400Regular",
-    fontSize: 11,
+    fontSize: 10,
     color: C.sub,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   busCard: {
     backgroundColor: C.card,
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 14,
+    padding: 12,
     borderWidth: 1,
     borderColor: C.border,
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOpacity: 0.06,
-        shadowRadius: 8,
+        shadowOpacity: 0.05,
+        shadowRadius: 7,
         shadowOffset: { width: 0, height: 4 },
       },
       android: { elevation: 2 },
@@ -827,64 +850,64 @@ const s = StyleSheet.create({
   },
   busRoute: {
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 14,
+    fontSize: 13,
     color: C.text,
   },
   busMeta: {
     fontFamily: "Poppins_400Regular",
-    fontSize: 11,
+    fontSize: 10,
     color: C.sub,
     marginTop: 2,
   },
   etaBubble: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 999,
     backgroundColor: "#EEF2FF",
     alignItems: "center",
   },
   etaLabel: {
     fontFamily: "Poppins_400Regular",
-    fontSize: 9,
+    fontSize: 8,
     color: "#4F46E5",
   },
   etaValue: {
     fontFamily: "Poppins_700Bold",
-    fontSize: 13,
+    fontSize: 12,
     color: "#312E81",
   },
   busRowBottom: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 10,
+    marginTop: 8,
   },
   busDistance: {
     fontFamily: "Poppins_400Regular",
-    fontSize: 11,
+    fontSize: 10,
     color: C.sub,
     flex: 1,
-    marginRight: 6,
+    marginRight: 4,
   },
   busMapBtn: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: 999,
     backgroundColor: C.brand,
   },
   busMapTxt: {
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 11,
+    fontSize: 10,
     color: "#fff",
-    marginLeft: 6,
+    marginLeft: 5,
   },
   busEmptyInner: { alignItems: "center", gap: 6 },
   busScanBtn: {
     marginTop: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 9,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 999,
     backgroundColor: C.brand,
     flexDirection: "row",
@@ -893,46 +916,44 @@ const s = StyleSheet.create({
   },
   busScanTxt: {
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 11,
+    fontSize: 10,
     color: "#fff",
   },
 
-  /* ANNOUNCEMENTS */
   annHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
   annItem: {
-    marginTop: 8,
-    borderRadius: 12,
+    marginTop: 6,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: "#E5E7EB",
     backgroundColor: "#F9FAFB",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
   },
   annTitle: {
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 12.5,
+    fontSize: 11.5,
     color: C.text,
   },
   annBody: {
     fontFamily: "Poppins_400Regular",
-    fontSize: 11,
+    fontSize: 10,
     color: C.sub,
     marginTop: 2,
   },
   annTime: {
     fontFamily: "Poppins_400Regular",
-    fontSize: 10,
+    fontSize: 9.5,
     color: C.hint,
-    marginTop: 4,
+    marginTop: 3,
   },
 
   bold: { fontFamily: "Poppins_700Bold", color: C.text },
 
-  /* BOTTOM NAV */
   tabbar: {
     position: "absolute",
     left: 0,
@@ -940,21 +961,21 @@ const s = StyleSheet.create({
     bottom: 0,
     flexDirection: "row",
     backgroundColor: "#FFFFFF",
-    paddingVertical: 10,
-    paddingHorizontal: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
     justifyContent: "space-between",
     borderTopWidth: 1,
     borderTopColor: "#E5E7EB",
   },
   tab: { alignItems: "center", justifyContent: "center", flex: 1 },
   iconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     backgroundColor: "#F3F4F6",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 4,
+    marginBottom: 3,
   },
   iconWrapActive: {
     backgroundColor: C.brand,
@@ -962,15 +983,14 @@ const s = StyleSheet.create({
   tabLabel: {
     fontFamily: "Poppins_600SemiBold",
     color: "#6B7280",
-    fontSize: 11,
+    fontSize: 10,
   },
   tabActive: { color: C.brand },
 
-  /* NOTIF MODAL */
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.12)" },
-  notifCardWrap: { position: "absolute", right: 12 },
+  notifCardWrap: { position: "absolute", right: 10 },
   notifCard: {
-    width: 310,
+    width: 290,
     backgroundColor: "#fff",
     borderRadius: 12,
     borderWidth: 1,
@@ -978,46 +998,46 @@ const s = StyleSheet.create({
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOpacity: 0.08,
-        shadowRadius: 10,
-        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.07,
+        shadowRadius: 9,
+        shadowOffset: { width: 0, height: 5 },
       },
       android: { elevation: 3 },
     }),
   },
   notifHeader: {
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 8,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 6,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
   notifTitle: {
     fontFamily: "Poppins_700Bold",
-    fontSize: 14,
+    fontSize: 11.5,
     color: C.text,
   },
   notifMarkAll: {
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 12,
+    fontSize: 10,
   },
   notifEmpty: {
-    paddingHorizontal: 16,
-    paddingVertical: 22,
+    paddingHorizontal: 14,
+    paddingVertical: 18,
     alignItems: "center",
     gap: 6,
     borderTopWidth: 1,
     borderTopColor: C.border,
   },
   notifRow: {
-    marginHorizontal: 12,
-    marginTop: 8,
+    marginHorizontal: 10,
+    marginTop: 6,
     borderWidth: 1,
     borderColor: C.border,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    borderRadius: 9,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     backgroundColor: "#FAFAFA",
     flexDirection: "row",
     alignItems: "center",
@@ -1026,18 +1046,18 @@ const s = StyleSheet.create({
   notifRowTitle: {
     fontFamily: "Poppins_600SemiBold",
     color: C.text,
-    fontSize: 12.5,
+    fontSize: 11,
   },
   notifRowBody: {
     fontFamily: "Poppins_400Regular",
     color: C.sub,
-    fontSize: 11,
+    fontSize: 9.5,
     marginTop: 2,
   },
   notifRowTime: {
     fontFamily: "Poppins_400Regular",
     color: C.hint,
-    fontSize: 10.5,
+    fontSize: 9,
     marginTop: 2,
   },
   inlineDot: {
@@ -1045,18 +1065,18 @@ const s = StyleSheet.create({
     height: 8,
     borderRadius: 8,
     backgroundColor: C.dot,
-    marginLeft: 6,
+    marginLeft: 4,
   },
   viewAllBtn: {
-    paddingVertical: 12,
+    paddingVertical: 10,
     alignItems: "center",
     borderTopWidth: 1,
     borderTopColor: C.border,
-    marginTop: 10,
+    marginTop: 8,
   },
   viewAllBtnTxt: {
     fontFamily: "Poppins_700Bold",
     color: C.brand,
-    fontSize: 12.5,
+    fontSize: 11,
   },
 });

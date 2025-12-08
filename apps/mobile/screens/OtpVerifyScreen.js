@@ -22,7 +22,7 @@ import { API_URL } from "../constants/config";
 
 const RESEND_SECONDS = 60;
 const OTP_LENGTH = 6;
-const TOKEN_KEY = "token"; 
+const TOKEN_KEY = "token";
 
 export default function OtpVerifyScreen({ route, navigation }) {
   const { email } = route.params;
@@ -78,7 +78,10 @@ export default function OtpVerifyScreen({ route, navigation }) {
       const res = await fetch(`${API_URL}/auth/verify-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: (email || "").trim().toLowerCase(), code: digits }),
+        body: JSON.stringify({
+          email: (email || "").trim().toLowerCase(),
+          code: digits,
+        }),
       });
       const data = await res.json().catch(() => ({}));
 
@@ -180,7 +183,6 @@ export default function OtpVerifyScreen({ route, navigation }) {
 
     return (
       <SafeAreaView style={s.screen}>
-        {/* Top curve hero to keep your look */}
         <View style={[s.curveHero, { height: HERO_H }]}>
           <View
             style={[
@@ -197,7 +199,12 @@ export default function OtpVerifyScreen({ route, navigation }) {
           <View style={{ alignItems: "center", paddingBottom: 8 }}>
             <Image
               source={require("../assets/images/logo.png")}
-              style={{ width: 82, height: 82, tintColor: "#FFFFFF", resizeMode: "contain" }}
+              style={{
+                width: 76,
+                height: 76,
+                tintColor: "#FFFFFF",
+                resizeMode: "contain",
+              }}
             />
             <Text style={s.brandTitle}>LigtasCommute</Text>
             <Text style={s.brandTagline}>Safety that rides with you</Text>
@@ -250,7 +257,7 @@ export default function OtpVerifyScreen({ route, navigation }) {
             <Pressable style={s.checkboxRow} onPress={() => setChecked(!checked)}>
               <MaterialCommunityIcons
                 name={checked ? "checkbox-marked" : "checkbox-blank-outline"}
-                size={22}
+                size={20}
                 color={checked ? "#4CC3FF" : "#9CA3AF"}
               />
               <Text style={s.checkboxText}>I accept the Terms and Privacy Policy.</Text>
@@ -258,7 +265,12 @@ export default function OtpVerifyScreen({ route, navigation }) {
 
             <View style={s.okButtonWrap}>
               <TouchableOpacity
-                style={[s.btn, s.btnPrimary, { width: "100%", maxWidth: 420 }, !checked && { opacity: 0.6 }]}
+                style={[
+                  s.btn,
+                  s.btnPrimary,
+                  { width: "100%", maxWidth: 420 },
+                  !checked && { opacity: 0.6 },
+                ]}
                 onPress={handleOk}
                 activeOpacity={0.9}
               >
@@ -268,12 +280,15 @@ export default function OtpVerifyScreen({ route, navigation }) {
           </View>
         </ScrollView>
 
-        {/* Success modal */}
         <Modal visible={showCongrats} transparent animationType="fade">
           <View style={s.modalOverlay}>
             <View style={s.successBox}>
               <View style={s.successIconWrap}>
-                <MaterialCommunityIcons name="check-decagram" size={28} color="#1CC88A" />
+                <MaterialCommunityIcons
+                  name="check-decagram"
+                  size={26}
+                  color="#1CC88A"
+                />
               </View>
               <Text style={s.successTitleTxt}>You’re verified!</Text>
               <Text style={s.successSubTxt}>Redirecting…</Text>
@@ -287,10 +302,20 @@ export default function OtpVerifyScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={s.screen}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+      >
+        <ScrollView
+          contentContainerStyle={s.scroll}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={s.iconCircle}>
-            <MaterialCommunityIcons name="shield-check" size={84} color="#4CC3FF" />
+            <MaterialCommunityIcons
+              name="shield-check"
+              size={74}
+              color="#4CC3FF"
+            />
           </View>
 
           <Text style={s.verifyTitle}>Verify Your Account</Text>
@@ -302,32 +327,56 @@ export default function OtpVerifyScreen({ route, navigation }) {
           <OTPCells value={code} onChange={setCode} length={OTP_LENGTH} />
 
           <TouchableOpacity
-            style={[s.btn, s.btnPrimary, loading && { opacity: 0.7 }, { marginTop: 16, width: "100%", maxWidth: 420 }]}
+            style={[
+              s.btn,
+              s.btnPrimary,
+              loading && { opacity: 0.7 },
+              { marginTop: 16, width: "100%", maxWidth: 420 },
+            ]}
             onPress={verify}
             disabled={loading}
           >
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.btnPrimaryText}>Verify</Text>}
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={s.btnPrimaryText}>Verify</Text>
+            )}
           </TouchableOpacity>
 
           {remaining > 0 ? (
             <View style={s.countdownChip}>
-              <MaterialCommunityIcons name="clock-outline" size={16} color="#A7B3C9" />
-              <Text style={s.countdownText}>Resend available in {mmss(remaining)}</Text>
+              <MaterialCommunityIcons
+                name="clock-outline"
+                size={14}
+                color="#A7B3C9"
+              />
+              <Text style={s.countdownText}>
+                Resend available in {mmss(remaining)}
+              </Text>
             </View>
           ) : (
-            <TouchableOpacity onPress={resend} style={{ marginTop: 14 }} disabled={loading}>
-              <Text style={[s.resendLink, loading && { opacity: 0.6 }]}>Resend Code</Text>
+            <TouchableOpacity
+              onPress={resend}
+              style={{ marginTop: 14 }}
+              disabled={loading}
+            >
+              <Text style={[s.resendLink, loading && { opacity: 0.6 }]}>
+                Resend Code
+              </Text>
             </TouchableOpacity>
           )}
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Success modal */}
       <Modal visible={showCongrats} transparent animationType="fade">
         <View style={s.modalOverlay}>
           <View style={s.successBox}>
             <View style={s.successIconWrap}>
-              <MaterialCommunityIcons name="check-decagram" size={28} color="#1CC88A" />
+              <MaterialCommunityIcons
+                name="check-decagram"
+                size={26}
+                color="#1CC88A"
+              />
             </View>
             <Text style={s.successTitleTxt}>You’re verified!</Text>
             <Text style={s.successSubTxt}>Redirecting…</Text>
@@ -346,7 +395,10 @@ function OTPCells({ value, onChange, length = 6 }) {
   const isFocusedIndex = Math.min(value.length, length - 1);
 
   return (
-    <Pressable onPress={() => hiddenRef.current?.focus()} style={s.otpContainer}>
+    <Pressable
+      onPress={() => hiddenRef.current?.focus()}
+      style={s.otpContainer}
+    >
       <TextInput
         ref={hiddenRef}
         value={value}
@@ -359,7 +411,12 @@ function OTPCells({ value, onChange, length = 6 }) {
       {cells.map((c, i) => (
         <View
           key={i}
-          style={[s.otpCell, i === isFocusedIndex && value.length < length ? s.otpCellActive : null]}
+          style={[
+            s.otpCell,
+            i === isFocusedIndex && value.length < length
+              ? s.otpCellActive
+              : null,
+          ]}
         >
           <Text style={s.otpChar}>{c}</Text>
         </View>
@@ -368,7 +425,6 @@ function OTPCells({ value, onChange, length = 6 }) {
   );
 }
 
-// Styles
 const COLORS = {
   bg: "#0F172A",
   brand: "#2078A8",
@@ -379,42 +435,64 @@ const COLORS = {
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.bg },
 
-  // Curved
-  curveHero: { width: "100%", overflow: "hidden", alignItems: "center", justifyContent: "flex-end" },
-  curveFill: { position: "absolute", alignSelf: "center", backgroundColor: COLORS.brand },
-  brandTitle: { color: "#fff", fontSize: 26, fontWeight: "800", marginTop: 6 },
-  brandTagline: { color: "rgba(255,255,255,0.9)", marginTop: 2 },
+  curveHero: {
+    width: "100%",
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "flex-end",
+  },
+  curveFill: {
+    position: "absolute",
+    alignSelf: "center",
+    backgroundColor: COLORS.brand,
+  },
+  brandTitle: {
+    color: "#fff",
+    fontSize: 22,
+    fontWeight: "800",
+    marginTop: 4,
+  },
+  brandTagline: {
+    color: "rgba(255,255,255,0.9)",
+    marginTop: 2,
+    fontSize: 11,
+  },
 
-  // Verify screen
   scroll: {
     paddingHorizontal: 24,
     flexGrow: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 28,
+    paddingVertical: 26,
   },
   iconCircle: {
-    width: 120,
-    height: 120,
+    width: 110,
+    height: 110,
     borderRadius: 64,
     backgroundColor: "rgba(76,195,255,0.1)",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 18,
+    marginBottom: 16,
   },
-  verifyTitle: { color: COLORS.white, fontSize: 24, fontWeight: "800", textAlign: "center", marginBottom: 4 },
+  verifyTitle: {
+    color: COLORS.white,
+    fontSize: 20,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: 4,
+  },
   verifySub: {
     color: "rgba(255,255,255,0.8)",
-    fontSize: 14.5,
-    marginBottom: 12,
+    fontSize: 13,
+    marginBottom: 10,
     textAlign: "center",
-    lineHeight: 20,
+    lineHeight: 19,
     maxWidth: 420,
   },
 
   otpContainer: {
     flexDirection: "row",
-    gap: 10,
+    gap: 8,
     width: "100%",
     maxWidth: 420,
     justifyContent: "space-between",
@@ -424,41 +502,72 @@ const s = StyleSheet.create({
   hiddenInput: { position: "absolute", opacity: 0, width: 1, height: 1 },
   otpCell: {
     flex: 1,
-    height: 56,
-    borderRadius: 12,
+    height: 50,
+    borderRadius: 10,
     borderWidth: 1.2,
     borderColor: COLORS.border,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
   },
-  otpCellActive: { borderColor: COLORS.brand, shadowColor: COLORS.brand, shadowOpacity: 0.15, shadowRadius: 4, elevation: 2 },
-  otpChar: { fontSize: 20, color: "#0F172A", fontWeight: "700" },
+  otpCellActive: {
+    borderColor: COLORS.brand,
+    shadowColor: COLORS.brand,
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  otpChar: {
+    fontSize: 18,
+    color: "#0F172A",
+    fontWeight: "700",
+  },
 
-  // Buttons
-  btn: { height: 56, borderRadius: 12, alignItems: "center", justifyContent: "center", paddingHorizontal: 18 },
+  btn: {
+    height: 50,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 18,
+  },
   btnPrimary: { backgroundColor: COLORS.brand },
-  btnPrimaryText: { color: COLORS.white, fontSize: 16.5, fontWeight: "700" },
-  btnGhostText: { color: "#E5F3FF", fontSize: 15, fontWeight: "600" },
+  btnPrimaryText: {
+    color: COLORS.white,
+    fontSize: 15,
+    fontWeight: "700",
+  },
 
-  resendLink: { color: "#4CC3FF", textDecorationLine: "underline", marginTop: 10, fontSize: 15, textAlign: "center" },
+  resendLink: {
+    color: "#4CC3FF",
+    textDecorationLine: "underline",
+    marginTop: 10,
+    fontSize: 14,
+    textAlign: "center",
+  },
   countdownChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 5,
     borderRadius: 999,
     backgroundColor: "rgba(255,255,255,0.06)",
-    marginTop: 14,
+    marginTop: 12,
   },
-  countdownText: { color: "#A7B3C9", fontSize: 13.5 },
+  countdownText: {
+    color: "#A7B3C9",
+    fontSize: 12,
+  },
 
-  termsScroll: { padding: 24, alignItems: "center", justifyContent: "center" },
+  termsScroll: {
+    padding: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   termsCard: {
     backgroundColor: "#14213D",
     borderRadius: 16,
-    padding: 20,
+    padding: 18,
     width: "100%",
     maxWidth: 420,
     shadowColor: "#000",
@@ -466,15 +575,47 @@ const s = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
   },
-  termsTitle: { fontSize: 20, fontWeight: "700", color: COLORS.white, marginBottom: 6 },
-  termsDate: { fontSize: 12, color: "#A1A1AA", marginBottom: 12 },
-  termsText: { fontSize: 14, color: "rgba(255,255,255,0.85)", marginBottom: 10, lineHeight: 20 },
-  section: { fontSize: 14, color: "rgba(255,255,255,0.85)", marginBottom: 10, lineHeight: 20 },
-  checkboxRow: { flexDirection: "row", alignItems: "center", marginTop: 18 },
-  checkboxText: { color: "rgba(255,255,255,0.9)", marginLeft: 8, fontSize: 13.5, flexShrink: 1 },
-  okButtonWrap: { alignItems: "center", justifyContent: "center", marginTop: 24, width: "100%" },
+  termsTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: COLORS.white,
+    marginBottom: 4,
+  },
+  termsDate: {
+    fontSize: 11,
+    color: "#A1A1AA",
+    marginBottom: 10,
+  },
+  termsText: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.85)",
+    marginBottom: 8,
+    lineHeight: 19,
+  },
+  section: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.85)",
+    marginBottom: 8,
+    lineHeight: 19,
+  },
+  checkboxRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 16,
+  },
+  checkboxText: {
+    color: "rgba(255,255,255,0.9)",
+    marginLeft: 8,
+    fontSize: 13,
+    flexShrink: 1,
+  },
+  okButtonWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 20,
+    width: "100%",
+  },
 
-  // Modal styles
   modalOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.45)",
@@ -493,14 +634,22 @@ const s = StyleSheet.create({
     alignItems: "center",
   },
   successIconWrap: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: "rgba(28,200,138,0.12)",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 8,
   },
-  successTitleTxt: { color: "#E5F3FF", fontSize: 18, fontWeight: "800" },
-  successSubTxt: { color: "rgba(255,255,255,0.8)", marginTop: 4 },
+  successTitleTxt: {
+    color: "#E5F3FF",
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  successSubTxt: {
+    color: "rgba(255,255,255,0.8)",
+    marginTop: 4,
+    fontSize: 13,
+  },
 });

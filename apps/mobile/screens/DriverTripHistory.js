@@ -2,7 +2,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   ActivityIndicator,
   FlatList,
@@ -19,6 +18,7 @@ import {
   Poppins_600SemiBold,
   Poppins_700Bold,
 } from "@expo-google-fonts/poppins";
+import LCText from "../components/LCText";
 
 const TRIP_HISTORY_KEY = "driverTrips";
 
@@ -63,6 +63,7 @@ export default function DriverTripHistory({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [driverId, setDriverId] = useState(null);
+  const [sortOrder, setSortOrder] = useState("newest");
 
   const loadTrips = useCallback(async (activeDriverId) => {
     try {
@@ -71,15 +72,10 @@ export default function DriverTripHistory({ navigation }) {
 
       const filtered = Array.isArray(arr)
         ? arr.filter(
-            (t) => t.driverId && (!activeDriverId || t.driverId === activeDriverId)
+            (t) =>
+              t.driverId && (!activeDriverId || t.driverId === activeDriverId)
           )
         : [];
-
-      filtered.sort((a, b) => {
-        const aTime = new Date(a.startedAt || 0).getTime();
-        const bTime = new Date(b.startedAt || 0).getTime();
-        return bTime - aTime;
-      });
 
       setTrips(filtered);
     } catch (e) {
@@ -134,6 +130,25 @@ export default function DriverTripHistory({ navigation }) {
     setRefreshing(false);
   }, [loadTrips, driverId]);
 
+  const sortedTrips = [...trips].sort((a, b) => {
+    const getTime = (t) => {
+      const d = new Date(t.startedAt || 0);
+      const n = d.getTime();
+      return Number.isNaN(n) ? 0 : n;
+    };
+    const at = getTime(a);
+    const bt = getTime(b);
+    if (sortOrder === "newest") return bt - at;
+    return at - bt;
+  });
+
+  const sortLabel =
+    sortOrder === "newest" ? "Newest to oldest" : "Oldest to newest";
+
+  const toggleSortOrder = () => {
+    setSortOrder((prev) => (prev === "newest" ? "oldest" : "newest"));
+  };
+
   const renderItem = ({ item }) => {
     const dateLabel = formatDate(item.startedAt);
     const startLabel = formatTime(item.startedAt);
@@ -148,12 +163,12 @@ export default function DriverTripHistory({ navigation }) {
             color={C.brand}
             style={{ marginRight: 6 }}
           />
-          <Text style={styles.routeText} numberOfLines={1}>
+          <LCText style={styles.routeText} numberOfLines={1}>
             {item.routeLabel || "Route"}
-          </Text>
+          </LCText>
         </View>
 
-        <Text style={styles.dateText}>{dateLabel}</Text>
+        <LCText style={styles.dateText}>{dateLabel}</LCText>
 
         <View style={styles.timeRow}>
           <MaterialCommunityIcons
@@ -161,9 +176,9 @@ export default function DriverTripHistory({ navigation }) {
             size={16}
             color={C.sub}
           />
-          <Text style={styles.timeText}>
+          <LCText style={styles.timeText}>
             {startLabel} – {endLabel}
-          </Text>
+          </LCText>
         </View>
       </View>
     );
@@ -183,7 +198,6 @@ export default function DriverTripHistory({ navigation }) {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: C.bg }]}>
-      {/* Top header */}
       <View style={styles.topBar}>
         <TouchableOpacity
           onPress={() => navigation?.goBack?.()}
@@ -195,18 +209,17 @@ export default function DriverTripHistory({ navigation }) {
             color={C.text}
           />
         </TouchableOpacity>
-        <Text style={styles.topTitle}>Trip history</Text>
+        <LCText style={styles.topTitle}>Trip history</LCText>
         <View style={{ width: 26 }} />
       </View>
 
-      {/* Dark summary card */}
       <View style={styles.summaryWrapper}>
         <View style={styles.summaryCard}>
           <View>
-            <Text style={styles.summaryLabel}>Trip summary</Text>
-            <Text style={styles.summaryValue}>
+            <LCText style={styles.summaryLabel}>Trip summary</LCText>
+            <LCText style={styles.summaryValue}>
               {totalTrips === 0 ? "—" : totalTrips}
-            </Text>
+            </LCText>
           </View>
           <View style={styles.summaryRight}>
             <MaterialCommunityIcons
@@ -218,12 +231,27 @@ export default function DriverTripHistory({ navigation }) {
         </View>
       </View>
 
-      {/* Content */}
+      <View style={styles.sortWrapper}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={toggleSortOrder}
+          style={styles.sortPill}
+        >
+          <MaterialCommunityIcons
+            name="filter-variant"
+            size={16}
+            color={C.text}
+            style={{ marginRight: 6 }}
+          />
+          <LCText style={styles.sortText}>{sortLabel}</LCText>
+        </TouchableOpacity>
+      </View>
+
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator size="small" color={C.sub} />
         </View>
-      ) : trips.length === 0 ? (
+      ) : sortedTrips.length === 0 ? (
         <View style={styles.center}>
           <MaterialCommunityIcons
             name="clipboard-text-outline"
@@ -231,14 +259,14 @@ export default function DriverTripHistory({ navigation }) {
             color={C.sub}
             style={{ marginBottom: 10 }}
           />
-          <Text style={styles.emptyTitle}>No trip history</Text>
-          <Text style={styles.emptySubtitle}>
+          <LCText style={styles.emptyTitle}>No trip history</LCText>
+          <LCText style={styles.emptySubtitle}>
             You currently have no recorded trips. Keep driving safely!
-          </Text>
+          </LCText>
         </View>
       ) : (
         <FlatList
-          data={trips}
+          data={sortedTrips}
           keyExtractor={(item, idx) => item.id || `${item.startedAt}-${idx}`}
           renderItem={renderItem}
           contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
@@ -271,7 +299,7 @@ const styles = StyleSheet.create({
 
   summaryWrapper: {
     paddingHorizontal: 16,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   summaryCard: {
     backgroundColor: C.brand,
@@ -296,6 +324,27 @@ const styles = StyleSheet.create({
   summaryRight: {
     alignItems: "center",
     justifyContent: "center",
+  },
+
+  sortWrapper: {
+    marginHorizontal: 16,
+    marginTop: 6,
+    marginBottom: 4,
+    flexDirection: "row",
+    justifyContent: "flex-end",
+  },
+  sortPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 999,
+    backgroundColor: "#E5E7EB",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  sortText: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 11,
+    color: C.text,
   },
 
   center: {

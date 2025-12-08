@@ -1,4 +1,3 @@
-// apps/api/routes/commuter.trips.js
 import express from "express";
 import { PrismaClient } from "@prisma/client";
 import { requireAuth } from "../src/middleware/auth.js";
@@ -33,22 +32,27 @@ router.post("/trips/start", requireAuth, async (req, res) => {
       originLat,
       originLng,
       originLabel,
-
-      // snapshot fields from mobile
+      destLat,
+      destLng,
+      destLabel,
       driverName,
       busNumber,
       busPlate,
     } = req.body || {};
 
-    const lat = Number(originLat);
-    const lng = Number(originLng);
+    const originLatNum = Number(originLat);
+    const originLngNum = Number(originLng);
 
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    if (!Number.isFinite(originLatNum) || !Number.isFinite(originLngNum)) {
       console.log("[trip.start] invalid coords:", originLat, originLng);
       return res.status(400).json({ error: "Invalid origin coordinates" });
     }
 
-    // snapshot defaults (trim strings)
+    const destLatNum =
+      destLat !== undefined && destLat !== null ? Number(destLat) : null;
+    const destLngNum =
+      destLng !== undefined && destLng !== null ? Number(destLng) : null;
+
     let snapshotDriverName =
       typeof driverName === "string" && driverName.trim()
         ? driverName.trim()
@@ -64,7 +68,6 @@ router.post("/trips/start", requireAuth, async (req, res) => {
         ? busPlate.trim()
         : null;
 
-    // IDs should be STRING (cuid), not Number
     let safeBusId =
       busId !== undefined && busId !== null && busId !== ""
         ? String(busId)
@@ -77,7 +80,6 @@ router.post("/trips/start", requireAuth, async (req, res) => {
         ? String(driverProfileId)
         : null;
 
-    // validate busId and override snapshot if real bus exists
     if (safeBusId) {
       const bus = await prisma.bus.findUnique({
         where: { id: safeBusId },
@@ -92,7 +94,6 @@ router.post("/trips/start", requireAuth, async (req, res) => {
       }
     }
 
-    // validate driverProfileId (using driverId) and override snapshot
     if (safeDriverProfileId) {
       const driver = await prisma.driverProfile.findUnique({
         where: { driverId: safeDriverProfileId },
@@ -111,13 +112,14 @@ router.post("/trips/start", requireAuth, async (req, res) => {
         commuterProfileId: commuter.id,
         busId: safeBusId,
         driverProfileId: safeDriverProfileId,
-        originLat: lat,
-        originLng: lng,
+        originLat: originLatNum,
+        originLng: originLngNum,
         originLabel: originLabel || null,
+        destLat: Number.isFinite(destLatNum) ? destLatNum : null,
+        destLng: Number.isFinite(destLngNum) ? destLngNum : null,
+        destLabel: destLabel || null,
         status: "ONGOING",
         startedAt: new Date(),
-
-        // snapshot fields saved on Trip
         driverName: snapshotDriverName,
         busNumber: snapshotBusNumber,
         busPlate: snapshotBusPlate,
@@ -155,7 +157,6 @@ router.post("/trips/complete", requireAuth, async (req, res) => {
 
     let { tripId, destLat, destLng, destLabel } = req.body || {};
 
-    // If tripId not passed, get latest ongoing trip
     if (!tripId) {
       const latest = await prisma.trip.findFirst({
         where: {
@@ -217,7 +218,6 @@ router.get("/trips/recent", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "No commuter profile found" });
     }
 
-    // 1) Get completed trips for this commuter
     const trips = await prisma.trip.findMany({
       where: {
         commuterProfileId: commuter.id,
@@ -226,7 +226,6 @@ router.get("/trips/recent", requireAuth, async (req, res) => {
       orderBy: { endedAt: "desc" },
       take: 10,
       include: {
-        // 🔥 include profileUrl so mobile can show avatar
         driverProfile: { select: { fullName: true, profileUrl: true } },
         bus: { select: { number: true, plate: true } },
       },
@@ -236,7 +235,6 @@ router.get("/trips/recent", requireAuth, async (req, res) => {
       return res.json([]);
     }
 
-    // 2) Grab ratings for those trips (for this commuter)
     const tripIds = trips.map((t) => t.id);
 
     const ratings = await prisma.rideRating.findMany({
@@ -251,13 +249,11 @@ router.get("/trips/recent", requireAuth, async (req, res) => {
       },
     });
 
-    // 3) Index ratings by rideId
     const ratingByRideId = {};
     for (const r of ratings) {
       ratingByRideId[r.rideId] = r;
     }
 
-    // 4) Attach ratingScore / ratingComment + driverAvatar to each trip object
     const result = trips.map((t) => {
       const r = ratingByRideId[t.id];
       const dp = t.driverProfile || {};
@@ -265,7 +261,6 @@ router.get("/trips/recent", requireAuth, async (req, res) => {
         ...t,
         ratingScore: r?.score ?? null,
         ratingComment: r?.comment ?? null,
-        // this gets picked up by TripDetails as trip.driverAvatar
         driverAvatar: dp.profileUrl || null,
       };
     });
@@ -282,14 +277,6 @@ router.get("/trips/recent", requireAuth, async (req, res) => {
 });
 
 /* -------------------- SUBMIT / UPDATE RATING -------------------- */
-/**
- * POST /commuter/trips/:tripId/rating
- * Body:
- * {
- *   rating: number (1–5),
- *   comment?: string
- * }
- */
 router.post("/trips/:tripId/rating", requireAuth, async (req, res) => {
   const { tripId } = req.params;
   const { rating, comment } = req.body || {};
@@ -319,7 +306,6 @@ router.post("/trips/:tripId/rating", requireAuth, async (req, res) => {
       });
     }
 
-    // One rating per trip per commuter
     const existing = await prisma.rideRating.findFirst({
       where: {
         rideId: trip.id,

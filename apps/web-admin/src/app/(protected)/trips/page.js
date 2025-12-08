@@ -4,13 +4,11 @@ import { useEffect, useState } from "react";
 import { Poppins } from "next/font/google";
 import { listTrips } from "@/lib/api";
 
-/* ---------- FONT ---------- */
 const poppins = Poppins({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
 });
 
-/* ---------- small helpers ---------- */
 function formatDate(dateString) {
   if (!dateString) return "—";
   const d = new Date(dateString);
@@ -26,14 +24,10 @@ function formatTimeRange(start, end) {
   if (!start) return "—";
   const s = new Date(start);
   const e = end ? new Date(end) : null;
-
   if (Number.isNaN(s.getTime())) return "—";
-
   const opts = { hour: "2-digit", minute: "2-digit" };
   const startStr = s.toLocaleTimeString(undefined, opts);
-
   if (!e || Number.isNaN(e.getTime())) return `${startStr} – Ongoing`;
-
   const endStr = e.toLocaleTimeString(undefined, opts);
   return `${startStr} – ${endStr}`;
 }
@@ -43,13 +37,10 @@ function formatDuration(start, end) {
   const s = new Date(start);
   const e = new Date(end);
   if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return "—";
-
   const diffMs = e.getTime() - s.getTime();
   if (diffMs <= 0) return "—";
-
   const diffMinutes = Math.round(diffMs / 60000);
   if (diffMinutes < 60) return `${diffMinutes} mins`;
-
   const hours = Math.floor(diffMinutes / 60);
   const mins = diffMinutes % 60;
   if (mins === 0) return `${hours} hr${hours > 1 ? "s" : ""}`;
@@ -65,7 +56,6 @@ function formatStatus(status) {
   return up.charAt(0) + up.slice(1).toLowerCase();
 }
 
-/* ---------- STATUS COLORS ---------- */
 function statusStyles(status) {
   const up = String(status || "").toUpperCase();
   if (up === "COMPLETED") {
@@ -92,23 +82,27 @@ function statusStyles(status) {
   return null;
 }
 
-/* ---------- PAGE ---------- */
+const PAGE_SIZE = 10;
+
 export default function TripHistoryPage() {
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [sortOrder, setSortOrder] = useState("newest");
 
   useEffect(() => {
     let cancelled = false;
-
     async function load() {
       try {
         setLoading(true);
         setErrorMsg("");
-
         const data = await listTrips();
         if (!cancelled) {
-          setTrips(Array.isArray(data) ? data : data?.items || []);
+          const items = Array.isArray(data) ? data : data?.items || [];
+          setTrips(items);
+          setPage(1);
         }
       } catch (err) {
         console.error("LOAD TRIPS ERROR:", err);
@@ -119,16 +113,59 @@ export default function TripHistoryPage() {
         if (!cancelled) setLoading(false);
       }
     }
-
     load();
     return () => {
       cancelled = true;
     };
   }, []);
 
+  useEffect(() => {
+    setPage(1);
+  }, [search, sortOrder]);
+
+  const normalizedSearch = search.trim().toLowerCase();
+
+  const filtered = trips.filter((trip) => {
+    if (!normalizedSearch) return true;
+    const driverLabel =
+      trip.driverName || trip.driverProfile?.fullName || "Unknown driver";
+    const busLabel = trip.busNumber || trip.bus?.number || "";
+    const plateLabel = trip.busPlate || trip.bus?.plate || "";
+    const startingPoint = trip.originLabel || "";
+    const destination = trip.destLabel || "";
+    const statusLabel = formatStatus(trip.status);
+    const target = [
+      driverLabel,
+      busLabel,
+      plateLabel,
+      startingPoint,
+      destination,
+      statusLabel,
+      formatDate(trip.startedAt),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return target.includes(normalizedSearch);
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
+    const aDate = a.startedAt ? new Date(a.startedAt).getTime() : 0;
+    const bDate = b.startedAt ? new Date(b.startedAt).getTime() : 0;
+    if (sortOrder === "newest") {
+      return bDate - aDate;
+    } else {
+      return aDate - bDate;
+    }
+  });
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const startIndex = (currentPage - 1) * PAGE_SIZE;
+  const pageItems = sorted.slice(startIndex, startIndex + PAGE_SIZE);
+
   return (
     <main className={poppins.className} style={S.page}>
-      {/* Header */}
       <div style={S.headerRow}>
         <div>
           <h1 style={S.title}>Trip History</h1>
@@ -138,7 +175,6 @@ export default function TripHistoryPage() {
         </div>
       </div>
 
-      {/* Card */}
       <section style={S.card}>
         {loading ? (
           <div style={S.loadingWrap}>
@@ -147,7 +183,7 @@ export default function TripHistoryPage() {
           </div>
         ) : errorMsg ? (
           <div style={S.errorBox}>{errorMsg}</div>
-        ) : trips.length === 0 ? (
+        ) : sorted.length === 0 ? (
           <div style={S.emptyState}>
             <p style={S.emptyTitle}>No trips found</p>
             <p style={S.emptyText}>
@@ -155,91 +191,133 @@ export default function TripHistoryPage() {
             </p>
           </div>
         ) : (
-          <div style={S.tableWrap}>
-            <table style={S.table}>
-              <thead>
-                <tr>
-                  <th style={S.th}>Date</th>
-                  <th style={S.th}>Driver</th>
-                  <th style={S.th}>Bus</th>
-                  <th style={S.th}>Route</th>
-                  <th style={S.th}>Time</th>
-                  <th style={S.th}>Duration</th>
-                  <th style={S.th}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {trips.map((trip) => {
-                  const {
-                    id,
-                    startedAt,
-                    endedAt,
-                    status,
-                    driverName,
-                    driverProfile,
-                    busNumber,
-                    busPlate,
-                    bus,
-                    originLabel,
-                    destLabel,
-                  } = trip;
+          <>
+            <div style={S.toolbar}>
+              <div style={S.searchWrapper}>
+                <input
+                  style={S.searchInput}
+                  placeholder="Search by driver, bus, plate, starting point, destination, status…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <div style={S.toolbarRight}>
+                <select
+                  style={S.sortSelect}
+                  value={sortOrder}
+                  onChange={(e) => setSortOrder(e.target.value)}
+                >
+                  <option value="newest">Newest to oldest</option>
+                  <option value="oldest">Oldest to newest</option>
+                </select>
+              </div>
+            </div>
 
-                  const driverLabel =
-                    driverName ||
-                    driverProfile?.fullName ||
-                    "Unknown driver";
+            <div style={S.tableWrap}>
+              <table style={S.table}>
+                <thead>
+                  <tr>
+                    <th style={S.th}>Date</th>
+                    <th style={S.th}>Driver</th>
+                    <th style={S.th}>Bus</th>
+                    <th style={S.th}>Starting point</th>
+                    <th style={S.th}>Destination</th>
+                    <th style={S.th}>Time</th>
+                    <th style={S.th}>Duration</th>
+                    <th style={S.th}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageItems.map((trip) => {
+                    const {
+                      id,
+                      startedAt,
+                      endedAt,
+                      status,
+                      driverName,
+                      driverProfile,
+                      busNumber,
+                      busPlate,
+                      bus,
+                      originLabel,
+                      destLabel,
+                    } = trip;
 
-                  const busLabel =
-                    busNumber ||
-                    bus?.number ||
-                    "—";
+                    const driverLabel =
+                      driverName ||
+                      driverProfile?.fullName ||
+                      "Unknown driver";
 
-                  const plateLabel =
-                    busPlate ||
-                    bus?.plate ||
-                    "";
+                    const busLabel = busNumber || bus?.number || "—";
+                    const plateLabel = busPlate || bus?.plate || "";
+                    const startingPoint = originLabel || "—";
+                    const destination = destLabel || "—";
 
-                  const routeLabel =
-                    originLabel && destLabel
-                      ? `${originLabel} → ${destLabel}`
-                      : originLabel || destLabel || "—";
+                    return (
+                      <tr key={id}>
+                        <td style={S.td}>{formatDate(startedAt)}</td>
+                        <td style={S.td}>{driverLabel}</td>
+                        <td style={S.td}>
+                          {busLabel}
+                          {plateLabel ? (
+                            <span style={S.subMuted}> · {plateLabel}</span>
+                          ) : null}
+                        </td>
+                        <td style={S.td}>{startingPoint}</td>
+                        <td style={S.td}>{destination}</td>
+                        <td style={S.td}>
+                          {formatTimeRange(startedAt, endedAt)}
+                        </td>
+                        <td style={S.td}>
+                          {formatDuration(startedAt, endedAt)}
+                        </td>
+                        <td style={S.td}>
+                          <span
+                            style={{
+                              ...S.statusBadge,
+                              ...(statusStyles(status) || {}),
+                            }}
+                          >
+                            {formatStatus(status)}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
 
-                  return (
-                    <tr key={id}>
-                      <td style={S.td}>{formatDate(startedAt)}</td>
-                      <td style={S.td}>{driverLabel}</td>
-                      <td style={S.td}>
-                        {busLabel}
-                        {plateLabel ? (
-                          <span style={S.subMuted}> · {plateLabel}</span>
-                        ) : null}
-                      </td>
-                      <td style={S.td}>{routeLabel}</td>
-                      <td style={S.td}>{formatTimeRange(startedAt, endedAt)}</td>
-                      <td style={S.td}>{formatDuration(startedAt, endedAt)}</td>
-                      <td style={S.td}>
-                        <span
-                          style={{
-                            ...S.statusBadge,
-                            ...(statusStyles(status) || {}),
-                          }}
-                        >
-                          {formatStatus(status)}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+            <div style={S.paginationBottom}>
+              <button
+                type="button"
+                style={S.pageCircleBtn}
+                disabled={currentPage === 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                ‹
+              </button>
+              <span style={S.paginationLabel}>
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                type="button"
+                style={S.pageCircleBtn}
+                disabled={currentPage === totalPages}
+                onClick={() =>
+                  setPage((p) => Math.min(totalPages, p + 1))
+                }
+              >
+                ›
+              </button>
+            </div>
+          </>
         )}
       </section>
     </main>
   );
 }
 
-/* ---------- STYLES ---------- */
 const S = {
   page: {
     padding: "20px 24px 32px",
@@ -274,6 +352,43 @@ const S = {
     boxShadow:
       "0 18px 45px rgba(15,23,42,0.06), 0 1px 0 rgba(148,163,184,0.3)",
     padding: 16,
+  },
+  toolbar: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 4,
+    marginBottom: 10,
+    flexWrap: "wrap",
+  },
+  searchWrapper: {
+    flex: 1,
+    minWidth: 260,
+  },
+  searchInput: {
+    width: "100%",
+    borderRadius: 999,
+    border: "1px solid #9CA3AF",
+    padding: "10px 14px",
+    fontSize: 14,
+    background: "#F9FBFF",
+    color: "#111827",
+    outline: "none",
+  },
+  toolbarRight: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  sortSelect: {
+    borderRadius: 999,
+    border: "1px solid #9CA3AF",
+    padding: "8px 12px",
+    fontSize: 13,
+    background: "#FFFFFF",
+    color: "#111827",
+    outline: "none",
   },
   tableWrap: {
     width: "100%",
@@ -364,5 +479,30 @@ const S = {
     marginTop: 4,
     fontSize: 13,
     color: "#6B7280",
+  },
+  paginationBottom: {
+    marginTop: 18,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 14,
+  },
+  paginationLabel: {
+    fontSize: 13,
+    color: "#6B7280",
+    fontWeight: 500,
+  },
+  pageCircleBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: "999px",
+    border: "1px solid #E5E7EB",
+    background: "#FFFFFF",
+    color: "#4B5563",
+    cursor: "pointer",
+    fontSize: 16,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
 };
