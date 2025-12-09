@@ -11,9 +11,13 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "extra": {
-      "EXPO_PUBLIC_API_URL": "http://192.168.1.7:4000"
+      "EXPO_PUBLIC_API_URL": "http://192.168.1.16:4000",
+      "eas": {
+        "projectId": "e2682048-86d7-4cbf-ae84-28e2a4e38751"
+      }
     },
     "splash": {
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#0F1B2B"
     },
@@ -21,7 +25,6 @@
       "**/*"
     ],
     "plugins": [
-      "expo-barcode-scanner",
       "expo-localization"
     ],
     "ios": {
@@ -35,10 +38,6 @@
     },
     "android": {
       "permissions": [
-        "CAMERA",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "android.permission.CAMERA",
         "CAMERA",
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
