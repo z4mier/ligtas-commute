@@ -1,33 +1,32 @@
 {
   "expo": {
-    "name": "LigtasCommute",
-    "slug": "ligtascommute",
-    "scheme": "ligtascommute",
-    "owner": "z4mier",
+    "name": "mobile",
+    "slug": "mobile",
+    "scheme": "mobile",
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
     "version": "1.0.0",
     "orientation": "portrait",
-    "jsEngine": "hermes",
-
     "extra": {
-      "EXPO_PUBLIC_API_URL": "http://192.168.1.7:4000",
+      "EXPO_PUBLIC_API_URL": "http://192.168.1.16:4000",
       "eas": {
-        "projectId": "b463af7c-519b-4029-a030-c3502629b963"
+        "projectId": "e2682048-86d7-4cbf-ae84-28e2a4e38751"
       }
     },
-
     "splash": {
-      "image": "./assets/images/home-logo.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#0F1B2B"
     },
-
-    "assetBundlePatterns": ["**/*"],
-
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "plugins": [
-      "expo-barcode-scanner",
       "expo-localization"
     ],
-
     "ios": {
       "infoPlist": {
         "NSCameraUsageDescription": "We use the camera to scan driver QR codes.",
@@ -37,28 +36,19 @@
         "googleMapsApiKey": "AIzaSyDegIXVdcHXgls2avydsdWgSKFziyePLNY"
       }
     },
-
     "android": {
-      "package": "com.z4mier.ligtascommute",
       "permissions": [
         "CAMERA",
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA"
       ],
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyDegIXVdcHXgls2avydsdWgSKFziyePLNY"
         }
-      }
-    },
-
-    "updates": {
-      "enabled": false,
-      "checkAutomatically": "ON_ERROR_RECOVERY"
-    },
-
-    "runtimeVersion": {
-      "policy": "appVersion"
+      },
+      "package": "com.anonymous.mobile"
     }
   }
 }
