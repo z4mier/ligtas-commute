@@ -55,7 +55,7 @@ app.use(
 app.use(express.json({ limit: "1mb" }));
 
 const PORT = process.env.PORT || 4000;
-const HOST = process.env.HOST || "0.0.0.0";
+// ⚠️ HOST REMOVED – Render will bind automatically
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
 const GOOGLE_PLACES_KEY =
   process.env.GOOGLE_PLACES_KEY || process.env.GOOGLE_DIRECTIONS_KEY || "";
@@ -1157,9 +1157,10 @@ app.patch("/users/change-password", requireAuth, async (req, res) => {
 });
 
 /* ---------- start/shutdown ---------- */
-const server = app.listen(PORT, HOST, () =>
-  console.log(`API running on http://${HOST}:${PORT}`)
-);
+// ✅ No HOST here – perfect for Render / any platform
+const server = app.listen(PORT, () => {
+  console.log(`API running on port ${PORT}`);
+});
 
 function shutdown() {
   server.close(async () => {
