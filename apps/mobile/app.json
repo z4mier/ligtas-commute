@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "mobile",
+    "name": "LigtasCommute",
     "slug": "mobile",
     "scheme": "mobile",
     "platforms": [
@@ -11,13 +11,14 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "extra": {
-      "EXPO_PUBLIC_API_URL": "http://192.168.1.16:4000",
+      "EXPO_PUBLIC_API_URL": "https://ligtas-commute-api.onrender.com",
       "eas": {
         "projectId": "e2682048-86d7-4cbf-ae84-28e2a4e38751"
       }
     },
+    "icon": "./assets/images/home-logo.png",
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/images/home-logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#0F1B2B"
     },

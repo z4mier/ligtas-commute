@@ -24,7 +24,7 @@ import { WebView } from "react-native-webview";
 import { useNavigation } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { addIncidentSubmitted } from "../lib/notify";
-import LCText from "../components/LCText"; // ⬅️ use your LCText component
+import LCText from "../components/LCText"; 
 
 const C = {
   brand: "#0B132B",

@@ -6,7 +6,7 @@ import { z } from "zod";
 const router = Router();
 const prisma = new PrismaClient();
 
-/* ---------- Zod schema for incoming IoT payload ---------- */
+/* ---------- Zod schema for incoming IoT emergency payload ---------- */
 const iotIncidentSchema = z.object({
   code: z.string().min(1), // "YELLOW" | "ORANGE" | "RED"
   message: z.string().min(1),
@@ -19,6 +19,13 @@ const iotIncidentSchema = z.object({
   longitude: z.number().optional(),
 
   deviceId: z.string().optional(),
+});
+
+/* ---------- Zod schema for GPS ping payload ---------- */
+const gpsPingSchema = z.object({
+  deviceId: z.string().min(1),
+  latitude: z.number(),
+  longitude: z.number(),
 });
 
 /* =========================================
@@ -132,6 +139,54 @@ router.post("/emergency", async (req, res) => {
     return res.status(500).json({
       ok: false,
       message: "Failed to record emergency incident",
+    });
+  }
+});
+
+/* =========================================
+   POST /iot/gps  (ESP32 periodic GPS ping)
+   ========================================= */
+router.post("/gps", async (req, res) => {
+  try {
+    const payload = gpsPingSchema.parse(req.body || {});
+    const { deviceId, latitude, longitude } = payload;
+
+    console.log("[IOT GPS PING]", {
+      deviceId,
+      latitude,
+      longitude,
+    });
+
+    // 🔹 Optional future work: update Bus location based on deviceId
+    // const bus = await prisma.bus.findFirst({ where: { deviceId } });
+    // if (bus) {
+    //   await prisma.bus.update({
+    //     where: { id: bus.id },
+    //     data: {
+    //       lastLat: latitude,
+    //       lastLng: longitude,
+    //       lastPingAt: new Date(),
+    //     },
+    //   });
+    // }
+
+    return res.json({
+      ok: true,
+      message: "GPS ping received.",
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({
+        ok: false,
+        message: "Invalid GPS payload from IoT device",
+        errors: err.errors,
+      });
+    }
+
+    console.error("POST /iot/gps ERROR:", err);
+    return res.status(500).json({
+      ok: false,
+      message: "Failed to process GPS ping",
     });
   }
 });
