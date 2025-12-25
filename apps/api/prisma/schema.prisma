@@ -3,81 +3,76 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
 model User {
-  id                 String   @id @default(cuid())
-  email              String?  @unique
-  phone              String?  @unique
+  id                 String             @id @default(cuid())
+  email              String?            @unique
+  phone              String?            @unique
   password           String?
-  role               String   @default("COMMUTER")
-  status             String   @default("active")
-  mustChangePassword Boolean  @default(false)
-  profileUrl         String?                
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  driverProfile      DriverProfile?
+  role               String             @default("COMMUTER")
+  status             String             @default("active")
+  mustChangePassword Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  profileUrl         String?
   commuterProfile    CommuterProfile?
+  driverProfile      DriverProfile?
   emergencyContacts  EmergencyContact[]
-  reportedIncidents  IncidentReport[] @relation("UserReporter")
+  reportedIncidents  IncidentReport[]   @relation("UserReporter")
 }
 
 model DriverProfile {
-  driverId  String  @id @default(cuid()) @map("id")
-  userId    String  @unique
-  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  fullName  String
-  licenseNo String
-  birthDate DateTime
-  address   String
-  phone     String?
-
-  profileUrl String?                          
-
-  busId     String?
-  bus       Bus?   @relation("BusDrivers", fields: [busId], references: [id])
-
-  busType   String @default("AIRCON")
-  status    String @default("OFF_DUTY")
-  isActive  Boolean @default(true)
-
-  createdAt DateTime @default(now())
-
-  ratings   RideRating[]
-  incidents IncidentReport[]
-  trips     Trip[]
-
-  emergencyIncidents EmergencyIncident[] @relation("DriverEmergencyIncidents")
+  driverId              String                  @id @default(cuid()) @map("id")
+  userId                String                  @unique
+  fullName              String
+  licenseNo             String
+  birthDate             DateTime
+  address               String
+  phone                 String?
+  busId                 String?
+  busType               String                  @default("AIRCON")
+  status                String                  @default("OFF_DUTY")
+  isActive              Boolean                 @default(true)
+  createdAt             DateTime                @default(now())
+  profileUrl            String?
+  bus                   Bus?                    @relation("BusDrivers", fields: [busId], references: [id])
+  user                  User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emergencyIncidents    EmergencyIncident[]     @relation("DriverEmergencyIncidents")
+  incidents             IncidentReport[]
+  IotDeviceStatusReport IotDeviceStatusReport[]
+  ratings               RideRating[]
+  trips                 Trip[]
 
   @@index([busId])
   @@index([status, busId])
 }
 
 model CommuterProfile {
-  id         String  @id @default(cuid())
-  userId     String  @unique
-  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String       @id @default(cuid())
+  userId     String       @unique
   fullName   String
   address    String?
-  language   String  @default("en")
+  language   String       @default("en")
   profileUrl String?
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  RideRating RideRating[]
   trips      Trip[]
 }
 
 model EmergencyContact {
   id        String   @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   name      String
   phone     String
   relation  String?
   priority  Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, phone])
   @@unique([userId, priority])
@@ -86,38 +81,36 @@ model EmergencyContact {
 }
 
 model Bus {
-  id           String          @id @default(cuid())
-  number       String
-  plate        String          @unique
-  busType      String          @default("AIRCON")
-  status       String          @default("ACTIVE")
-  corridor     String          @default("EAST")
-  isActive     Boolean         @default(true)
-  qrUrl        String?
-  routeId      String?
-  forwardRoute String?
-  returnRoute  String?
-  deviceId     String?         @unique
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @default(now()) @updatedAt
-  drivers      DriverProfile[] @relation("BusDrivers")
-  trips        Trip[]
-  emergencyIncidents EmergencyIncident[] @relation("BusEmergencyIncidents")
+  id                    String                  @id @default(cuid())
+  number                String
+  plate                 String                  @unique
+  busType               String                  @default("AIRCON")
+  status                String                  @default("ACTIVE")
+  corridor              String                  @default("EAST")
+  isActive              Boolean                 @default(true)
+  qrUrl                 String?
+  routeId               String?
+  forwardRoute          String?
+  returnRoute           String?
+  deviceId              String?                 @unique
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @default(now()) @updatedAt
+  drivers               DriverProfile[]         @relation("BusDrivers")
+  emergencyIncidents    EmergencyIncident[]     @relation("BusEmergencyIncidents")
+  IotDeviceStatusReport IotDeviceStatusReport[]
+  trips                 Trip[]
 }
 
 model Trip {
-  id                String          @id @default(cuid())
+  id                String           @id @default(cuid())
   commuterProfileId String
-  commuterProfile   CommuterProfile @relation(fields: [commuterProfileId], references: [id])
   driverProfileId   String?
-  driverProfile     DriverProfile?  @relation(fields: [driverProfileId], references: [driverId])
   busId             String?
-  bus               Bus?            @relation(fields: [busId], references: [id])
   driverName        String?
   busNumber         String?
   busPlate          String?
-  status            String          @default("ONGOING")
-  startedAt         DateTime        @default(now())
+  status            String           @default("ONGOING")
+  startedAt         DateTime         @default(now())
   endedAt           DateTime?
   originLat         Float?
   originLng         Float?
@@ -125,9 +118,12 @@ model Trip {
   destLng           Float?
   originLabel       String?
   destLabel         String?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
   incidentReports   IncidentReport[]
+  bus               Bus?             @relation(fields: [busId], references: [id])
+  commuterProfile   CommuterProfile  @relation(fields: [commuterProfileId], references: [id])
+  driverProfile     DriverProfile?   @relation(fields: [driverProfileId], references: [driverId])
 
   @@index([commuterProfileId, status])
   @@index([driverProfileId])
@@ -136,23 +132,24 @@ model Trip {
 }
 
 model RideRating {
-  id         String   @id @default(cuid())
-  driverId   String
-  commuterId String
-  rideId     String?
-  score      Int      @default(5)
-  comment    String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  driver     DriverProfile @relation(fields: [driverId], references: [driverId])
+  id              String          @id @default(cuid())
+  driverId        String
+  commuterId      String
+  rideId          String?
+  score           Int             @default(5)
+  comment         String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  revealName      Boolean?        @default(false)
+  driver          DriverProfile   @relation(fields: [driverId], references: [driverId])
+  CommuterProfile CommuterProfile @relation(fields: [commuterId], references: [id], onDelete: Cascade, map: "riderating_commuterId_fkey")
 
   @@index([driverId, createdAt])
   @@index([commuterId, createdAt])
 }
 
 model IncidentReport {
-  id          String   @id @default(cuid())
+  id          String             @id @default(cuid())
   driverId    String
   reporterId  String?
   tripId      String?
@@ -160,14 +157,13 @@ model IncidentReport {
   lat         Float?
   lng         Float?
   evidenceUrl String?
-  status      String   @default("PENDING")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
+  status      String             @default("PENDING")
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
   categories  IncidentCategory[]
-  driver      DriverProfile @relation(fields: [driverId], references: [driverId])
-  trip        Trip?         @relation(fields: [tripId], references: [id])
-  reporter    User?         @relation("UserReporter", fields: [reporterId], references: [id])
+  driver      DriverProfile      @relation(fields: [driverId], references: [driverId])
+  reporter    User?              @relation("UserReporter", fields: [reporterId], references: [id])
+  trip        Trip?              @relation(fields: [tripId], references: [id])
 
   @@index([driverId, createdAt])
   @@index([status, createdAt])
@@ -183,25 +179,38 @@ model IncidentCategory {
 }
 
 model EmergencyIncident {
-  id              String   @id @default(cuid())
+  id              String         @id @default(cuid())
   deviceId        String
   code            String
   message         String?
   latitude        Float?
   longitude       Float?
-  status          String   @default("PENDING")
+  status          String         @default("PENDING")
   busId           String?
   driverProfileId String?
   busNumber       String?
   busPlate        String?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime       @default(now())
   resolvedAt      DateTime?
-
-  bus    Bus?           @relation("BusEmergencyIncidents", fields: [busId], references: [id])
-  driver DriverProfile? @relation("DriverEmergencyIncidents", fields: [driverProfileId], references: [driverId])
+  bus             Bus?           @relation("BusEmergencyIncidents", fields: [busId], references: [id])
+  driver          DriverProfile? @relation("DriverEmergencyIncidents", fields: [driverProfileId], references: [driverId])
 
   @@index([deviceId, createdAt])
   @@index([status, createdAt])
   @@index([busId, createdAt])
   @@index([driverProfileId, createdAt])
+}
+
+model IotDeviceStatusReport {
+  id                String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  device_id         String?
+  bus_id            String?
+  driver_profile_id String?
+  status            String
+  note              String?
+  admin_status      String?        @default("PENDING")
+  created_at        DateTime?      @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime?      @default(now()) @db.Timestamptz(6)
+  Bus               Bus?           @relation(fields: [bus_id], references: [id], onUpdate: NoAction, map: "fk_bus")
+  DriverProfile     DriverProfile? @relation(fields: [driver_profile_id], references: [driverId], onUpdate: NoAction, map: "fk_driver_profile")
 }

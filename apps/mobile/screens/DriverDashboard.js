@@ -10,6 +10,8 @@ import {
   Image,
   RefreshControl,
   Alert,
+  Modal,
+  Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -151,7 +153,7 @@ function buildLoopRouteLabel(forward, back) {
 
 function buildAbsoluteAvatarUrl(raw) {
   if (!raw) return null;
-  if (/^https?:\/\//i.test(raw)) return raw; 
+  if (/^https?:\/\//i.test(raw)) return raw;
 
   const base = (API_URL || "").replace(/\/+$/, "");
   const path = raw.startsWith("/") ? raw : `/${raw}`;
@@ -197,6 +199,8 @@ export default function DriverDashboard({ navigation }) {
   const [dutyUpdating, setDutyUpdating] = useState(false);
 
   const [busInfo, setBusInfo] = useState({
+    busId: null,     // ✅ NEW
+    deviceId: null,  // ✅ NEW
     number: null,
     plate: null,
     routeLabel: null,
@@ -204,6 +208,74 @@ export default function DriverDashboard({ navigation }) {
   });
 
   const [currentTrip, setCurrentTrip] = useState(null);
+
+  // ✅ IoT state (prevents crash)
+  const [iot, setIot] = useState({
+    status: "UNKNOWN", // ONLINE | OFFLINE | MAINTENANCE | UNKNOWN
+    deviceId: null,    // ✅ will be set from assigned bus
+    lastSeenAt: null,
+  });
+
+  // ✅ Enhanced IoT modal UI state
+  const [iotModalOpen, setIotModalOpen] = useState(false);
+  const [iotSending, setIotSending] = useState(false);
+
+  const openIotReportChoices = () => setIotModalOpen(true);
+  const closeIotModal = () => setIotModalOpen(false);
+
+  // ✅ submit IoT report to backend
+  const reportIotStatus = async (status) => {
+    try {
+      setIotSending(true);
+
+      const token =
+        (await AsyncStorage.getItem("driverToken")) ||
+        (await AsyncStorage.getItem("token"));
+
+      // ✅ IMPORTANT: send busId + deviceId + busNumber + plateNumber
+      const body = {
+        status,
+        busId: busInfo?.busId || null,
+        deviceId: busInfo?.deviceId || iot?.deviceId || null,
+        busNumber: busInfo?.number || null,
+        plateNumber: busInfo?.plate || null,
+      };
+
+      const res = await fetch(`${API_URL}/iot/status-report`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        Alert.alert("Error", data.message || "Failed to send IoT report.");
+        return;
+      }
+
+      // ✅ Update label instantly (optional)
+      setIot((prev) => ({
+        ...prev,
+        status:
+          status === "WORKING"
+            ? "ONLINE"
+            : status === "NOT_WORKING"
+            ? "OFFLINE"
+            : "MAINTENANCE",
+      }));
+
+      setIotModalOpen(false);
+      Alert.alert("Sent", "IoT report sent to admin.");
+    } catch (e) {
+      console.log("[DriverDashboard] reportIotStatus error", e);
+      Alert.alert("Error", "Failed to send IoT report.");
+    } finally {
+      setIotSending(false);
+    }
+  };
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -362,12 +434,18 @@ export default function DriverDashboard({ navigation }) {
 
         const bus = driverProfileFromUser.bus || profileData.bus || null;
 
+        let busId = null;
+        let deviceId = null;
         let number = null;
         let plate = null;
         let routeLabel = null;
         let presetDest = null;
 
         if (bus) {
+          // ✅ NEW
+          busId = bus.id || bus.busId || null;
+          deviceId = bus.deviceId || bus.deviceID || null;
+
           number = bus.number || bus.busNumber || null;
           plate = bus.plate || bus.plateNumber || null;
 
@@ -408,14 +486,25 @@ export default function DriverDashboard({ navigation }) {
         }
 
         setBusInfo({
+          busId,
+          deviceId,
           number,
           plate,
           routeLabel,
           presetDest,
         });
+
+        // ✅ IMPORTANT: set iot.deviceId from bus so reporting works
+        setIot((prev) => ({
+          ...prev,
+          deviceId: deviceId || prev.deviceId || null,
+          status: prev.status || "UNKNOWN",
+        }));
       } catch (e) {
         console.log("[DriverDashboard] load driver profile error", e);
         setBusInfo({
+          busId: null,
+          deviceId: null,
           number: null,
           plate: null,
           routeLabel: null,
@@ -693,7 +782,6 @@ export default function DriverDashboard({ navigation }) {
             </View>
 
             <View style={styles.liveCard}>
-
               {!isOnDuty && (
                 <>
                   <LCText style={styles.liveLabel}>You are OFF duty</LCText>
@@ -701,9 +789,7 @@ export default function DriverDashboard({ navigation }) {
                     style={[styles.liveMeta, { marginLeft: 0, marginTop: 4 }]}
                   >
                     Tap{" "}
-                    <LCText style={{ fontWeight: "600" }}>
-                      "Start duty"
-                    </LCText>{" "}
+                    <LCText style={{ fontWeight: "600" }}>"Start duty"</LCText>{" "}
                     below to make yourself available for trips.
                   </LCText>
                 </>
@@ -750,9 +836,7 @@ export default function DriverDashboard({ navigation }) {
                       color={C.brand}
                       style={{ marginRight: 6 }}
                     />
-                    <LCText
-                      style={[styles.dutyPillText, { color: C.brand }]}
-                    >
+                    <LCText style={[styles.dutyPillText, { color: C.brand }]}>
                       Trip in progress
                     </LCText>
                   </View>
@@ -832,6 +916,7 @@ export default function DriverDashboard({ navigation }) {
                 onPress={openTripHistory}
                 badgeCount={tripUnread}
               />
+
               <QuickBox
                 icon="star-circle-outline"
                 title="Ratings"
@@ -839,6 +924,29 @@ export default function DriverDashboard({ navigation }) {
                 onPress={openRatings}
                 badgeCount={ratingUnread}
               />
+
+              <QuickBox
+                icon="access-point"
+                title="IoT Device"
+                subtitle={
+                  iot?.status === "ONLINE"
+                    ? "Device is online"
+                    : iot?.status === "OFFLINE"
+                    ? "Device is offline"
+                    : iot?.status === "MAINTENANCE"
+                    ? "Needs maintenance"
+                    : "Check device status"
+                }
+                variant={
+                  iot?.status === "ONLINE"
+                    ? "success"
+                    : iot?.status === "OFFLINE"
+                    ? "danger"
+                    : "default"
+                }
+                onPress={openIotReportChoices}
+              />
+
               <QuickBox
                 icon="account-circle-outline"
                 title="Profile"
@@ -848,6 +956,146 @@ export default function DriverDashboard({ navigation }) {
             </View>
           </View>
         </ScrollView>
+
+        <Modal
+          visible={iotModalOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={closeIotModal}
+        >
+          <Pressable style={styles.modalOverlay} onPress={closeIotModal}>
+            <Pressable style={styles.modalCard} onPress={() => {}}>
+              <View style={styles.modalHeader}>
+                <View style={styles.modalIconWrap}>
+                  <MaterialCommunityIcons
+                    name="access-point"
+                    size={20}
+                    color={C.brand}
+                  />
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <LCText style={styles.modalTitle}>IoT Device</LCText>
+                  <LCText style={styles.modalSub}>
+                    Report current device condition so admin can check it.
+                  </LCText>
+                </View>
+
+                <TouchableOpacity
+                  onPress={closeIotModal}
+                  style={styles.modalCloseBtn}
+                  activeOpacity={0.85}
+                >
+                  <MaterialCommunityIcons
+                    name="close"
+                    size={18}
+                    color={C.sub}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.modalDivider} />
+
+              <View style={styles.modalBody}>
+                <TouchableOpacity
+                  disabled={iotSending}
+                  activeOpacity={0.85}
+                  onPress={() => reportIotStatus("WORKING")}
+                  style={[styles.modalAction, styles.modalActionSuccess]}
+                >
+                  <View
+                    style={[
+                      styles.actionPillIcon,
+                      { backgroundColor: "rgba(16,185,129,0.14)" },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="check-circle"
+                      size={18}
+                      color={C.success}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <LCText style={styles.actionTitle}>Working</LCText>
+                    <LCText style={styles.actionDesc}>
+                      Device is functioning normally.
+                    </LCText>
+                  </View>
+                  {iotSending ? (
+                    <ActivityIndicator size="small" color={C.sub} />
+                  ) : null}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  disabled={iotSending}
+                  activeOpacity={0.85}
+                  onPress={() => reportIotStatus("NEEDS_MAINTENANCE")}
+                  style={[styles.modalAction, styles.modalActionWarn]}
+                >
+                  <View
+                    style={[
+                      styles.actionPillIcon,
+                      { backgroundColor: "rgba(245,158,11,0.14)" },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="alert"
+                      size={18}
+                      color={C.star}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <LCText style={styles.actionTitle}>Needs Maintenance</LCText>
+                    <LCText style={styles.actionDesc}>
+                      Intermittent / weak signal / check wiring.
+                    </LCText>
+                  </View>
+                  {iotSending ? (
+                    <ActivityIndicator size="small" color={C.sub} />
+                  ) : null}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  disabled={iotSending}
+                  activeOpacity={0.85}
+                  onPress={() => reportIotStatus("NOT_WORKING")}
+                  style={[styles.modalAction, styles.modalActionDanger]}
+                >
+                  <View
+                    style={[
+                      styles.actionPillIcon,
+                      { backgroundColor: "rgba(185,28,28,0.12)" },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="close-circle"
+                      size={18}
+                      color={C.danger}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <LCText style={styles.actionTitle}>Not Working</LCText>
+                    <LCText style={styles.actionDesc}>
+                      No power / not sending alerts / totally down.
+                    </LCText>
+                  </View>
+                  {iotSending ? (
+                    <ActivityIndicator size="small" color={C.sub} />
+                  ) : null}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={closeIotModal}
+                  disabled={iotSending}
+                  activeOpacity={0.85}
+                  style={styles.modalCancelBtn}
+                >
+                  <LCText style={styles.modalCancelText}>Cancel</LCText>
+                </TouchableOpacity>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
       </View>
     </SafeAreaView>
   );
@@ -855,23 +1103,14 @@ export default function DriverDashboard({ navigation }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-
   headerCard: {
     margin: 16,
     padding: 16,
     backgroundColor: C.brand,
     borderRadius: 18,
   },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  headerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    flex: 1,
-  },
+  headerRow: { flexDirection: "row", alignItems: "center" },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
   avatar: {
     width: 48,
     height: 48,
@@ -931,23 +1170,6 @@ const styles = StyleSheet.create({
     color: C.text,
     marginBottom: 4,
   },
-  liveSubheading: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 12,
-    color: C.text,
-    marginBottom: 2,
-  },
-  liveValue: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 13,
-    color: C.text,
-    marginBottom: 8,
-  },
-  liveRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 2,
-  },
   liveMeta: {
     marginLeft: 6,
     fontFamily: "Poppins_400Regular",
@@ -979,11 +1201,7 @@ const styles = StyleSheet.create({
     color: C.success,
   },
 
-  quickGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
+  quickGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   quickBox: {
     width: "48%",
     borderRadius: 16,
@@ -1041,5 +1259,111 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_700Bold",
     fontSize: 10,
     color: "#FFFFFF",
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "center",
+    paddingHorizontal: 18,
+  },
+  modalCard: {
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+    overflow: "hidden",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 12,
+    gap: 10,
+  },
+  modalIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    backgroundColor: "#EEF2FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalTitle: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 16,
+    color: C.text,
+  },
+  modalSub: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 11,
+    color: C.sub,
+    marginTop: 2,
+  },
+  modalCloseBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalDivider: { height: 1, backgroundColor: C.border },
+  modalBody: { padding: 14, gap: 10 },
+  modalAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: "#F9FAFB",
+  },
+  modalActionSuccess: {
+    backgroundColor: "rgba(16,185,129,0.06)",
+    borderColor: "rgba(16,185,129,0.25)",
+  },
+  modalActionWarn: {
+    backgroundColor: "rgba(245,158,11,0.06)",
+    borderColor: "rgba(245,158,11,0.25)",
+  },
+  modalActionDanger: {
+    backgroundColor: "rgba(185,28,28,0.05)",
+    borderColor: "rgba(185,28,28,0.20)",
+  },
+  actionPillIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionTitle: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 13,
+    color: C.text,
+  },
+  actionDesc: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 11,
+    color: C.sub,
+    marginTop: 2,
+  },
+  modalCancelBtn: {
+    marginTop: 4,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: "#fff",
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  modalCancelText: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 12,
+    color: C.sub,
   },
 });

@@ -1,4 +1,3 @@
-// apps/api/src/routes/drivers.js
 import { Router } from "express";
 import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
@@ -6,22 +5,16 @@ import { z } from "zod";
 const prisma = new PrismaClient();
 const router = Router();
 
-/**
- * POST /drivers/scan
- * Resolve QR → driverProfile + bus
- */
 router.post("/scan", async (req, res) => {
   try {
     const { payload } = z.object({ payload: z.string().min(1) }).parse(req.body);
     const raw = payload.trim();
 
-    // Try parse as JSON
     let parsed = null;
     try {
       parsed = JSON.parse(raw);
     } catch {}
 
-    // Extract candidate ID
     let candidateId =
       parsed?.driverProfileId ||
       parsed?.driverId ||
@@ -29,13 +22,11 @@ router.post("/scan", async (req, res) => {
       parsed?.id ||
       raw;
 
-    // 1) Try match with DriverProfile.id  (legacy – still kept)
     let prof = await prisma.driverProfile.findUnique({
       where: { id: candidateId },
       include: { bus: true },
     });
 
-    // 2) Try match with DriverProfile.userId
     if (!prof) {
       prof = await prisma.driverProfile.findFirst({
         where: { userId: candidateId },
@@ -47,25 +38,19 @@ router.post("/scan", async (req, res) => {
       return res.status(404).json({ message: "Driver not found for this QR." });
     }
 
-    /* -----------------------------
-     * FIX: Correct driver name field
-     * ----------------------------- */
     const driverName =
-      prof.driverName || // correct schema if present
-      prof.fullName || // fallback if old schema
-      prof.name ||
-      "Unknown Driver";
+      prof.driverName || prof.fullName || prof.name || "Unknown Driver";
 
-    /* -----------------------------
-     * Normalize response
-     * ----------------------------- */
+    // ✅ Expose bus status to mobile clients
+    const busStatus = prof.bus?.status ?? null;      // "ACTIVE" | "INACTIVE" | "IN_MAINTENANCE"
+    const busIsActive = prof.bus?.isActive ?? null;  // boolean
+
     return res.json({
       driverProfileId: prof.id,
       userId: prof.userId,
 
-      // Correct driver name
       name: driverName,
-      code: prof.id, // you can change to QR code if needed
+      code: prof.id,
 
       busId: prof.busId ?? null,
 
@@ -73,7 +58,11 @@ router.post("/scan", async (req, res) => {
       plateNumber: prof.bus?.plate ?? null,
 
       busType: prof.bus?.busType ?? null,
-      vehicleType: prof.bus?.busType ?? null, // consistent with mobile naming
+      vehicleType: prof.bus?.busType ?? null,
+
+      // ✅ NEW FIELDS — this is what BusScanner reads
+      busStatus,
+      busIsActive,
     });
   } catch (e) {
     console.error("POST /drivers/scan ERROR", e);
@@ -83,6 +72,7 @@ router.post("/scan", async (req, res) => {
     return res.status(500).json({ message: "Server error" });
   }
 });
+
 
 /**
  * GET /drivers/by-user/:userId
@@ -102,20 +92,31 @@ router.get("/by-user/:userId", async (req, res) => {
     const driverName =
       prof.driverName || prof.fullName || prof.name || "Unknown Driver";
 
+    const busStatus = prof.bus?.status ?? null;
+    const busIsActive = prof.bus?.isActive ?? null;
+
     return res.json({
       driverProfileId: prof.id,
       userId: prof.userId,
       fullName: driverName,
 
       busId: prof.busId,
+
+      // richer bus object
       bus: prof.bus
         ? {
             id: prof.bus.id,
             number: prof.bus.number,
             plate: prof.bus.plate,
             type: prof.bus.busType,
+            status: prof.bus.status,
+            isActive: prof.bus.isActive,
           }
         : null,
+
+      // flat status fields (easy for mobile)
+      busStatus,
+      busIsActive,
     });
   } catch (e) {
     console.error("GET /drivers/by-user/:userId ERROR", e);
@@ -141,20 +142,29 @@ router.get("/current", async (req, res) => {
     const driverName =
       d.driverName || d.fullName || d.name || "Unknown Driver";
 
+    const busStatus = d.bus?.status ?? null;
+    const busIsActive = d.bus?.isActive ?? null;
+
     return res.json({
       driverProfileId: d.id,
       userId: d.userId,
       fullName: driverName,
 
       busId: d.busId,
+
       bus: d.bus
         ? {
             id: d.bus.id,
             number: d.bus.number,
             plate: d.bus.plate,
             type: d.bus.busType,
+            status: d.bus.status,
+            isActive: d.bus.isActive,
           }
         : null,
+
+      busStatus,
+      busIsActive,
     });
   } catch (e) {
     console.error("GET /drivers/current ERROR", e);
@@ -163,7 +173,7 @@ router.get("/current", async (req, res) => {
 });
 
 /**
- * PATCH /driver/duty
+ * PATCH /drivers/duty
  * Body: { status: "ON_DUTY" | "OFF_DUTY" }
  * Uses logged-in user (req.user.sub) to find DriverProfile and update status.
  */
@@ -217,7 +227,7 @@ router.patch("/duty", async (req, res) => {
       status: updated.status,
     });
   } catch (e) {
-    console.error("PATCH /driver/duty ERROR", e);
+    console.error("PATCH /drivers/duty ERROR", e);
     if (e instanceof z.ZodError) {
       return res
         .status(400)

@@ -33,6 +33,7 @@ import adminDriversRouter from "../routes/admin.drivers.js";
 import driversRouter from "../routes/drivers.js";
 import driverProfileRouter from "../routes/driver.profile.js";
 import commuterTripsRouter from "../routes/commuter.trips.js";
+import commuterRouter from "../routes/commuter.routes.js"; // ✅ ADD THIS
 import driverRatingsRouter from "../routes/driver.ratings.js";
 import driverReportsRouter from "../routes/driver.reports.js";
 import adminFeedbackRouter from "../routes/admin.feedback.js";
@@ -55,7 +56,6 @@ app.use(
 app.use(express.json({ limit: "1mb" }));
 
 const PORT = process.env.PORT || 4000;
-// ⚠️ HOST REMOVED – Render will bind automatically
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
 const GOOGLE_PLACES_KEY =
   process.env.GOOGLE_PLACES_KEY || process.env.GOOGLE_DIRECTIONS_KEY || "";
@@ -113,11 +113,14 @@ function setOtp(email) {
   const code = generateOtp();
   const now = Date.now();
   otpStore.set(email, { code, expiresAt: now + OTP_TTL_MS, lastSentAt: now });
+
+  // Log the OTP in the API terminal
+  console.log(`OTP for ${email}: ${code} (expires in ${OTP_TTL_MS / 60000} minutes)`);
+
   return code;
 }
 
 /* ---------- password-reset store (forgot password) ---------- */
-// separate from account-activation OTPs so they don't conflict
 const resetStore = new Map();
 const RESET_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -125,6 +128,10 @@ function setResetToken(email) {
   const code = generateOtp();
   const now = Date.now();
   resetStore.set(email, { code, expiresAt: now + RESET_TTL_MS });
+
+  // Log the reset code in the API terminal
+  console.log(`Reset token for ${email}: ${code} (expires in ${RESET_TTL_MS / 60000} minutes)`);
+
   return code;
 }
 
@@ -249,7 +256,6 @@ app.post("/commuter/scan-bus", requireUserAuth, async (req, res) => {
       return res.status(404).json({ message: "Bus not found" });
     }
 
-    // ✅ IMPORTANT: kuhaa ang related user + commuterProfile aron naay fallback sa avatar ug name
     const driver = await prisma.driverProfile.findFirst({
       where: {
         busId: bus.id,
@@ -268,14 +274,12 @@ app.post("/commuter/scan-bus", requireUserAuth, async (req, res) => {
     const driverStatus = driver?.status || "OFF_DUTY";
     const onDuty = driverStatus === "ACTIVE" || driverStatus === "ON_DUTY";
 
-    // ✅ PICK BEST NAME
     const driverName =
       driver?.fullName ||
       driver?.user?.commuterProfile?.fullName ||
       driver?.user?.email ||
       "Unknown Driver";
 
-    // ✅ PICK BEST AVATAR SOURCE (driverProfile OR commuterProfile)
     const avatarRel =
       driver?.profileUrl ||
       driver?.user?.commuterProfile?.profileUrl ||
@@ -299,7 +303,6 @@ app.post("/commuter/scan-bus", requireUserAuth, async (req, res) => {
       onDuty,
       deviceId: bus.deviceId || null, // expose deviceId to client
 
-      // ✅ these are what BusScanner reads
       driverAvatar: driverAvatarAbs,
       profileUrl: driverAvatarAbs,
     });
@@ -309,7 +312,9 @@ app.post("/commuter/scan-bus", requireUserAuth, async (req, res) => {
   }
 });
 
-app.use("/commuter", requireUserAuth, commuterTripsRouter);
+// ✅ COMMUTER ROUTES - Register both routers
+app.use("/commuter", requireUserAuth, commuterTripsRouter); // existing trips routes
+app.use("/commuter", requireUserAuth, commuterRouter);      // NEW: ratings route
 
 /* ----- ADMIN AREA (ALL PROTECTED) ----- */
 app.use("/admin", requireAuth, requireAdmin, adminDriversRouter);
@@ -1157,7 +1162,6 @@ app.patch("/users/change-password", requireAuth, async (req, res) => {
 });
 
 /* ---------- start/shutdown ---------- */
-// ✅ No HOST here – perfect for Render / any platform
 const server = app.listen(PORT, () => {
   console.log(`API running on port ${PORT}`);
 });

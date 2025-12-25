@@ -1,4 +1,4 @@
-// apps/web-admin/src/app/(protected)/dashboard/page.js
+// apps/web-admin/src/app/(protected)/emergency-dashboard/page.js
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -38,17 +38,13 @@ function fmtDateTime(d) {
   return dt.toLocaleString();
 }
 
-/* code (YELLOW / ORANGE / RED) -> severity label
-   - YELLOW  -> MINOR
-   - ORANGE  -> MODERATE
-   - RED     -> HIGH
-*/
+/* code (YELLOW / ORANGE / RED) -> severity label */
 function mapSeverityFromCode(codeRaw) {
   const c = (codeRaw || "").toString().toUpperCase();
 
-  if (c === "RED" || c === "CODE_RED") return "HIGH"; // Code Red = High severity
-  if (c === "ORANGE" || c === "CODE_ORANGE") return "MODERATE"; // Code Orange = Moderate
-  if (c === "YELLOW" || c === "CODE_YELLOW") return "MINOR"; // Code Yellow = Minor
+  if (c === "RED" || c === "CODE_RED") return "HIGH";
+  if (c === "ORANGE" || c === "CODE_ORANGE") return "MODERATE";
+  if (c === "YELLOW" || c === "CODE_YELLOW") return "MINOR";
 
   return "UNKNOWN";
 }
@@ -66,12 +62,12 @@ function isWithinDays(dateString, days) {
 /* ---------- main component ---------- */
 export default function EmergencyDashboardPage() {
   const [emergencies, setEmergencies] = useState([]);
-  const [allEmergencies, setAllEmergencies] = useState([]); // NEW: for timeline & trends
+  const [allEmergencies, setAllEmergencies] = useState([]); // full list from API
   const [loading, setLoading] = useState(false);
   const [resolvingId, setResolvingId] = useState(null);
   const [flash, setFlash] = useState({ type: "", text: "" });
 
-  // NEW: for realtime + modal
+  // for realtime + modal
   const [alertIncident, setAlertIncident] = useState(null);
   const [showAlertModal, setShowAlertModal] = useState(false);
   const prevIdsRef = useRef(new Set());
@@ -99,7 +95,7 @@ export default function EmergencyDashboardPage() {
         ? data.incidents
         : [];
 
-      setAllEmergencies(arr); // keep full list for stats/timeline/trends
+      setAllEmergencies(arr);
 
       const active = arr.filter((e) => {
         const st = (e.status || "").toString().toUpperCase();
@@ -111,7 +107,7 @@ export default function EmergencyDashboardPage() {
         );
       });
 
-      // ---- detect bag-ong incident for modal ----
+      // ---- detect new incident for popup modal ----
       const prevIds = prevIdsRef.current;
       let newIncident = null;
       for (const e of active) {
@@ -149,9 +145,9 @@ export default function EmergencyDashboardPage() {
     // initial load
     loadEmergencies(false);
 
-    // 🔁 realtime polling every 5 seconds
+    // realtime polling every 5 seconds
     const intervalId = setInterval(() => {
-      loadEmergencies(true); // quiet = true (no spinner/flash)
+      loadEmergencies(true);
     }, 5000);
 
     return () => clearInterval(intervalId);
@@ -164,6 +160,7 @@ export default function EmergencyDashboardPage() {
     try {
       setResolvingId(id);
       await resolveEmergency(id);
+
       setEmergencies((prev) =>
         prev.filter((e) => (e.id ?? e.incidentId) !== id)
       );
@@ -191,15 +188,12 @@ export default function EmergencyDashboardPage() {
     let label;
 
     if (baseSeverity === "MINOR" || baseSeverity === "LOW") {
-      // Code Yellow
       style = Sx.sevLow;
       label = "MINOR";
     } else if (baseSeverity === "MODERATE" || baseSeverity === "MEDIUM") {
-      // Code Orange
       style = Sx.sevMedium;
       label = "MODERATE";
     } else if (baseSeverity === "HIGH" || baseSeverity === "CRITICAL") {
-      // Code Red
       style = Sx.sevHigh;
       label = "HIGH";
     } else {
@@ -210,20 +204,14 @@ export default function EmergencyDashboardPage() {
     return <span style={style}>{label}</span>;
   }
 
-  // small helper to derive fields (reused sa card + modal + stats)
+  // ---------- normalize incident from API ---------- */
   function normalizeIncident(e) {
     if (!e) return null;
     const id = e?.id ?? e?.incidentId;
 
-    const busNumber =
-      e?.busNumber || e?.bus_no || e?.bus?.number || "Unknown bus";
+    const busNumber = e?.busNumber || e?.bus?.number || "Unknown bus";
 
-    const busPlate =
-      e?.busPlate ||
-      e?.bus_plate ||
-      e?.plateNumber ||
-      e?.bus?.plate ||
-      null;
+    const busPlate = e?.busPlate || e?.plateNumber || e?.bus?.plate || null;
 
     const driverName =
       e?.driverName ||
@@ -238,18 +226,27 @@ export default function EmergencyDashboardPage() {
       e?.iotDeviceId ||
       "N/A";
 
+    // Build coordinate label + map link
+    let coordLabel = null;
+    let mapUrl = null;
+
+    if (typeof e?.latitude === "number" && typeof e?.longitude === "number") {
+      const lat = e.latitude.toFixed(5);
+      const lng = e.longitude.toFixed(5);
+      coordLabel = `${lat}, ${lng}`;
+      mapUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+    }
+
     const locationLabel =
       e?.locationLabel ||
       e?.locationText ||
       e?.nearestLandmark ||
-      (e?.lat && e?.lng
-        ? `${e.lat}, ${e.lng}`
-        : e?.latitude && e?.longitude
-        ? `${e.latitude}, ${e.longitude}`
-        : "Location not available");
+      coordLabel ||
+      "Location not available";
 
     const createdAt = e?.createdAt || e?.timestamp || e?.reportedAt || null;
     const severity = e?.severity || mapSeverityFromCode(e?.code);
+    const message = e?.message || "No details provided.";
 
     return {
       id,
@@ -260,6 +257,8 @@ export default function EmergencyDashboardPage() {
       locationLabel,
       createdAt,
       severity,
+      message,
+      mapUrl,
       raw: e,
     };
   }
@@ -268,21 +267,18 @@ export default function EmergencyDashboardPage() {
 
   /* ---------- derived data for new sections ---------- */
 
-  const normalizedActive = emergencies
-    .map(normalizeIncident)
-    .filter(Boolean);
+  const normalizedActive = emergencies.map(normalizeIncident).filter(Boolean);
 
-  const normalizedAll = allEmergencies
-    .map(normalizeIncident)
-    .filter(Boolean);
+  const normalizedAll = allEmergencies.map(normalizeIncident).filter(Boolean);
 
-  // Quick overview stats (last 7 days for totals)
+  // overview stats (based on whatever we have in allEmergencies)
   const incidentsLast7Days = normalizedAll.filter((i) =>
     isWithinDays(i.createdAt, 7)
   );
 
   const totalActive = normalizedActive.length;
   const totalRecent = incidentsLast7Days.length;
+  const totalIncidents = normalizedAll.length; // 👈 total incidents overall
 
   let highCount = 0;
   let moderateCount = 0;
@@ -302,7 +298,7 @@ export default function EmergencyDashboardPage() {
         )[0]
       : null;
 
-  // Timeline: latest 6 incidents (active or resolved)
+  // Timeline: latest 6 incidents (active or resolved from what we have)
   const timelineItems = [...normalizedAll]
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     .slice(0, 6);
@@ -313,7 +309,7 @@ export default function EmergencyDashboardPage() {
   incidentsLast7Days.forEach((i) => {
     const dt = new Date(i.createdAt);
     if (Number.isNaN(dt.getTime())) return;
-    const key = dt.toISOString().slice(0, 10); // YYYY-MM-DD
+    const key = dt.toISOString().slice(0, 10);
     trendMap[key] = (trendMap[key] || 0) + 1;
   });
 
@@ -389,10 +385,10 @@ export default function EmergencyDashboardPage() {
         </div>
 
         <div style={S.overviewCard}>
-          <div style={S.overviewLabel}>Incidents (Last 7 days)</div>
-          <div style={S.overviewValue}>{totalRecent}</div>
+          <div style={S.overviewLabel}>Total Incidents</div>
+          <div style={S.overviewValue}>{totalIncidents}</div>
           <div style={S.overviewSub}>
-            Total alerts received from IoT devices
+            All incidents received from IoT devices
           </div>
         </div>
 
@@ -457,7 +453,6 @@ export default function EmergencyDashboardPage() {
               move to Emergency Reports.
             </div>
           </div>
-          {/* Refresh button removed – realtime na via polling */}
         </div>
 
         {loading && emergencies.length === 0 ? (
@@ -486,6 +481,9 @@ export default function EmergencyDashboardPage() {
                 locationLabel,
                 createdAt,
                 severity,
+                message,
+                mapUrl,
+                raw,
               } = data;
 
               return (
@@ -493,21 +491,24 @@ export default function EmergencyDashboardPage() {
                   {/* top row: bus + driver + severity + time ago */}
                   <div style={S.incidentHeader}>
                     <div style={S.incidentTitleCol}>
-                      <div style={S.incidentLabel}>Bus &amp; Driver</div>
+                      <div style={S.incidentLabel}>BUS &amp; DRIVER</div>
                       <div style={S.incidentTitle}>
                         Bus {busNumber} · {driverName}
                       </div>
                     </div>
 
                     <div style={S.incidentRightCol}>
-                      {severityPill(severity, e?.code)}
+                      {severityPill(severity, raw?.code)}
                       <div style={S.incidentTime}>{timeAgo(createdAt)}</div>
                     </div>
                   </div>
 
-                  {/* info grid */}
+                  {/* info grid with section labels */}
                   <div style={S.infoGrid}>
                     <div>
+                      <div style={S.infoSectionHeader}>
+                        INCIDENT INFORMATION
+                      </div>
                       <div style={S.infoRow}>
                         <span style={S.infoLabel}>Device ID</span>
                         <span style={S.infoValue}>{deviceId}</span>
@@ -521,21 +522,35 @@ export default function EmergencyDashboardPage() {
                     </div>
 
                     <div>
+                      <div style={S.infoSectionHeader}>BUS &amp; LOCATION</div>
                       <div style={S.infoRow}>
                         <span style={S.infoLabel}>Location</span>
-                        <span style={S.infoValue}>{locationLabel}</span>
+                        {mapUrl ? (
+                          <a
+                            href={mapUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={S.mapLink}
+                          >
+                            {locationLabel}
+                          </a>
+                        ) : (
+                          <span style={S.infoValue}>{locationLabel}</span>
+                        )}
                       </div>
                       <div style={S.infoRow}>
-                        <span style={S.infoLabel}>
-                          {busPlate ? "Plate / Incident" : "Incident ID"}
-                        </span>
+                        <span style={S.infoLabel}>Plate number</span>
                         <span style={S.infoValue}>
-                          {busPlate
-                            ? `${busPlate} · ${id}`
-                            : id || "Not available"}
+                          {busPlate || "Not available"}
                         </span>
                       </div>
                     </div>
+                  </div>
+
+                  {/* message / details */}
+                  <div style={S.infoRow}>
+                    <span style={S.infoLabel}>Details</span>
+                    <span style={S.infoValue}>{message}</span>
                   </div>
 
                   {/* footer: Resolve button */}
@@ -559,151 +574,6 @@ export default function EmergencyDashboardPage() {
         )}
       </section>
 
-      {/* ---------- BOTTOM GRID: TIMELINE + TRENDS + DRIVER SNAPSHOT ---------- */}
-      <div style={S.bottomGrid}>
-        {/* Emergency Alerts Activity Timeline */}
-        <section style={S.timelineCard}>
-          <div style={S.sectionHeaderRow}>
-            <div>
-              <div style={S.sectionTitle}>Emergency Alerts Activity</div>
-              <div style={S.sectionSubtitle}>
-                Latest alerts from commuter buses and devices.
-              </div>
-            </div>
-          </div>
-
-          {timelineItems.length === 0 ? (
-            <div style={S.emptySmall}>
-              <div style={{ fontSize: 13, color: "var(--muted)" }}>
-                No incidents recorded yet.
-              </div>
-            </div>
-          ) : (
-            <ul style={S.timelineList}>
-              {timelineItems.map((item) => (
-                <li key={item.id || Math.random()} style={S.timelineItem}>
-                  <div style={S.timelineLeft}>
-                    <div style={S.timelineDot} />
-                    <div>
-                      <div style={S.timelineTitle}>
-                        Bus {item.busNumber} · {item.driverName}
-                      </div>
-                      <div style={S.timelineMeta}>
-                        {item.locationLabel}
-                      </div>
-                    </div>
-                  </div>
-                  <div style={S.timelineRight}>
-                    <div style={S.timelineTime}>
-                      {timeAgo(item.createdAt)}
-                    </div>
-                    <div style={{ marginTop: 4 }}>
-                      {severityPill(item.severity, item.raw?.code)}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        {/* Right column: Trends + Driver Performance */}
-        <div style={S.rightColumn}>
-          {/* Incident Trends */}
-          <section style={S.trendCard}>
-            <div style={S.sectionHeaderRow}>
-              <div>
-                <div style={S.sectionTitle}>Incident Trends</div>
-                <div style={S.sectionSubtitle}>
-                  Distribution of alerts over the last 7 days.
-                </div>
-              </div>
-            </div>
-
-            <div style={S.trendChart}>
-              {trendDays.map((day) => (
-                <div key={day.key} style={S.trendBarGroup}>
-                  <div style={S.trendBarOuter}>
-                    <div
-                      style={{
-                        ...S.trendBarInner,
-                        height: `${(day.count / maxTrendCount) * 100 || 0}%`,
-                      }}
-                    />
-                  </div>
-                  <div style={S.trendBarLabel}>{day.label}</div>
-                  <div style={S.trendBarCount}>
-                    {day.count > 0 ? day.count : ""}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {/* Driver Performance Snapshot */}
-          <section style={S.driverCard}>
-            <div style={S.sectionHeaderRow}>
-              <div>
-                <div style={S.sectionTitle}>Driver Performance Snapshot</div>
-                <div style={S.sectionSubtitle}>
-                  Based on emergency incidents linked to each driver.
-                </div>
-              </div>
-            </div>
-
-            {driverStats.length === 0 ? (
-              <div style={S.emptySmall}>
-                <div style={{ fontSize: 13, color: "var(--muted)" }}>
-                  No driver-related incidents recorded yet.
-                </div>
-              </div>
-            ) : (
-              <div style={S.driverContent}>
-                {topDriver && (
-                  <div style={S.driverHighlight}>
-                    <div style={S.driverHighlightLabel}>
-                      Most Involved in Incidents
-                    </div>
-                    <div style={S.driverHighlightName}>
-                      {topDriver.name}
-                    </div>
-                    <div style={S.driverHighlightMeta}>
-                      {topDriver.total} total alerts · {topDriver.high} high
-                      severity
-                    </div>
-                  </div>
-                )}
-
-                {safestDriver && safestDriver.name !== topDriver?.name && (
-                  <div style={S.driverHighlightSecondary}>
-                    <div style={S.driverHighlightLabel}>Lowest High Alerts</div>
-                    <div style={S.driverHighlightName}>
-                      {safestDriver.name}
-                    </div>
-                    <div style={S.driverHighlightMeta}>
-                      {safestDriver.high} high severity · {safestDriver.total}{" "}
-                      total
-                    </div>
-                  </div>
-                )}
-
-                <div style={S.driverTable}>
-                  {driverStats.slice(0, 4).map((d) => (
-                    <div key={d.name} style={S.driverRow}>
-                      <div style={S.driverRowName}>{d.name}</div>
-                      <div style={S.driverRowStats}>
-                        <span>{d.total} incidents</span>
-                        <span>· {d.high} high</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </section>
-        </div>
-      </div>
-
       {/* 🔔 EMERGENCY ALERT MODAL */}
       {showAlertModal && alertData && (
         <div style={S.modalOverlay}>
@@ -725,7 +595,9 @@ export default function EmergencyDashboardPage() {
               </div>
               <div style={S.modalMetaRow}>
                 {severityPill(alertData.severity, alertData.raw?.code)}
-                <span style={S.modalTime}>{timeAgo(alertData.createdAt)}</span>
+                <span style={S.modalTime}>
+                  {timeAgo(alertData.createdAt)}
+                </span>
               </div>
 
               <div style={S.modalInfoGrid}>
@@ -733,12 +605,25 @@ export default function EmergencyDashboardPage() {
                   <div style={S.modalInfoLabel}>Device ID</div>
                   <div style={S.modalInfoValue}>{alertData.deviceId}</div>
                 </div>
+
                 <div style={S.modalInfoItem}>
                   <div style={S.modalInfoLabel}>Location</div>
-                  <div style={S.modalInfoValue}>
-                    {alertData.locationLabel}
-                  </div>
+                  {alertData.mapUrl ? (
+                    <a
+                      href={alertData.mapUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={S.mapLink}
+                    >
+                      {alertData.locationLabel}
+                    </a>
+                  ) : (
+                    <div style={S.modalInfoValue}>
+                      {alertData.locationLabel}
+                    </div>
+                  )}
                 </div>
+
                 <div style={S.modalInfoItem}>
                   <div style={S.modalInfoLabel}>Reported at</div>
                   <div style={S.modalInfoValue}>
@@ -753,6 +638,11 @@ export default function EmergencyDashboardPage() {
                       : alertData.id || "Not available"}
                   </div>
                 </div>
+              </div>
+
+              <div style={{ marginTop: 12 }}>
+                <div style={S.modalInfoLabel}>Details</div>
+                <div style={S.modalInfoValue}>{alertData.message}</div>
               </div>
             </div>
 
@@ -931,6 +821,13 @@ const styles = {
     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: 24,
   },
+  infoSectionHeader: {
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.08,
+    color: "#9CA3AF",
+    marginBottom: 4,
+  },
   infoRow: {
     display: "flex",
     gap: 12,
@@ -938,7 +835,7 @@ const styles = {
     marginTop: 4,
   },
   infoLabel: {
-    width: 90,
+    width: 110,
     color: "#6B7280",
   },
   infoValue: {
@@ -993,16 +890,6 @@ const styles = {
     color: "#B91C1C",
     border: "1px solid #FCA5A5",
   },
-  sevCritical: {
-    padding: "4px 10px",
-    borderRadius: 999,
-    fontSize: 11,
-    fontWeight: 700,
-    letterSpacing: 0.08,
-    background: "#FEE2E2",
-    color: "#7F1D1D",
-    border: "1px solid #F87171",
-  },
   sevUnknown: {
     padding: "4px 10px",
     borderRadius: 999,
@@ -1014,7 +901,7 @@ const styles = {
     border: "1px solid #CBD5F5",
   },
 
-  /* ---------- bottom grid: timeline + trends + drivers ---------- */
+  /* bottom grid: timeline + trends + drivers */
   bottomGrid: {
     marginTop: 12,
     display: "grid",
@@ -1212,7 +1099,7 @@ const styles = {
     gap: 4,
   },
 
-  /* ---------- modal styles ---------- */
+  /* modal styles */
   modalOverlay: {
     position: "fixed",
     inset: 0,
@@ -1311,5 +1198,14 @@ const styles = {
     fontSize: 13,
     cursor: "pointer",
     fontWeight: 500,
+  },
+
+  mapLink: {
+    fontSize: 13,
+    fontWeight: 500,
+    color: "#0D658B",
+    textDecoration: "underline",
+    cursor: "pointer",
+    wordBreak: "break-word",
   },
 };

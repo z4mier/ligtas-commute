@@ -150,6 +150,25 @@ function friendlyRoute(forwardRoute, returnRoute) {
   return `${forwardRoute} — ${returnRoute}`;
 }
 
+/* ---------- STATUS HELPERS (for QR usage hints) ---------- */
+
+function statusLabel(status) {
+  if (status === "ACTIVE") return "Active";
+  if (status === "IN_MAINTENANCE") return "In maintenance";
+  return "Inactive";
+}
+
+function statusUsageHint(status) {
+  if (status === "ACTIVE") {
+    return "Commuters can scan this QR to join active trips for this bus.";
+  }
+  if (status === "IN_MAINTENANCE") {
+    return "This bus is currently under maintenance. If commuters scan this QR, the apps should show that the bus is temporarily unavailable.";
+  }
+  // INACTIVE or anything else
+  return "This bus is inactive. Old QR stickers should no longer be used by commuters.";
+}
+
 export default function BusManagementPage() {
   const [tab, setTab] = useState("info");
   const [flash, setFlash] = useState({ type: "", text: "" });
@@ -200,18 +219,14 @@ export default function BusManagementPage() {
       [k]: v,
     }));
 
-  /* ---------- helpers ---------- */
-
-  function statusLabel(status) {
-    if (status === "ACTIVE") return "Active";
-    if (status === "IN_MAINTENANCE") return "In maintenance";
-    return "Inactive";
-  }
+  /* ---------- flash helper ---------- */
 
   function showFlash(type, text) {
     setFlash({ type, text });
     setTimeout(() => setFlash({ type: "", text: "" }), 1400);
   }
+
+  /* ---------- corridor / route handlers ---------- */
 
   function handleCorridorChange(value) {
     setForm((s) => ({
@@ -369,6 +384,7 @@ export default function BusManagementPage() {
       forwardRoute: bus.forwardRoute,
       returnRoute: bus.returnRoute,
       deviceId: bus.deviceId || null,
+      status: bus.status || null, // include status in QR payload (optional, backend should still check db)
     });
 
     const url = await makeQrDataUrl(payload);
@@ -398,7 +414,7 @@ export default function BusManagementPage() {
       plate: form.plateNumber.trim(),
       busType: form.busType,
       corridor: form.corridor,
-      status: "ACTIVE",
+      status: "ACTIVE", // new buses are active by default
       isActive: true,
       routeId: form.routeId,
       forwardRoute: form.forwardRoute,
@@ -574,7 +590,9 @@ export default function BusManagementPage() {
           Bus Management
         </h1>
         <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 14 }}>
-          View bus details and register new units.
+          View bus details and register new units. Only{" "}
+          <span style={{ fontWeight: 600 }}>Active</span> buses can be used for
+          trips and commuter scanning.
         </p>
       </div>
 
@@ -859,11 +877,18 @@ export default function BusManagementPage() {
 
                         <button
                           type="button"
-                          style={S.qrBtn}
+                          style={{
+                            ...S.qrBtn,
+                            opacity: b.status === "ACTIVE" ? 1 : 0.7,
+                          }}
                           onClick={() => openQr(b)}
                         >
                           <Eye size={14} />
-                          <span>View QR</span>
+                          <span>
+                            {b.status === "ACTIVE"
+                              ? "View QR"
+                              : "View QR (read-only)"}
+                          </span>
                         </button>
                       </div>
                     </div>
@@ -1066,7 +1091,7 @@ export default function BusManagementPage() {
                 display: "grid",
                 placeItems: "center",
                 padding: 16,
-                gap: 12,
+                gap: 10,
               }}
             >
               <img
@@ -1082,6 +1107,13 @@ export default function BusManagementPage() {
               <div style={{ fontSize: 14, color: "#4B5563" }}>
                 Bus {qrBus.number} • Plate {qrBus.plate}
               </div>
+              <div style={{ fontSize: 12, color: "#6B7280", textAlign: "center", maxWidth: 380 }}>
+                Status:{" "}
+                <span style={{ fontWeight: 600 }}>
+                  {statusLabel(qrBus.status)}
+                </span>
+                . {statusUsageHint(qrBus.status)}
+              </div>
               <a
                 href={qrImg}
                 download={`BUS-${qrBus.number || "qr"}.png`}
@@ -1094,6 +1126,7 @@ export default function BusManagementPage() {
                   display: "inline-flex",
                   alignItems: "center",
                   gap: 8,
+                  marginTop: 4,
                 }}
               >
                 <Download size={16} /> Download QR
@@ -1177,7 +1210,7 @@ const styles = {
     border:
       type === "error"
         ? "1px solid #FCA5A5"
-        : "1px solid #86EFAC", // ✅ fixed quotes
+        : "1px solid #86EFAC",
   }),
 
   toolbar: {
@@ -1292,7 +1325,7 @@ const styles = {
       color = "#166534";
     } else if (isMaint) {
       bg = "#FEF3C7";
-      border = "1px solid #FBBF24"; // ✅ fixed quotes
+      border = "1px solid #FBBF24";
       color = "#92400E";
     } else {
       bg = "#E5E7EB";

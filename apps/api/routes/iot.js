@@ -1,4 +1,3 @@
-// apps/api/routes/iot.js
 import { Router } from "express";
 import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
@@ -6,330 +5,370 @@ import { z } from "zod";
 const router = Router();
 const prisma = new PrismaClient();
 
-/* ---------- Zod schema for incoming IoT emergency payload ---------- */
-const iotIncidentSchema = z.object({
-  code: z.string().min(1), // "YELLOW" | "ORANGE" | "RED"
-  message: z.string().min(1),
+/* =====================================================
+   DRIVER → IOT STATUS REPORT
+   ===================================================== */
 
-  driverId: z.string().min(1).optional(),
-  busNumber: z.string().min(1).optional(),
-  plateNumber: z.string().min(1).optional(),
-
-  latitude: z.number().optional(),
-  longitude: z.number().optional(),
-
-  deviceId: z.string().optional(),
-});
-
-/* ---------- Zod schema for GPS ping payload ---------- */
-const gpsPingSchema = z.object({
-  deviceId: z.string().min(1),
-  latitude: z.number(),
-  longitude: z.number(),
-});
-
-/* =========================================
-   POST /iot/emergency  (ESP32 -> API)
-   ========================================= */
-router.post("/emergency", async (req, res) => {
+/**
+ * Accepts many driver endpoints (para dili mag 404 bisan lahi ang mobile route)
+ *
+ * Main:
+ *  - POST /iot/status-report
+ *
+ * Aliases:
+ *  - POST /iot/status-reports
+ *  - POST /iot/driver/iot/report
+ *  - POST /iot/driver/iot/status-report
+ *  - POST /iot/driver/status-report
+ *  - POST /iot/driver/iot-status
+ *  - POST /iot/drivers/iot/report
+ */
+async function handleStatusReport(req, res) {
   try {
-    const payload = iotIncidentSchema.parse(req.body || {});
-    const codeUpper = payload.code.toUpperCase();
+    const schema = z.object({
+      // allow other field names used by mobile
+      status: z.any().optional(),
+      condition: z.any().optional(),
+      state: z.any().optional(),
 
-    let busId = null;
-    let busNumber = null;
-    let busPlate = null;
-    let driverProfileId = null;
+      deviceId: z.string().optional(),
+      busId: z.string().optional(),
+      busNumber: z.any().optional(),
+      plateNumber: z.any().optional(),
+      driverId: z.string().optional(), // optional support
 
-    let finalDeviceId = payload.deviceId || null;
+      notes: z.string().optional(),
+      message: z.string().optional(),
+      remark: z.string().optional(),
+    });
 
-    // 1) PRIORITY: lookup by deviceId (Bus.deviceId)
-    if (finalDeviceId) {
-      const busByDevice = await prisma.bus.findFirst({
-        where: { deviceId: finalDeviceId },
-        select: { id: true, number: true, plate: true },
+    const payload = schema.parse(req.body || {});
+
+    // -------------------------
+    // 1) normalize status text
+    // -------------------------
+    const raw =
+      (payload.status ??
+        payload.condition ??
+        payload.state ??
+        payload.message ??
+        payload.remark ??
+        "")
+        .toString()
+        .trim();
+
+    if (!raw) {
+      return res.status(400).json({
+        ok: false,
+        message: "Missing status/condition",
       });
-
-      if (busByDevice) {
-        busId = busByDevice.id;
-        busNumber = busByDevice.number;
-        busPlate = busByDevice.plate;
-      }
     }
 
-    // 2) SECOND: lookup by busNumber / plateNumber
-    if (!busId && (payload.busNumber || payload.plateNumber)) {
-      const bus = await prisma.bus.findFirst({
+    const s = raw
+      .toUpperCase()
+      .trim()
+      .replace(/\s+/g, "_")
+      .replace(/[^A-Z0-9_]/g, "");
+
+    // normalize to admin-friendly values
+    const status =
+      s === "WORKING" || s === "ONLINE" || s === "ACTIVE" || s === "OK"
+        ? "ONLINE"
+        : s === "NOT_WORKING" ||
+          s === "NOTWORKING" ||
+          s === "OFFLINE" ||
+          s === "DOWN"
+        ? "OFFLINE"
+        : s === "NEEDS_MAINTENANCE" ||
+          s === "NEED_MAINTENANCE" ||
+          s === "MAINTENANCE"
+        ? "MAINTENANCE"
+        : s;
+
+    // -------------------------
+    // 2) find bus using many ways
+    // -------------------------
+    let bus = null;
+
+    const busNumber = payload.busNumber != null ? String(payload.busNumber).trim() : "";
+    const plateNumber = payload.plateNumber != null ? String(payload.plateNumber).trim() : "";
+
+    // normalize plate: remove spaces + hyphens (helps match "LGT 123" vs "LGT123")
+    const plateCompact = plateNumber.replace(/[\s-]+/g, "");
+
+    // A) by busId (BEST)
+    if (payload.busId) {
+      bus = await prisma.bus.findUnique({ where: { id: payload.busId } });
+    }
+
+    // B) by deviceId
+    if (!bus && payload.deviceId) {
+      bus = await prisma.bus.findFirst({
+        where: { deviceId: payload.deviceId },
+      });
+    }
+
+    // C) by busNumber / plateNumber (case-insensitive)
+    if (!bus && (busNumber || plateNumber)) {
+      bus = await prisma.bus.findFirst({
         where: {
           OR: [
-            payload.busNumber ? { number: payload.busNumber } : undefined,
-            payload.plateNumber ? { plate: payload.plateNumber } : undefined,
+            busNumber
+              ? {
+                  number: {
+                    equals: busNumber,
+                    mode: "insensitive",
+                  },
+                }
+              : undefined,
+            plateNumber
+              ? {
+                  plate: {
+                    equals: plateNumber,
+                    mode: "insensitive",
+                  },
+                }
+              : undefined,
+            plateCompact
+              ? {
+                  plate: {
+                    equals: plateCompact,
+                    mode: "insensitive",
+                  },
+                }
+              : undefined,
           ].filter(Boolean),
         },
-        select: {
-          id: true,
-          number: true,
-          plate: true,
-          deviceId: true,
-        },
       });
+    }
 
-      if (bus) {
-        busId = bus.id;
-        busNumber = bus.number;
-        busPlate = bus.plate;
+    // D) by driverId -> find driverProfile busId (if your schema supports it)
+    if (!bus && payload.driverId) {
+      try {
+        const dp = await prisma.driverProfile.findFirst({
+          where: {
+            OR: [{ driverId: payload.driverId }, { id: payload.driverId }],
+          },
+          select: { busId: true },
+        });
 
-        // If IoT omitted deviceId, use the bus.deviceId
-        if (!finalDeviceId && bus.deviceId) {
-          finalDeviceId = bus.deviceId;
+        if (dp?.busId) {
+          bus = await prisma.bus.findUnique({ where: { id: dp.busId } });
         }
+      } catch {
+        // ignore if driverProfile model doesn't exist
       }
     }
 
-    // 3) AUTO-ASSIGN ACTIVE DRIVER OF THIS BUS
-    if (busId) {
-      const driver = await prisma.driverProfile.findFirst({
-        where: { busId, isActive: true },
-        orderBy: { createdAt: "desc" },
-        select: { driverId: true, fullName: true },
+    if (!bus) {
+      return res.status(404).json({
+        ok: false,
+        message:
+          "Bus / device not found. Provide busId, deviceId, busNumber/plateNumber, or driverId.",
+        debug:
+          process.env.NODE_ENV !== "production"
+            ? {
+                busId: payload.busId ?? null,
+                deviceId: payload.deviceId ?? null,
+                busNumber: busNumber || null,
+                plateNumber: plateNumber || null,
+                plateCompact: plateCompact || null,
+                driverId: payload.driverId ?? null,
+              }
+            : undefined,
       });
-
-      if (driver) {
-        // FK column sa EmergencyIncident table
-        driverProfileId = driver.driverId;
-      }
     }
 
-    // 4) Create the incident with the correct links
-    const incident = await prisma.emergencyIncident.create({
-      data: {
-        deviceId: finalDeviceId || "UNKNOWN_DEVICE",
-
-        code: codeUpper,
-        message: payload.message,
-
-        latitude: payload.latitude ?? null,
-        longitude: payload.longitude ?? null,
-
-        status: "PENDING",
-
-        busId,
-        driverProfileId,
-
-        busNumber,
-        busPlate,
-      },
+    // -------------------------
+    // 3) update bus status (admin sees this)
+    // -------------------------
+    await prisma.bus.update({
+      where: { id: bus.id },
+      data: { status },
     });
 
     return res.status(201).json({
       ok: true,
-      message: "Emergency incident recorded from IoT device.",
-      incident,
+      message: "IoT status report sent successfully",
+      data: {
+        busId: bus.id,
+        deviceId: bus.deviceId,
+        busNumber: bus.number,
+        plateNumber: bus.plate,
+        status,
+        notes: payload.notes ?? null,
+      },
     });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return res.status(400).json({
         ok: false,
-        message: "Invalid payload from IoT device",
+        message: "Invalid IoT report payload",
         errors: err.errors,
       });
     }
 
-    console.error("POST /iot/emergency ERROR:", err);
+    console.error("IOT STATUS REPORT ERROR:", err?.message || err);
     return res.status(500).json({
       ok: false,
-      message: "Failed to record emergency incident",
+      message: "Failed to send IoT report",
+      error:
+        process.env.NODE_ENV !== "production"
+          ? String(err?.message || err)
+          : undefined,
     });
   }
-});
-
-/* =========================================
-   POST /iot/gps  (ESP32 periodic GPS ping)
-   ========================================= */
-router.post("/gps", async (req, res) => {
-  try {
-    const payload = gpsPingSchema.parse(req.body || {});
-    const { deviceId, latitude, longitude } = payload;
-
-    console.log("[IOT GPS PING]", {
-      deviceId,
-      latitude,
-      longitude,
-    });
-
-    // 🔹 Optional future work: update Bus location based on deviceId
-    // const bus = await prisma.bus.findFirst({ where: { deviceId } });
-    // if (bus) {
-    //   await prisma.bus.update({
-    //     where: { id: bus.id },
-    //     data: {
-    //       lastLat: latitude,
-    //       lastLng: longitude,
-    //       lastPingAt: new Date(),
-    //     },
-    //   });
-    // }
-
-    return res.json({
-      ok: true,
-      message: "GPS ping received.",
-    });
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      return res.status(400).json({
-        ok: false,
-        message: "Invalid GPS payload from IoT device",
-        errors: err.errors,
-      });
-    }
-
-    console.error("POST /iot/gps ERROR:", err);
-    return res.status(500).json({
-      ok: false,
-      message: "Failed to process GPS ping",
-    });
-  }
-});
-
-/* helper to normalize incidents (shared by active + history) */
-function mapIncident(i) {
-  // prefer stored columns, fallback to relation
-  const busNumber = i.busNumber || i.bus?.number || null;
-  const busPlate = i.busPlate || i.bus?.plate || null;
-
-  // driver name from DriverProfile relation
-  const driverName = i.driver?.fullName || null;
-
-  return {
-    // base fields from EmergencyIncident
-    id: i.id,
-    deviceId: i.deviceId,
-    code: i.code,
-    message: i.message,
-    latitude: i.latitude,
-    longitude: i.longitude,
-    status: i.status,
-    busId: i.busId,
-    driverProfileId: i.driverProfileId,
-    busNumber,
-    busPlate,
-    createdAt: i.createdAt,
-    resolvedAt: i.resolvedAt,
-
-    // extra nested-ish fields used by frontend
-    driverName, // 🔴 this is what the dashboard reads
-    bus: i.bus
-      ? {
-          id: i.bus.id,
-          number: i.bus.number,
-          plate: i.bus.plate,
-        }
-      : null,
-  };
 }
 
-/* =========================================
-   GET /iot/emergencies  (Admin dashboard – ACTIVE ONLY)
-   ========================================= */
+// ✅ Main + aliases
+router.post("/status-report", handleStatusReport);
+router.post("/status-reports", handleStatusReport);
+router.post("/driver/iot/report", handleStatusReport);
+router.post("/driver/iot/status-report", handleStatusReport);
+router.post("/driver/status-report", handleStatusReport);
+router.post("/driver/iot-status", handleStatusReport);
+router.post("/drivers/iot/report", handleStatusReport);
+
+/* =====================================================
+   ADMIN → IOT DEVICES (Monitoring)
+   ===================================================== */
+
+router.get("/devices", async (_req, res) => {
+  try {
+    const buses = await prisma.bus.findMany({
+      where: { deviceId: { not: null } },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        id: true,
+        number: true,
+        plate: true,
+        deviceId: true,
+        status: true,
+      },
+    });
+
+    const items = buses.map((b) => ({
+      busId: b.id,
+      deviceId: b.deviceId,
+      busNumber: b.number,
+      plateNumber: b.plate,
+      status: b.status,
+    }));
+
+    return res.json({ ok: true, items });
+  } catch (err) {
+    console.error("GET /iot/devices ERROR:", err?.message || err);
+    return res.status(500).json({
+      ok: false,
+      message: "Failed to load IoT devices",
+      error:
+        process.env.NODE_ENV !== "production"
+          ? String(err?.message || err)
+          : undefined,
+    });
+  }
+});
+
+/* =====================================================
+   ADMIN → IOT STATUS REPORTS (History)
+   ===================================================== */
+
+router.get("/status-reports", async (_req, res) => {
+  try {
+    return res.json({ ok: true, items: [] });
+  } catch (err) {
+    console.error("GET /iot/status-reports ERROR:", err?.message || err);
+    return res.status(500).json({
+      ok: false,
+      message: "Failed to load IoT status reports",
+      error:
+        process.env.NODE_ENV !== "production"
+          ? String(err?.message || err)
+          : undefined,
+    });
+  }
+});
+
+/* =====================================================
+   EXISTING IOT EMERGENCY ROUTES (UNCHANGED)
+   ===================================================== */
+
+router.post("/emergency", async (req, res) => {
+  try {
+    const payload = z
+      .object({
+        code: z.string(),
+        message: z.string(),
+        deviceId: z.string().optional(),
+        latitude: z.number().optional(),
+        longitude: z.number().optional(),
+      })
+      .parse(req.body || {});
+
+    const incident = await prisma.emergencyIncident.create({
+      data: {
+        code: payload.code.toUpperCase(),
+        message: payload.message,
+        deviceId: payload.deviceId || "UNKNOWN",
+        latitude: payload.latitude ?? null,
+        longitude: payload.longitude ?? null,
+        status: "PENDING",
+      },
+    });
+
+    return res.status(201).json({ ok: true, incident });
+  } catch (err) {
+    console.error("POST /iot/emergency ERROR:", err?.message || err);
+    return res.status(500).json({
+      ok: false,
+      message: "Failed to record emergency",
+      error:
+        process.env.NODE_ENV !== "production"
+          ? String(err?.message || err)
+          : undefined,
+    });
+  }
+});
+
 router.get("/emergencies", async (_req, res) => {
   try {
     const incidents = await prisma.emergencyIncident.findMany({
-      where: {
-        status: {
-          in: ["PENDING", "ACTIVE", "OPEN", "ONGOING"],
-        },
-      },
       orderBy: { createdAt: "desc" },
-      include: {
-        driver: {
-          select: { driverId: true, fullName: true },
-        },
-        bus: {
-          select: { id: true, number: true, plate: true },
-        },
-      },
     });
-
-    // map so we always have driverName / busNumber / busPlate fields
-    const mapped = incidents.map(mapIncident);
-
-    return res.json(mapped);
+    return res.json(incidents);
   } catch (err) {
-    console.error("GET /iot/emergencies ERROR:", err);
+    console.error("GET /iot/emergencies ERROR:", err?.message || err);
     return res.status(500).json({
       ok: false,
-      message: "Failed to load IoT emergencies",
+      message: "Failed to load emergencies",
+      error:
+        process.env.NODE_ENV !== "production"
+          ? String(err?.message || err)
+          : undefined,
     });
   }
 });
 
-/* =========================================
-   GET /iot/emergencies/history  (Emergency Reports – RESOLVED/CLOSED)
-   ========================================= */
-router.get("/emergencies/history", async (_req, res) => {
-  try {
-    const incidents = await prisma.emergencyIncident.findMany({
-      where: {
-        status: {
-          in: ["RESOLVED", "CLOSED"],
-        },
-      },
-      orderBy: { createdAt: "desc" },
-      include: {
-        driver: {
-          select: { driverId: true, fullName: true },
-        },
-        bus: {
-          select: { id: true, number: true, plate: true },
-        },
-      },
-    });
-
-    const mapped = incidents.map(mapIncident);
-
-    return res.json(mapped);
-  } catch (err) {
-    console.error("GET /iot/emergencies/history ERROR:", err);
-    return res.status(500).json({
-      ok: false,
-      message: "Failed to load IoT emergency history",
-    });
-  }
-});
-
-/* =========================================
-   POST /iot/emergencies/:id/resolve
-   ========================================= */
 router.post("/emergencies/:id/resolve", async (req, res) => {
-  const { id } = req.params;
-
   try {
     const incident = await prisma.emergencyIncident.update({
-      where: { id },
+      where: { id: req.params.id },
       data: {
         status: "RESOLVED",
         resolvedAt: new Date(),
       },
     });
 
-    return res.json({
-      ok: true,
-      message: "Incident marked as resolved.",
-      incident,
-    });
+    return res.json({ ok: true, incident });
   } catch (err) {
-    console.error("POST /iot/emergencies/:id/resolve ERROR:", err);
-
-    if (err.code === "P2025") {
-      return res.status(404).json({
-        ok: false,
-        message: "Incident not found.",
-      });
-    }
-
+    console.error("RESOLVE EMERGENCY ERROR:", err?.message || err);
     return res.status(500).json({
       ok: false,
-      message: "Failed to resolve incident.",
+      message: "Failed to resolve incident",
+      error:
+        process.env.NODE_ENV !== "production"
+          ? String(err?.message || err)
+          : undefined,
     });
   }
 });

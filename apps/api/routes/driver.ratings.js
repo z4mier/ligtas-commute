@@ -6,71 +6,93 @@ import { requireAuth } from "../src/middleware/auth.js";
 const prisma = new PrismaClient();
 const router = express.Router();
 
-/**
- * GET /driver/ratings
- * Response:
- * {
- *   averageScore: number,
- *   totalRatings: number,
- *   items: [
- *     { id, score, comment, createdAt }
- *   ]
- * }
- */
-router.get("/ratings", requireAuth, async (req, res) => {
+function getUserId(req) {
+  return req.user?.sub || req.user?.id || req.userId || null;
+}
+
+function requireDriver(req, res, next) {
+  const role = req.user?.role;
+  if (role && role !== "DRIVER") return res.status(403).json({ error: "Drivers only" });
+  next();
+}
+
+function unpackRatingComment(raw) {
+  let text = typeof raw === "string" ? raw : "";
+  const trimmed = String(text || "").trim();
+  const m = trimmed.match(/\[LCMETA:(\{.*?\})\]\s*/);
+  if (!m) return { comment: trimmed || null, hadMeta: false };
+  const clean = trimmed.replace(m[0], "").trim();
+  return { comment: clean || null, hadMeta: true };
+}
+
+router.get("/ratings", requireAuth, requireDriver, async (req, res) => {
   try {
-    const userId = req.user?.id || req.userId || null;
-    console.log("[/driver/ratings] userId =", userId);
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    // DriverProfile userId is @unique in your schema
-    const driver = await prisma.driverProfile.findUnique({
+    const driverProfile = await prisma.driverProfile.findUnique({
       where: { userId },
     });
+    if (!driverProfile) return res.status(404).json({ error: "Driver profile not found" });
 
-    console.log("[/driver/ratings] driver =", driver);
-
-    if (!driver) {
-      return res.status(404).json({ error: "Driver profile not found" });
-    }
+    console.log(`[Driver Ratings] Fetching ratings for driver: ${driverProfile.driverId}`);
+    console.log("SERVER INSTANCE:", {
+      pid: process.pid,
+      databaseUrl: (process.env.DATABASE_URL || "").slice(0, 40) + "...",
+    });
 
     const ratings = await prisma.rideRating.findMany({
-      where: { driverId: driver.driverId },
+      where: { driverId: driverProfile.driverId },
       orderBy: { createdAt: "desc" },
-      take: 30,
+      select: {
+        id: true,
+        score: true,
+        comment: true,
+        revealName: true,
+        createdAt: true,
+        updatedAt: true,
+        commuterId: true,
+      },
     });
 
-    console.log(
-      "[/driver/ratings] ratings count =",
-      ratings.length,
-      "driverId =",
-      driver.driverId
-    );
+    const commuterIds = [...new Set(ratings.map((r) => r.commuterId))];
 
-    const totalRatings = ratings.length;
-    const averageScore =
-      totalRatings === 0
-        ? 0
-        : ratings.reduce((sum, r) => sum + (r.score || 0), 0) / totalRatings;
+    const commuterProfiles = commuterIds.length
+      ? await prisma.commuterProfile.findMany({
+          where: { id: { in: commuterIds } },
+          select: { id: true, fullName: true },
+        })
+      : [];
 
-    return res.json({
-      averageScore,
-      totalRatings,
-      items: ratings.map((r) => ({
+    const commuterMap = new Map(commuterProfiles.map((cp) => [cp.id, cp.fullName]));
+
+    const items = ratings.map((r) => {
+      const parsed = unpackRatingComment(r.comment || "");
+      const reveal = r.revealName === true;
+      const commuterFullName = commuterMap.get(r.commuterId) || null;
+
+      console.log(
+        `[Rating ${r.id}] DB.revealName=${r.revealName} -> reveal=${reveal}, commuterId=${r.commuterId}, name=${commuterFullName}`
+      );
+
+      return {
         id: r.id,
         score: r.score,
-        comment: r.comment,
-        createdAt: r.createdAt,
-      })),
+        createdAt: r.createdAt || r.updatedAt,
+        comment: parsed.comment,
+        revealName: reveal,
+        commuterName: reveal ? commuterFullName : null,
+      };
     });
-  } catch (e) {
-    console.error("[GET /driver/ratings] error =", e);
-    return res
-      .status(500)
-      .json({ error: e.message || "Failed to load driver ratings" });
+
+    const totalRatings = items.length;
+    const sum = items.reduce((acc, it) => acc + (Number(it.score) || 0), 0);
+    const averageScore = totalRatings ? sum / totalRatings : 0;
+
+    return res.json({ averageScore, totalRatings, items });
+  } catch (err) {
+    console.error("[GET /driver/ratings] error:", err);
+    return res.status(500).json({ error: "Failed to load ratings" });
   }
 });
 

@@ -88,7 +88,6 @@ export async function getBus(id) {
 }
 
 export async function createBus(payload) {
-  // payload: { number, plate, busType, status?, corridor?, isActive?, routeId?, forwardRoute?, returnRoute? }
   return request("/buses", {
     method: "POST",
     body: payload,
@@ -103,7 +102,6 @@ export async function updateBus(id, payload) {
 }
 
 export async function setBusStatus(id, status) {
-  // convenience: only update status
   return updateBus(id, { status });
 }
 
@@ -182,155 +180,74 @@ export async function setDriverStatus({ driverId, status }) {
   }
 }
 
-/* ---------- FEEDBACK (ADMIN) ---------- */
-
-export async function listFeedback(params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  return request(`/admin/feedback${qs ? `?${qs}` : ""}`);
-}
-
-export async function getFeedback(id) {
-  return request(`/admin/feedback/${id}`);
-}
-
-/* ---------- INCIDENTS (ADMIN) ---------- */
-
-export async function listIncidents(params = {}) {
-  const qs = new URLSearchParams(params).toString();
-
-  try {
-    // primary admin incidents endpoint
-    return await request(`/admin/incidents${qs ? `?${qs}` : ""}`);
-  } catch (err) {
-    if (err.status === 404) {
-      // fallback to generic emergency-incidents
-      try {
-        return await request(`/emergency-incidents${qs ? `?${qs}` : ""}`);
-      } catch (err2) {
-        // if this also doesn't exist, just return empty list
-        if (err2.status === 404) {
-          return [];
-        }
-        throw err2;
-      }
-    }
-    throw err;
-  }
-}
+/* ---------- INCIDENTS ---------- */
 
 export async function listEmergencies(params = {}) {
   const qs = new URLSearchParams(params).toString();
-
-  try {
-    const data = await request(
-      `/iot/emergencies/history${qs ? `?${qs}` : ""}`
-    );
-    if (Array.isArray(data?.items)) return data.items;
-    if (Array.isArray(data)) return data;
-    return [];
-  } catch (err) {
-    if (err.status !== 404) {
-      throw err;
-    }
-  }
-
-  // 2) Fallback: admin emergencies endpoint (if exists)
-  try {
-    const data = await request(`/admin/emergencies${qs ? `?${qs}` : ""}`);
-    if (Array.isArray(data?.items)) return data.items;
-    if (Array.isArray(data)) return data;
-    return [];
-  } catch (err2) {
-    if (err2.status !== 404) {
-      throw err2;
-    }
-  }
-
-  try {
-    const data2 = await request(
-      `/emergency-incidents${qs ? `?${qs}` : ""}`
-    );
-    if (Array.isArray(data2?.items)) return data2.items;
-    if (Array.isArray(data2)) return data2;
-    return [];
-  } catch (err3) {
-    if (err3.status === 404) {
-      return [];
-    }
-    throw err3;
-  }
+  const data = await request(`/iot/emergencies/history${qs ? `?${qs}` : ""}`);
+  return Array.isArray(data) ? data : [];
 }
-
 
 export async function listIotEmergencies(params = {}) {
   const qs = new URLSearchParams(params).toString();
   const data = await request(`/iot/emergencies${qs ? `?${qs}` : ""}`);
-  if (Array.isArray(data?.items)) return data.items;
-  if (Array.isArray(data)) return data;
+  return Array.isArray(data) ? data : [];
+}
+
+/* ---------- IOT DEVICES ---------- */
+
+export async function listIotDevices(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+
+  // Try the most likely endpoints in order
+  const candidates = [
+    `/iot/devices${qs ? `?${qs}` : ""}`,
+    `/admin/iot/devices${qs ? `?${qs}` : ""}`,
+    `/admin/iot/device-list${qs ? `?${qs}` : ""}`,
+    `/iot/device-list${qs ? `?${qs}` : ""}`,
+  ];
+
+  for (const path of candidates) {
+    try {
+      const data = await request(path);
+      if (Array.isArray(data?.items)) return data.items;
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(data?.devices)) return data.devices;
+      return [];
+    } catch (err) {
+      // only ignore 404 and try next endpoint
+      if (err?.status !== 404) throw err;
+    }
+  }
+
+  // if none exist, return empty list (no crash)
   return [];
 }
 
-/* ---------- TRIPS (ADMIN) ---------- */
+/* ---------- IOT STATUS REPORTS ---------- */
 
-export async function listTrips(params = {}) {
+export async function listIotStatusReports(params = {}) {
   const qs = new URLSearchParams(params).toString();
 
-  try {
-    // primary admin trips endpoint
-    const data = await request(`/admin/trips${qs ? `?${qs}` : ""}`);
-    if (Array.isArray(data?.items)) return data.items;
-    if (Array.isArray(data)) return data;
-    return [];
-  } catch (err) {
-    // kung wala pa ang /admin/trips (404), try /trips
-    if (err.status === 404) {
-      try {
-        const data = await request(`/trips${qs ? `?${qs}` : ""}`);
-        if (Array.isArray(data?.items)) return data.items;
-        if (Array.isArray(data)) return data;
-        return [];
-      } catch (err2) {
-        // kung wala sad ang /trips, treat as walay data
-        if (err2.status === 404) {
-          return [];
-        }
-        throw err2;
-      }
+  const candidates = [
+    `/iot/status-reports${qs ? `?${qs}` : ""}`,
+    `/admin/iot/status-reports${qs ? `?${qs}` : ""}`,
+    `/iot/reports${qs ? `?${qs}` : ""}`,
+    `/admin/iot/reports${qs ? `?${qs}` : ""}`,
+    `/iot/status${qs ? `?${qs}` : ""}`,
+  ];
+
+  for (const path of candidates) {
+    try {
+      const data = await request(path);
+      if (Array.isArray(data?.items)) return data.items;
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(data?.reports)) return data.reports;
+      return [];
+    } catch (err) {
+      if (err?.status !== 404) throw err;
     }
-
-    // other errors (500, 403, etc.) — i-throw gihapon
-    throw err;
   }
-}
 
-/* ---------- NOTIFICATIONS (ADMIN) ---------- */
-
-export async function listNotifications(params = {}) {
-  const qs = new URLSearchParams(params).toString();
-
-  try {
-    // admin notifications (for bell)
-    return await request(`/admin/notifications${qs ? `?${qs}` : ""}`);
-  } catch (err) {
-    if (err.status === 404) {
-      // fallback to generic /notifications
-      try {
-        return await request(`/notifications${qs ? `?${qs}` : ""}`);
-      } catch (err2) {
-        if (err2.status === 404) {
-          return [];
-        }
-        throw err2;
-      }
-    }
-    throw err;
-  }
-}
-
-/* ---------- RESOLVE EMERGENCY (IOT) ---------- */
-
-export async function resolveEmergency(id) {
-  return request(`/iot/emergencies/${id}/resolve`, {
-    method: "POST",
-  });
+  return [];
 }

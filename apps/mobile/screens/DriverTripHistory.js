@@ -1,4 +1,3 @@
-// apps/mobile/screens/DriverTripHistory.js
 import React, { useEffect, useState, useCallback } from "react";
 import {
   View,
@@ -65,22 +64,30 @@ export default function DriverTripHistory({ navigation }) {
   const [driverId, setDriverId] = useState(null);
   const [sortOrder, setSortOrder] = useState("newest");
 
+  // Add the notificationVisible state
+  const [notificationVisible, setNotificationVisible] = useState(false);
+
   const loadTrips = useCallback(async (activeDriverId) => {
     try {
       const raw = await AsyncStorage.getItem(TRIP_HISTORY_KEY);
       const arr = raw ? JSON.parse(raw) : [];
 
+      // Filter only completed trips based on driverId
       const filtered = Array.isArray(arr)
         ? arr.filter(
             (t) =>
-              t.driverId && (!activeDriverId || t.driverId === activeDriverId)
+              t.driverId &&
+              (!activeDriverId || t.driverId === activeDriverId) &&
+              t.status === "COMPLETED"  // Only include completed trips
           )
         : [];
 
       setTrips(filtered);
+      setNotificationVisible(filtered.length > 0); // Show notification if there are completed trips
     } catch (e) {
       console.log("[DriverTripHistory] Failed to load trips", e);
       setTrips([]);
+      setNotificationVisible(false); // Hide notification if trips load fails
     }
   }, []);
 
@@ -198,6 +205,20 @@ export default function DriverTripHistory({ navigation }) {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: C.bg }]}>
+      {notificationVisible && (
+        <View style={styles.notification}>
+          <LCText style={styles.notificationText}>
+            New trip history available!
+          </LCText>
+          <TouchableOpacity onPress={() => setNotificationVisible(false)}>
+            <MaterialCommunityIcons
+              name="close-circle"
+              size={20}
+              color={C.text}
+            />
+          </TouchableOpacity>
+        </View>
+      )}
       <View style={styles.topBar}>
         <TouchableOpacity
           onPress={() => navigation?.goBack?.()}
@@ -295,6 +316,26 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: C.text,
     fontFamily: "Poppins_600SemiBold",
+  },
+
+  notification: {
+    backgroundColor: "#FBBF24",
+    padding: 10,
+    borderRadius: 5,
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+  },
+  notificationText: {
+    color: "#FFFFFF",
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 14,
   },
 
   summaryWrapper: {

@@ -32,6 +32,90 @@ const C = {
   danger: "#B91C1C",
 };
 
+/* ----------------------------------------------------------
+   ✅ robust helper: extract revealName + strip LCMETA
+   Handles:
+    - meta at start OR anywhere in comment
+    - leading spaces/newlines
+    - JSON-stringified comment like "\"[LCMETA:{\\\"revealName\\\":true}] hi\""
+    - single quotes in JSON meta
+---------------------------------------------------------- */
+function unpackRatingComment(raw) {
+  let text = typeof raw === "string" ? raw : "";
+  if (!text) return { revealName: false, comment: null, hadMeta: false };
+
+  // If accidentally JSON-stringified string, unwrap it once
+  // e.g. "\"[LCMETA:{\\\"revealName\\\":true}] hello\""
+  const tryJsonString = () => {
+    const t = text.trim();
+    if (!t) return;
+    if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+      try {
+        const parsed = JSON.parse(t);
+        if (typeof parsed === "string") text = parsed;
+      } catch {
+        // ignore
+      }
+    }
+  };
+  tryJsonString();
+
+  const original = text;
+  const trimmed = text.trim();
+
+  // find LCMETA anywhere (not only at start)
+  const m = trimmed.match(/\[LCMETA:(\{.*?\})\]\s*/);
+  if (!m) {
+    return { revealName: false, comment: trimmed || null, hadMeta: false };
+  }
+
+  const metaRaw = m[1];
+  // remove only the first meta occurrence
+  const cleaned = trimmed.replace(m[0], "").trim();
+
+  const tryParse = (s) => {
+    try {
+      return JSON.parse(s);
+    } catch {
+      return null;
+    }
+  };
+
+  let meta = tryParse(metaRaw);
+
+  // support single-quote JSON-ish
+  if (!meta) {
+    const fixed = metaRaw.replace(/'/g, '"');
+    meta = tryParse(fixed);
+  }
+
+  // If still unparseable, privacy-first fallback
+  if (!meta || typeof meta !== "object") {
+    return {
+      revealName: false,
+      comment: cleaned || trimmed || original.trim() || null,
+      hadMeta: true,
+    };
+  }
+
+  return {
+    revealName: !!meta.revealName,
+    comment: cleaned || null,
+    hadMeta: true,
+  };
+}
+
+function normalizeBool(v) {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return v === 1;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    if (s === "true" || s === "1" || s === "yes") return true;
+    if (s === "false" || s === "0" || s === "no") return false;
+  }
+  return null;
+}
+
 export default function DriverRatings({ navigation }) {
   const [fontsLoaded] = useFonts({
     Poppins_400Regular,
@@ -63,9 +147,16 @@ export default function DriverRatings({ navigation }) {
       const res = await fetch(`${API_URL}/driver/ratings`, { headers });
       const data = await res.json().catch(() => ({}));
 
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to load ratings");
-      }
+      if (!res.ok) throw new Error(data.error || "Failed to load ratings");
+
+      console.log("DRIVER API_URL USED:", API_URL);
+
+
+      console.log("Ratings loaded:", {
+        total: data.totalRatings,
+        average: data.averageScore,
+        sample: Array.isArray(data.items) ? data.items[0] : null,
+      });
 
       setAvgRating(data.averageScore || 0);
       setTotalRatings(data.totalRatings || 0);
@@ -101,8 +192,7 @@ export default function DriverRatings({ navigation }) {
     const isWhole = Math.abs(rounded - Math.round(rounded)) < 0.001;
     const scoreStr = isWhole ? `${Math.round(rounded)}` : rounded.toFixed(1);
     avgDisplay = `${scoreStr} / 5`;
-    countDisplay =
-      totalRatings === 1 ? "1 rating" : `${totalRatings} ratings`;
+    countDisplay = totalRatings === 1 ? "1 rating" : `${totalRatings} ratings`;
   }
 
   const renderStars = (score, size = 18) => {
@@ -123,27 +213,58 @@ export default function DriverRatings({ navigation }) {
   };
 
   const renderItem = ({ item }) => {
-    const hasComment = !!item.comment && item.comment.trim().length > 0;
+    const rawComment = typeof item?.comment === "string" ? item.comment : "";
+    const parsed = unpackRatingComment(rawComment);
+
+    const cleanComment = parsed.comment || "";
+    const hasComment = cleanComment.trim().length > 0;
+
+    // ✅ Decide reveal flag robustly
+    const r1 = normalizeBool(item?.revealName);
+    const r2 = normalizeBool(parsed?.revealName);
+    const reveal = r1 !== null ? r1 : (r2 !== null ? r2 : false);
+
+    // ✅ If reveal=true, show commuterName if present
+    const nameFromApi = typeof item?.commuterName === "string" ? item.commuterName.trim() : "";
+    const displayName = reveal && nameFromApi ? nameFromApi : "Anonymous";
+
+    const initial =
+      displayName !== "Anonymous" ? displayName.charAt(0).toUpperCase() : null;
+
+    console.log("Rendering rating:", {
+      id: item?.id,
+      revealFromItem: item?.revealName,
+      revealFromMeta: parsed?.revealName,
+      revealFinal: reveal,
+      commuterName: item?.commuterName,
+      displayName,
+      commentPreview: rawComment?.slice?.(0, 40),
+    });
 
     return (
       <View style={styles.ratingCard}>
         <View style={styles.cardHeaderRow}>
           <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
             <View style={styles.avatarTiny}>
-              <MaterialCommunityIcons
-                name="account-circle"
-                size={18}
-                color={C.sub}
-              />
+              {initial ? (
+                <LCText style={styles.avatarInitial}>{initial}</LCText>
+              ) : (
+                <MaterialCommunityIcons
+                  name="account-circle"
+                  size={18}
+                  color={C.sub}
+                />
+              )}
             </View>
-            <LCText style={styles.anonName}>Anonymous</LCText>
+            <LCText style={styles.anonName}>{displayName}</LCText>
           </View>
+
           {renderStars(item.score)}
         </View>
 
         <View style={{ marginTop: 4 }}>
           {hasComment ? (
-            <LCText style={styles.commentText}>{item.comment}</LCText>
+            <LCText style={styles.commentText}>{cleanComment}</LCText>
           ) : (
             <>
               <LCText style={styles.commentTitle}>No written comment</LCText>
@@ -161,9 +282,7 @@ export default function DriverRatings({ navigation }) {
             color={C.sub}
             style={{ marginRight: 4 }}
           />
-          <LCText style={styles.cardFooterText}>
-            Rated via LigtasCommute
-          </LCText>
+          <LCText style={styles.cardFooterText}>Rated via LigtasCommute</LCText>
         </View>
       </View>
     );
@@ -188,12 +307,7 @@ export default function DriverRatings({ navigation }) {
     arr.sort((a, b) => {
       const ta = getDateValue(a);
       const tb = getDateValue(b);
-
-      if (sortMode === "NEWEST") {
-        return tb - ta;
-      } else {
-        return ta - tb;
-      }
+      return sortMode === "NEWEST" ? tb - ta : ta - tb;
     });
 
     return arr;
@@ -243,11 +357,7 @@ export default function DriverRatings({ navigation }) {
         </View>
         <View style={styles.summaryRight}>
           <View style={styles.summaryIconWrap}>
-            <MaterialCommunityIcons
-              name="star-circle"
-              size={30}
-              color="#FBBF24"
-            />
+            <MaterialCommunityIcons name="star-circle" size={30} color="#FBBF24" />
           </View>
           <LCText style={styles.summaryCount}>
             {hasRatings ? countDisplay : "0 ratings"}
@@ -265,9 +375,7 @@ export default function DriverRatings({ navigation }) {
               style={{ marginRight: 6 }}
             />
             <LCText style={styles.sortLabel}>
-              {sortMode === "NEWEST"
-                ? "Newest to oldest"
-                : "Oldest to newest"}
+              {sortMode === "NEWEST" ? "Newest to oldest" : "Oldest to newest"}
             </LCText>
           </TouchableOpacity>
         </View>
@@ -304,7 +412,7 @@ export default function DriverRatings({ navigation }) {
       ) : (
         <FlatList
           data={sortedItems}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(it) => String(it.id)}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           refreshControl={
@@ -317,9 +425,7 @@ export default function DriverRatings({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-  },
+  safe: { flex: 1 },
 
   topBar: {
     flexDirection: "row",
@@ -366,10 +472,7 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_700Bold",
     marginTop: 4,
   },
-  summaryRight: {
-    alignItems: "flex-end",
-    justifyContent: "center",
-  },
+  summaryRight: { alignItems: "flex-end", justifyContent: "center" },
   summaryIconWrap: {
     width: 36,
     height: 36,
@@ -422,11 +525,7 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_400Regular",
   },
 
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
 
   emptyText: {
     fontSize: 15,
@@ -476,15 +575,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 8,
   },
+  avatarInitial: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 12,
+    color: C.sub,
+  },
   anonName: {
     fontFamily: "Poppins_600SemiBold",
     fontSize: 14,
     color: C.text,
   },
-  starRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
+  starRow: { flexDirection: "row", alignItems: "center" },
 
   commentTitle: {
     marginTop: 6,
@@ -505,11 +606,7 @@ const styles = StyleSheet.create({
     color: C.sub,
   },
 
-  cardFooter: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 8,
-  },
+  cardFooter: { flexDirection: "row", alignItems: "center", marginTop: 8 },
   cardFooterText: {
     fontFamily: "Poppins_400Regular",
     fontSize: 11,

@@ -1,3 +1,4 @@
+// apps/api/routes/commuter.trips.js
 import express from "express";
 import { PrismaClient } from "@prisma/client";
 import { requireAuth } from "../src/middleware/auth.js";
@@ -59,19 +60,13 @@ router.post("/trips/start", requireAuth, async (req, res) => {
         : null;
 
     let snapshotBusNumber =
-      typeof busNumber === "string" && busNumber.trim()
-        ? busNumber.trim()
-        : null;
+      typeof busNumber === "string" && busNumber.trim() ? busNumber.trim() : null;
 
     let snapshotBusPlate =
-      typeof busPlate === "string" && busPlate.trim()
-        ? busPlate.trim()
-        : null;
+      typeof busPlate === "string" && busPlate.trim() ? busPlate.trim() : null;
 
     let safeBusId =
-      busId !== undefined && busId !== null && busId !== ""
-        ? String(busId)
-        : null;
+      busId !== undefined && busId !== null && busId !== "" ? String(busId) : null;
 
     let safeDriverProfileId =
       driverProfileId !== undefined &&
@@ -91,6 +86,17 @@ router.post("/trips/start", requireAuth, async (req, res) => {
       } else {
         snapshotBusNumber = bus.number;
         snapshotBusPlate = bus.plate;
+
+        // Check bus status
+        const busStatus = String(bus.status || "").toUpperCase();
+        if (busStatus === "INACTIVE" || busStatus === "IN_MAINTENANCE") {
+          console.log(
+            `[trip.start] cannot start trip for bus: ${bus.number}, status: ${busStatus}`
+          );
+          return res.status(400).json({
+            error: `This bus is currently marked as ${busStatus.toLowerCase()}. Please choose another bus.`,
+          });
+        }
       }
     }
 
@@ -246,6 +252,7 @@ router.get("/trips/recent", requireAuth, async (req, res) => {
         rideId: true,
         score: true,
         comment: true,
+        revealName: true, // ✅ include revealName for UI
       },
     });
 
@@ -261,6 +268,7 @@ router.get("/trips/recent", requireAuth, async (req, res) => {
         ...t,
         ratingScore: r?.score ?? null,
         ratingComment: r?.comment ?? null,
+        ratingRevealName: typeof r?.revealName === "boolean" ? r.revealName : null,
         driverAvatar: dp.profileUrl || null,
       };
     });
@@ -276,71 +284,5 @@ router.get("/trips/recent", requireAuth, async (req, res) => {
   }
 });
 
-/* -------------------- SUBMIT / UPDATE RATING -------------------- */
-router.post("/trips/:tripId/rating", requireAuth, async (req, res) => {
-  const { tripId } = req.params;
-  const { rating, comment } = req.body || {};
-
-  const score = Number(rating);
-
-  if (!score || score < 1 || score > 5) {
-    return res.status(400).json({
-      error: "rating must be between 1 and 5",
-    });
-  }
-
-  try {
-    const trip = await prisma.trip.findUnique({
-      where: { id: String(tripId) },
-    });
-
-    if (!trip) {
-      return res.status(404).json({
-        error: "Trip not found",
-      });
-    }
-
-    if (!trip.driverProfileId) {
-      return res.status(400).json({
-        error: "Trip has no driver assigned, cannot create rating",
-      });
-    }
-
-    const existing = await prisma.rideRating.findFirst({
-      where: {
-        rideId: trip.id,
-        commuterId: trip.commuterProfileId,
-      },
-    });
-
-    let rideRating;
-    if (existing) {
-      rideRating = await prisma.rideRating.update({
-        where: { id: existing.id },
-        data: {
-          score,
-          comment: comment || null,
-        },
-      });
-    } else {
-      rideRating = await prisma.rideRating.create({
-        data: {
-          driverId: trip.driverProfileId,
-          commuterId: trip.commuterProfileId,
-          rideId: trip.id,
-          score,
-          comment: comment || null,
-        },
-      });
-    }
-
-    return res.json(rideRating);
-  } catch (e) {
-    console.error("[commuter /trips/:tripId/rating] error =", e);
-    return res
-      .status(500)
-      .json({ error: e.message || "Failed to submit rating" });
-  }
-});
 
 export default router;

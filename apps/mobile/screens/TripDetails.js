@@ -1,5 +1,5 @@
 // apps/mobile/screens/TripDetails.js
-import React, { useState } from "react";
+import React, { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   StyleSheet,
@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
-  Platform,
   ActivityIndicator,
   Image,
   Alert,
@@ -24,7 +23,6 @@ import {
 } from "@expo-google-fonts/poppins";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL } from "../constants/config";
-import { addRatingSubmitted, addIncidentSubmitted } from "../lib/notify";
 import LCText from "../components/LCText";
 
 const C = {
@@ -55,22 +53,15 @@ const INCIDENT_CATEGORIES = [
   "Other",
 ];
 
-/* ---------- Avatar helper (simple) ---------- */
 function buildAbsoluteAvatarUrl(raw) {
   if (!raw) return null;
-
   if (/^https?:\/\//i.test(raw)) return raw;
 
   let base = (API_URL || "").replace(/\/+$/, "");
+  if (base.toLowerCase().endsWith("/api")) base = base.slice(0, -4);
 
-  if (base.toLowerCase().endsWith("/api")) {
-    base = base.slice(0, -4);
-  }
-
-  const path = raw.startsWith("/") ? raw : `/${raw}`;
-  const full = `${base}${path}`;
-  console.log("[TripDetails] driver avatar URL =", full);
-  return full;
+  const p = raw.startsWith("/") ? raw : `/${raw}`;
+  return `${base}${p}`;
 }
 
 function fmtDateTime(x) {
@@ -86,35 +77,41 @@ function fmtDateTime(x) {
   });
 }
 
-function cleanPlace(s, fallback = "Unknown") {
-  if (!s) return fallback;
-  return String(s).trim();
+/**
+ * Keep unpacker ONLY for reading old saved comments that might still include LCMETA.
+ * We will STOP writing LCMETA going forward.
+ */
+function unpackRatingComment(raw) {
+  const text = typeof raw === "string" ? raw : "";
+  const trimmed = text.trim();
+
+  // supports meta at start
+  const m = trimmed.match(/^\[LCMETA:(\{.*?\})\]\s*/);
+  if (!m) return { revealName: null, comment: trimmed || "" };
+
+  const metaRaw = m[1];
+  const comment = trimmed.replace(m[0], "").trim();
+
+  const tryParse = (s) => {
+    try {
+      return JSON.parse(s);
+    } catch {
+      return null;
+    }
+  };
+
+  let meta = tryParse(metaRaw);
+  if (!meta) meta = tryParse(metaRaw.replace(/'/g, '"'));
+
+  if (!meta || typeof meta !== "object") {
+    return { revealName: null, comment: comment || "" };
+  }
+
+  return { revealName: !!meta.revealName, comment: comment || "" };
 }
 
 export default function TripDetails({ route, navigation }) {
   const insets = useSafeAreaInsets();
-  const { trip } = route.params || {};
-
-  const initialRating =
-    trip?.ratingScore ?? trip?.rating ?? trip?.score ?? null;
-
-  const initialNotes =
-    trip?.ratingComment ?? trip?.comment ?? trip?.feedback ?? "";
-
-  const hasInitialRating = initialRating != null && initialRating > 0;
-
-  const [rating, setRating] = useState(initialRating || 0);
-  const [notes, setNotes] = useState(initialNotes);
-  const [mode, setMode] = useState(hasInitialRating ? "summary" : "form");
-
-  const [submitting, setSubmitting] = useState(false);
-
-  const [reportModalVisible, setReportModalVisible] = useState(false);
-  const [reportCategories, setReportCategories] = useState([]);
-  const [reportNotes, setReportNotes] = useState("");
-  const [submittingReport, setSubmittingReport] = useState(false);
-
-  const [avatarError, setAvatarError] = useState(false);
 
   const [fontsLoaded] = useFonts({
     Poppins_400Regular,
@@ -123,90 +120,154 @@ export default function TripDetails({ route, navigation }) {
     Poppins_700Bold,
   });
 
-  if (!trip) {
+  const trip = route?.params?.trip || null;
+
+  const rawInitialComment = useMemo(() => {
+    if (!trip) return "";
+    return trip?.ratingComment ?? trip?.comment ?? trip?.feedback ?? "";
+  }, [trip]);
+
+  const unpacked = useMemo(
+    () => unpackRatingComment(rawInitialComment),
+    [rawInitialComment]
+  );
+
+  const initialRating = useMemo(() => {
+    if (!trip) return 0;
+    return Number(trip?.ratingScore ?? trip?.rating ?? trip?.score ?? 0) || 0;
+  }, [trip]);
+
+  const initialReveal = useMemo(() => {
+    if (!trip) return false;
+    if (typeof trip?.ratingRevealName === "boolean") return trip.ratingRevealName;
+    if (typeof unpacked.revealName === "boolean") return unpacked.revealName;
+    return false;
+  }, [trip, unpacked.revealName]);
+
+  const [rating, setRating] = useState(initialRating || 0);
+  const [notes, setNotes] = useState(unpacked.comment || "");
+  const [revealName, setRevealName] = useState(initialReveal);
+
+  // ✅ CRITICAL FIX: always keep latest revealName for submit
+  const revealNameRef = useRef(!!initialReveal);
+
+  useEffect(() => {
+    revealNameRef.current = !!revealName;
+  }, [revealName]);
+
+  const [avatarError, setAvatarError] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [reportCategories, setReportCategories] = useState([]);
+  const [reportNotes, setReportNotes] = useState("");
+  const [submittingReport, setSubmittingReport] = useState(false);
+
+  useEffect(() => {
+    if (!trip) return;
+
+    const raw = trip?.ratingComment ?? trip?.comment ?? trip?.feedback ?? "";
+    const parsed = unpackRatingComment(raw);
+
+    const nextRating =
+      Number(trip?.ratingScore ?? trip?.rating ?? trip?.score ?? 0) || 0;
+
+    setRating(nextRating);
+    setNotes(parsed.comment || "");
+
+    const nextReveal =
+      typeof trip?.ratingRevealName === "boolean"
+        ? trip.ratingRevealName
+        : typeof parsed.revealName === "boolean"
+        ? parsed.revealName
+        : false;
+
+    setRevealName(!!nextReveal);
+    revealNameRef.current = !!nextReveal; // ✅ keep ref in sync immediately
+  }, [trip]);
+
+  const alreadyRated = useMemo(() => {
+    if (!trip) return false;
+    const s = trip?.ratingScore ?? trip?.rating ?? trip?.score ?? null;
+    return s !== null && s !== undefined && Number(s) > 0;
+  }, [trip]);
+
+  const started = trip?.startedAt || trip?.endedAt || null;
+  const dateTimeStr = useMemo(() => fmtDateTime(started), [started]);
+
+  const driverName = useMemo(() => {
+    if (!trip) return "Your driver";
+    const rawDriver =
+      trip.driverProfile || trip.driver || trip.driverInfo || null;
     return (
-      <SafeAreaView style={[styles.screen, styles.center]}>
-        <LCText variant="tiny" style={styles.errorText}>
-          No trip data.
-        </LCText>
-        <TouchableOpacity
-          style={styles.backBtnInline}
-          onPress={() => navigation.goBack()}
-        >
-          <LCText variant="tiny" style={styles.backBtnInlineText}>
-            Go back
-          </LCText>
-        </TouchableOpacity>
-      </SafeAreaView>
+      trip.driverProfile?.fullName ||
+      trip.driverName ||
+      trip.driver_full_name ||
+      rawDriver?.fullName ||
+      rawDriver?.name ||
+      rawDriver?.driverName ||
+      rawDriver?.displayName ||
+      rawDriver?.username ||
+      "Your driver"
     );
-  }
+  }, [trip]);
 
-  if (!fontsLoaded) {
-    return (
-      <SafeAreaView style={[styles.screen, styles.center]}>
-        <ActivityIndicator />
-      </SafeAreaView>
-    );
-  }
+  const driverInitial = useMemo(() => {
+    if (!driverName) return "?";
+    return driverName.trim().charAt(0).toUpperCase();
+  }, [driverName]);
 
-  console.log("[TripDetails] trip =", JSON.stringify(trip, null, 2));
-
-  const started = trip.startedAt || trip.endedAt;
-  const dateTimeStr = fmtDateTime(started);
-
-  const origin = cleanPlace(trip.originLabel, "Origin");
-  const destination = cleanPlace(trip.destLabel, "Destination");
-
-  const rawDriver =
-    trip.driverProfile || trip.driver || trip.driverInfo || null;
-
-  const driverName =
-    trip.driverProfile?.fullName ||
-    trip.driverName ||
-    trip.driver_full_name ||
-    rawDriver?.fullName ||
-    rawDriver?.name ||
-    rawDriver?.driverName ||
-    rawDriver?.displayName ||
-    rawDriver?.username ||
-    "Your driver";
-
-  const candidateAvatar =
-    trip.driverAvatar ||
-    trip.driver_avatar ||
-    trip.avatar ||
-    rawDriver?.profileUrl ||
-    null;
-
-  console.log("[TripDetails] raw driver avatar =", candidateAvatar);
-
-  const driverAvatar = candidateAvatar
-    ? buildAbsoluteAvatarUrl(candidateAvatar)
-    : null;
+  const driverAvatar = useMemo(() => {
+    if (!trip) return null;
+    const rawDriver =
+      trip.driverProfile || trip.driver || trip.driverInfo || null;
+    const candidate =
+      trip.driverAvatar ||
+      trip.driver_avatar ||
+      trip.avatar ||
+      rawDriver?.profileUrl ||
+      null;
+    return candidate ? buildAbsoluteAvatarUrl(candidate) : null;
+  }, [trip]);
 
   const showDriverImage = !!driverAvatar && !avatarError;
 
-  const driverInitial =
-    driverName && driverName.length > 0
-      ? driverName.trim().charAt(0).toUpperCase()
-      : "?";
-
-  const isExpired = (() => {
+  const isExpired = useMemo(() => {
     if (!started) return false;
     const d = new Date(started);
     if (Number.isNaN(d.getTime())) return false;
-    const now = new Date();
-    const diffMs = now.getTime() - d.getTime();
-    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    const diffDays = (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24);
     return diffDays > 7;
-  })();
+  }, [started]);
 
-  const onSubmitRating = async () => {
+  const toggleCategory = useCallback((cat) => {
+    setReportCategories((prev) =>
+      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
+    );
+  }, []);
+
+  // ✅ make toggle atomic + sync ref instantly
+  const onToggleRevealName = useCallback(() => {
+    setRevealName((prev) => {
+      const next = !prev;
+      revealNameRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const onSubmitRating = useCallback(async () => {
+    if (!trip) return;
+
     if (isExpired) {
       Alert.alert(
         "Rating not available",
         "You can rate a trip within 7 days after it ends."
       );
+      return;
+    }
+
+    if (alreadyRated) {
+      Alert.alert("Rating submitted", "You already rated this trip.");
       return;
     }
 
@@ -218,7 +279,18 @@ export default function TripDetails({ route, navigation }) {
       const token = await AsyncStorage.getItem("token");
       const url = `${API_URL}/commuter/trips/${trip.id}/rating`;
 
-      console.log("[TripDetails] submitting rating →", url);
+      // ✅ IMPORTANT: use ref so it never sends stale false
+      const revealNow = !!revealNameRef.current;
+
+      const payload = {
+        rating: Number(rating),
+        comment: (notes || "").toString().trim() || null,
+        revealName: revealNow, // ✅ always latest boolean
+      };
+
+      console.log("✅ SUBMITTING RATING payload:", payload);
+      console.log("✅ SUBMITTING RATING url:", url);
+      console.log("API_URL USED:", API_URL);
 
       const res = await fetch(url, {
         method: "POST",
@@ -226,53 +298,33 @@ export default function TripDetails({ route, navigation }) {
           "Content-Type": "application/json",
           Authorization: token ? `Bearer ${token}` : "",
         },
-        body: JSON.stringify({
-          rating,
-          comment: notes?.trim() || null,
-        }),
+        body: JSON.stringify(payload),
       });
 
-      const text = await res.text();
-      let data = {};
-      try {
-        data = text ? JSON.parse(text) : {};
-      } catch {
-        data = { raw: text };
-      }
-
-      console.log(
-        "[TripDetails] rating response status =",
-        res.status,
-        "data =",
-        data
-      );
-
-      if (!res.ok) {
-        throw new Error(
-          data.error || `Failed to submit rating (status ${res.status})`
-        );
-      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to submit rating");
 
       const updatedTrip = {
         ...trip,
-        ratingScore: rating,
-        ratingComment: notes?.trim() || null,
+        ratingScore: Number(rating),
+        ratingComment: payload.comment,
+        ratingRevealName: revealNow,
       };
+
       navigation.setParams({ trip: updatedTrip });
 
-      await addRatingSubmitted({ trip: updatedTrip, rating });
-
-      setSubmitting(false);
-      setMode("summary");
       Alert.alert("Thank you!", "Your rating has been submitted.");
-    } catch (err) {
-      console.error("[TripDetails] rating error", err);
+    } catch (e) {
+      console.error("Rating submission error:", e);
+      Alert.alert("Error", e.message || "Unable to submit rating.");
+    } finally {
       setSubmitting(false);
-      Alert.alert("Error", err.message || "Unable to submit rating.");
     }
-  };
+  }, [trip, isExpired, alreadyRated, rating, submitting, notes, navigation]);
 
-  const onSubmitReport = async () => {
+  const onSubmitReport = useCallback(async () => {
+    if (!trip) return;
+
     if (isExpired) {
       Alert.alert(
         "Reporting not available",
@@ -306,22 +358,9 @@ export default function TripDetails({ route, navigation }) {
         }),
       });
 
-      const text = await res.text();
-      let data = {};
-      try {
-        data = text ? JSON.parse(text) : {};
-      } catch {
-        data = { raw: text };
-      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to submit report");
 
-      if (!res.ok) {
-        console.log("[TripDetails] report error response =", data);
-        throw new Error(data.error || "Failed to submit report");
-      }
-
-      await addIncidentSubmitted({ trip });
-
-      setSubmittingReport(false);
       setReportModalVisible(false);
       setReportCategories([]);
       setReportNotes("");
@@ -329,59 +368,55 @@ export default function TripDetails({ route, navigation }) {
         "Report submitted",
         "Thank you for telling us about this issue."
       );
-    } catch (err) {
-      console.error("[TripDetails] report error", err);
+    } catch (e) {
+      Alert.alert("Error", e.message || "Unable to submit report.");
+    } finally {
       setSubmittingReport(false);
-      Alert.alert("Error", err.message || "Unable to submit report.");
     }
-  };
+  }, [trip, isExpired, reportCategories, reportNotes]);
 
-  const toggleCategory = (cat) => {
-    setReportCategories((prev) =>
-      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
+  if (!trip) {
+    return (
+      <SafeAreaView style={[styles.screen, styles.center]}>
+        <LCText style={{ color: C.text }}>No trip data.</LCText>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={{ marginTop: 10 }}
+        >
+          <LCText style={{ color: C.accent }}>Go back</LCText>
+        </TouchableOpacity>
+      </SafeAreaView>
     );
-  };
+  }
+
+  if (!fontsLoaded) {
+    return (
+      <SafeAreaView style={[styles.screen, styles.center]}>
+        <ActivityIndicator />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView
-      style={[
-        styles.screen,
-        { paddingTop: Math.max(insets.top, 10) },
-      ]}
+      style={[styles.screen, { paddingTop: Math.max(insets.top, 10) }]}
     >
-      {/* HEADER */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.headerBack}
           onPress={() => navigation.goBack()}
         >
-          <MaterialCommunityIcons
-            name="chevron-left"
-            size={22}
-            color={C.text}
-          />
+          <MaterialCommunityIcons name="chevron-left" size={22} color={C.text} />
         </TouchableOpacity>
-        <LCText
-          variant="label"
-          style={styles.headerTitle}
-          numberOfLines={1}
-        >
-          Trip details
-        </LCText>
+        <LCText style={styles.headerTitle}>Trip details</LCText>
         <View style={{ width: 24 }} />
       </View>
 
       <ScrollView
-        style={{ flex: 1 }}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
-        showsVerticalScrollIndicator={false}
       >
-        {/* DATE / TIME */}
-        <LCText variant="tiny" style={styles.dateText}>
-          {dateTimeStr}
-        </LCText>
+        <LCText style={styles.dateText}>{dateTimeStr}</LCText>
 
-        {/* DRIVER CARD */}
         <View style={styles.mainCard}>
           <View style={styles.tripRow}>
             <View style={styles.tripAvatar}>
@@ -389,268 +424,154 @@ export default function TripDetails({ route, navigation }) {
                 <Image
                   source={{ uri: driverAvatar }}
                   style={styles.tripAvatarImg}
-                  onError={() => {
-                    console.log(
-                      "[TripDetails] avatar load failed, fallback to initial"
-                    );
-                    setAvatarError(true);
-                  }}
+                  onError={() => setAvatarError(true)}
                 />
               ) : (
-                <LCText
-                  variant="label"
-                  style={styles.tripAvatarInitial}
-                >
-                  {driverInitial}
-                </LCText>
+                <LCText style={styles.tripAvatarInitial}>{driverInitial}</LCText>
               )}
             </View>
             <View style={{ flex: 1 }}>
-              <LCText variant="label" style={styles.tripTitle} numberOfLines={1}>
-                {driverName}
-              </LCText>
-              <LCText variant="tiny" style={styles.tripSub}>
-                LigtasCommute Driver
-              </LCText>
+              <LCText style={styles.tripTitle}>{driverName}</LCText>
+              <LCText style={styles.tripSub}>LigtasCommute Driver</LCText>
             </View>
           </View>
         </View>
 
-        {/* MAP + ROUTE CARD */}
-        <View style={styles.tripCard}>
-          <View style={styles.mapPlaceholder}>
-            <MaterialCommunityIcons
-              name="map-outline"
-              size={20}
-              color={C.sub}
-            />
-            <View style={{ flex: 1 }}>
-              <LCText variant="label" style={styles.mapPlaceholderTitle}>
-                Route Overview
-              </LCText>
-            </View>
-          </View>
-
-          <View style={styles.routeBlock}>
-            <View style={styles.routeRow}>
-              <View style={styles.routeDotOrigin} />
-              <View style={{ flex: 1 }}>
-                <LCText variant="tiny" style={styles.routeLabel}>
-                  Pickup
-                </LCText>
-                <LCText
-                  variant="tiny"
-                  style={styles.routeText}
-                  numberOfLines={2}
-                >
-                  {origin}
-                </LCText>
-              </View>
-            </View>
-
-            <View style={styles.routeLine} />
-
-            <View style={styles.routeRow}>
-              <View style={styles.routeDotDest} />
-              <View style={{ flex: 1 }}>
-                <LCText variant="tiny" style={styles.routeLabel}>
-                  Drop-off
-                </LCText>
-                <LCText
-                  variant="tiny"
-                  style={styles.routeText}
-                  numberOfLines={2}
-                >
-                  {destination}
-                </LCText>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* RATING / REPORT CARD */}
         <View style={styles.ratingCard}>
-          {mode === "form" ? (
-            <>
-              <LCText variant="label" style={styles.ratingTitle}>
-                Help us improve your LigtasCommute experience
-              </LCText>
-              <LCText variant="tiny" style={styles.ratingSub}>
-                Rate this ride with {driverName}.
-              </LCText>
+          <LCText style={styles.ratingTitle}>
+            Help us improve your LigtasCommute experience
+          </LCText>
 
-              <View
-                style={[
-                  styles.starsRow,
-                  isExpired && { opacity: 0.4 },
-                ]}
-              >
-                {[1, 2, 3, 4, 5].map((value) => {
-                  const active = value <= rating;
-                  return (
-                    <TouchableOpacity
-                      key={value}
-                      onPress={() => {
-                        if (isExpired) return;
-                        setRating(value);
-                      }}
-                      activeOpacity={0.8}
-                    >
-                      <MaterialCommunityIcons
-                        name={active ? "star" : "star-outline"}
-                        size={26}
-                        color={active ? "#FACC15" : C.hint}
-                      />
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              {rating > 0 && (
-                <LCText variant="tiny" style={styles.ratingLabelText}>
-                  {rating} ★ • {RATING_LABELS[rating] || ""}
-                </LCText>
-              )}
-
-              <LCText variant="tiny" style={styles.notesLabel}>
-                Additional feedback (optional)
-              </LCText>
-              <TextInput
-                style={[
-                  styles.notesInput,
-                  isExpired && { opacity: 0.6 },
-                ]}
-                placeholder="Tell us what went well or what we can improve…"
-                placeholderTextColor={C.hint}
-                multiline
-                value={notes}
-                onChangeText={(v) => {
-                  if (isExpired) return;
-                  setNotes(v);
-                }}
-                editable={!isExpired}
-              />
-
-              {isExpired && (
-                <LCText variant="tiny" style={styles.expiredText}>
-                  Rating and reports are available within 7 days after
-                  your trip.
-                </LCText>
-              )}
-
+          <View
+            style={[
+              styles.starsRow,
+              (isExpired || alreadyRated) && { opacity: 0.6 },
+            ]}
+          >
+            {[1, 2, 3, 4, 5].map((v) => (
               <TouchableOpacity
-                style={[
-                  styles.submitBtn,
-                  {
-                    opacity:
-                      !rating || submitting || isExpired ? 0.6 : 1,
-                  },
-                ]}
-                disabled={!rating || submitting || isExpired}
-                onPress={onSubmitRating}
-                activeOpacity={0.9}
+                key={v}
+                onPress={() => {
+                  if (isExpired || alreadyRated) return;
+                  setRating(v);
+                }}
+                activeOpacity={0.8}
+                disabled={isExpired || alreadyRated}
               >
-                {submitting ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <LCText variant="label" style={styles.submitBtnText}>
-                    Submit rating
-                  </LCText>
-                )}
+                <MaterialCommunityIcons
+                  name={v <= rating ? "star" : "star-outline"}
+                  size={26}
+                  color={v <= rating ? "#FACC15" : C.hint}
+                />
               </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <View style={styles.ratingSummaryPill}>
-                <View style={styles.ratingSummaryRow}>
-                  <LCText variant="label" style={styles.summaryLabel}>
-                    Ride rating
-                  </LCText>
-                  <View style={styles.summaryValueRow}>
-                    <LCText variant="label" style={styles.summaryRatingText}>
-                      {rating || initialRating || "—"}
-                    </LCText>
-                    {!!(rating || initialRating) && (
-                      <>
-                        <MaterialCommunityIcons
-                          name="star"
-                          size={12}
-                          color="#FACC15"
-                          style={{ marginHorizontal: 2 }}
-                        />
-                        <LCText
-                          variant="tiny"
-                          style={styles.summaryLabelSmall}
-                        >
-                          •{" "}
-                          {RATING_LABELS[rating || initialRating] || ""}
-                        </LCText>
-                      </>
-                    )}
-                  </View>
-                </View>
-              </View>
-            </>
-          )}
+            ))}
+          </View>
 
-          {/* REPORT LINK */}
+          {rating > 0 ? (
+            <LCText style={styles.ratingLabelText}>
+              {rating} ★ • {RATING_LABELS[rating]}
+            </LCText>
+          ) : null}
+
+          {alreadyRated ? (
+            <LCText
+              style={{
+                textAlign: "center",
+                marginTop: 4,
+                color: C.sub,
+                fontFamily: "Poppins_500Medium",
+                fontSize: 12,
+              }}
+            >
+              Rating submitted ✔
+            </LCText>
+          ) : null}
+
+          <LCText style={styles.notesLabel}>Additional feedback (optional)</LCText>
+          <TextInput
+            style={[
+              styles.notesInput,
+              (isExpired || alreadyRated) && { opacity: 0.6 },
+            ]}
+            placeholder="Tell us what went well or what we can improve…"
+            placeholderTextColor={C.hint}
+            multiline
+            value={notes}
+            onChangeText={setNotes}
+            editable={!isExpired && !alreadyRated}
+          />
+
           <TouchableOpacity
             style={[
-              styles.reportLinkBtn,
-              isExpired && { opacity: 0.5 },
+              styles.revealRow,
+              (isExpired || alreadyRated) && { opacity: 0.6 },
             ]}
             onPress={() => {
-              if (isExpired) {
-                Alert.alert(
-                  "Reporting not available",
-                  "You can report an issue within 7 days after the trip."
-                );
-                return;
-              }
-              setReportModalVisible(true);
+              if (isExpired || alreadyRated) return;
+              onToggleRevealName();
             }}
+            disabled={isExpired || alreadyRated}
           >
-            <LCText variant="label" style={styles.reportLinkText}>
+            <MaterialCommunityIcons
+              name={revealName ? "checkbox-marked" : "checkbox-blank-outline"}
+              size={18}
+              color={revealName ? C.brand : C.hint}
+            />
+            <View style={{ flex: 1 }}>
+              <LCText style={styles.revealTitle}>Reveal my name to the driver</LCText>
+              <LCText style={styles.revealSub}>
+                If unchecked, your rating will show as Anonymous.
+              </LCText>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.submitBtn,
+              (!rating || submitting || isExpired || alreadyRated) && {
+                opacity: 0.6,
+              },
+            ]}
+            disabled={!rating || submitting || isExpired || alreadyRated}
+            onPress={onSubmitRating}
+          >
+            {submitting ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <LCText style={styles.submitBtnText}>Submit rating</LCText>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={{ marginTop: 10, alignItems: "center" }}
+            onPress={() => !isExpired && setReportModalVisible(true)}
+            disabled={isExpired}
+          >
+            <LCText style={{ color: C.accent, fontFamily: "Poppins_500Medium" }}>
               Report An Issue
             </LCText>
           </TouchableOpacity>
         </View>
       </ScrollView>
 
-      {/* REPORT ISSUE MODAL */}
-      <Modal
-        visible={reportModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => !submittingReport && setReportModalVisible(false)}
-      >
+      <Modal visible={reportModalVisible} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <LCText variant="label" style={styles.modalTitle}>
-              Report an issue
-            </LCText>
-            <LCText variant="tiny" style={styles.modalSub}>
-              Tell us what happened on this trip so we can review it.
-            </LCText>
+            <LCText style={styles.modalTitle}>Report an issue</LCText>
+            <LCText style={styles.modalSub}>Tell us what happened on this trip.</LCText>
 
-            <LCText variant="tiny" style={styles.modalLabel}>
-              Category (select one or more)
-            </LCText>
+            <LCText style={styles.modalLabel}>Category</LCText>
             <View style={styles.categoryPillsRow}>
               {INCIDENT_CATEGORIES.map((cat) => {
                 const active = reportCategories.includes(cat);
                 return (
                   <TouchableOpacity
                     key={cat}
-                    style={[
-                      styles.categoryPill,
-                      active && styles.categoryPillActive,
-                    ]}
+                    style={[styles.categoryPill, active && styles.categoryPillActive]}
                     onPress={() => toggleCategory(cat)}
                     disabled={submittingReport}
                   >
                     <LCText
-                      variant="tiny"
                       style={[
                         styles.categoryPillText,
                         active && styles.categoryPillTextActive,
@@ -663,12 +584,10 @@ export default function TripDetails({ route, navigation }) {
               })}
             </View>
 
-            <LCText variant="tiny" style={styles.modalLabel}>
-              What happened?
-            </LCText>
+            <LCText style={styles.modalLabel}>What happened?</LCText>
             <TextInput
               style={styles.modalTextArea}
-              placeholder="Describe the issue (optional but helpful)…"
+              placeholder="Describe the issue…"
               placeholderTextColor={C.hint}
               multiline
               value={reportNotes}
@@ -679,15 +598,12 @@ export default function TripDetails({ route, navigation }) {
             <View style={styles.modalButtonsRow}>
               <TouchableOpacity
                 style={[styles.modalBtn, styles.modalBtnSecondary]}
-                onPress={() =>
-                  !submittingReport && setReportModalVisible(false)
-                }
+                onPress={() => !submittingReport && setReportModalVisible(false)}
                 disabled={submittingReport}
               >
-                <LCText variant="tiny" style={styles.modalBtnSecondaryText}>
-                  Cancel
-                </LCText>
+                <LCText style={styles.modalBtnSecondaryText}>Cancel</LCText>
               </TouchableOpacity>
+
               <TouchableOpacity
                 style={[
                   styles.modalBtn,
@@ -698,11 +614,9 @@ export default function TripDetails({ route, navigation }) {
                 disabled={submittingReport}
               >
                 {submittingReport ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <ActivityIndicator color="#fff" />
                 ) : (
-                  <LCText variant="tiny" style={styles.modalBtnPrimaryText}>
-                    Submit report
-                  </LCText>
+                  <LCText style={styles.modalBtnPrimaryText}>Submit report</LCText>
                 )}
               </TouchableOpacity>
             </View>
@@ -714,14 +628,8 @@ export default function TripDetails({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: C.bg,
-  },
-  center: {
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  screen: { flex: 1, backgroundColor: C.bg },
+  center: { justifyContent: "center", alignItems: "center" },
 
   header: {
     flexDirection: "row",
@@ -729,14 +637,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingBottom: 6,
   },
-  headerBack: {
-    padding: 6,
-  },
+  headerBack: { padding: 6 },
   headerTitle: {
     flex: 1,
     textAlign: "center",
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 12,
     color: C.text,
   },
 
@@ -744,9 +649,8 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 4,
     marginBottom: 10,
-    fontFamily: "Poppins_400Regular",
-    fontSize: 11,
     color: C.sub,
+    fontFamily: "Poppins_400Regular",
   },
 
   mainCard: {
@@ -756,21 +660,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.border,
     marginBottom: 10,
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOpacity: 0.04,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 4 },
-      },
-      android: { elevation: 2 },
-    }),
   },
-
-  tripRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
+  tripRow: { flexDirection: "row", alignItems: "center" },
   tripAvatar: {
     width: 42,
     height: 42,
@@ -781,108 +672,13 @@ const styles = StyleSheet.create({
     marginRight: 10,
     overflow: "hidden",
   },
-  tripAvatarImg: {
-    width: "100%",
-    height: "100%",
-  },
-  tripAvatarInitial: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 12,
-    color: "#FFFFFF",
-  },
-  tripTitle: {
-    fontFamily: "Poppins_700Bold",
-    fontSize: 12,
-    color: C.text,
-  },
+  tripAvatarImg: { width: "100%", height: "100%" },
+  tripAvatarInitial: { fontFamily: "Poppins_600SemiBold", color: "#fff" },
+  tripTitle: { fontFamily: "Poppins_700Bold", color: C.text },
   tripSub: {
     fontFamily: "Poppins_500Medium",
-    fontSize: 11,
     color: C.sub,
     marginTop: 2,
-  },
-
-  tripCard: {
-    backgroundColor: C.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: C.border,
-    padding: 12,
-    marginBottom: 14,
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOpacity: 0.04,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 4 },
-      },
-      android: { elevation: 2 },
-    }),
-  },
-
-  mapPlaceholder: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.border,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    backgroundColor: "#EFF6FF",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginBottom: 10,
-  },
-  mapPlaceholderTitle: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 11,
-    color: C.text,
-  },
-
-  routeBlock: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.border,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    backgroundColor: "#F9FAFB",
-  },
-  routeRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-  },
-  routeDotOrigin: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: C.accent,
-    marginRight: 8,
-    marginTop: 3,
-  },
-  routeDotDest: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: C.danger,
-    marginRight: 8,
-    marginTop: 3,
-  },
-  routeLabel: {
-    fontFamily: "Poppins_500Medium",
-    fontSize: 10,
-    color: C.sub,
-  },
-  routeText: {
-    fontFamily: "Poppins_400Regular",
-    fontSize: 11,
-    color: C.text,
-    marginTop: 1,
-  },
-  routeLine: {
-    height: 16,
-    borderLeftWidth: 1,
-    borderLeftColor: C.border,
-    marginLeft: 4,
-    marginVertical: 4,
   },
 
   ratingCard: {
@@ -891,27 +687,8 @@ const styles = StyleSheet.create({
     padding: 14,
     borderWidth: 1,
     borderColor: C.border,
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOpacity: 0.04,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 4 },
-      },
-      android: { elevation: 2 },
-    }),
   },
-  ratingTitle: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 12,
-    color: C.text,
-  },
-  ratingSub: {
-    fontFamily: "Poppins_400Regular",
-    fontSize: 11,
-    color: C.sub,
-    marginTop: 4,
-  },
+  ratingTitle: { fontFamily: "Poppins_600SemiBold", color: C.text },
   starsRow: {
     flexDirection: "row",
     justifyContent: "center",
@@ -922,13 +699,12 @@ const styles = StyleSheet.create({
   ratingLabelText: {
     textAlign: "center",
     fontFamily: "Poppins_500Medium",
-    fontSize: 11,
     color: C.text,
     marginBottom: 8,
   },
+
   notesLabel: {
     fontFamily: "Poppins_500Medium",
-    fontSize: 11,
     color: C.text,
     marginTop: 8,
     marginBottom: 4,
@@ -941,59 +717,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     fontFamily: "Poppins_400Regular",
-    fontSize: 11,
     color: C.text,
     textAlignVertical: "top",
     backgroundColor: "#F9FAFB",
   },
-  expiredText: {
-    marginTop: 6,
-    fontFamily: "Poppins_400Regular",
-    fontSize: 10,
-    color: C.sub,
-    textAlign: "center",
-  },
 
-  ratingSummaryPill: {
-    borderRadius: 999,
+  revealRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
     borderWidth: 1,
     borderColor: C.border,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
     backgroundColor: "#F9FAFB",
-  },
-  ratingSummaryRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  summaryLabel: {
-    fontFamily: "Poppins_500Medium",
-    fontSize: 12,
-    color: C.text,
-  },
-  summaryValueRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  summaryRatingText: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 12,
-    color: C.text,
-  },
-  summaryLabelSmall: {
-    fontFamily: "Poppins_400Regular",
-    fontSize: 11,
-    color: C.sub,
-  },
-  reportLinkBtn: {
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
     marginTop: 10,
-    alignItems: "center",
   },
-  reportLinkText: {
-    fontFamily: "Poppins_500Medium",
+  revealTitle: { fontFamily: "Poppins_600SemiBold", color: C.text },
+  revealSub: {
+    fontFamily: "Poppins_400Regular",
+    color: C.sub,
+    marginTop: 2,
     fontSize: 12,
-    color: C.accent,
   },
 
   submitBtn: {
@@ -1002,32 +748,8 @@ const styles = StyleSheet.create({
     backgroundColor: C.brand,
     paddingVertical: 10,
     alignItems: "center",
-    justifyContent: "center",
   },
-  submitBtnText: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 12,
-    color: "#FFFFFF",
-  },
-
-  errorText: {
-    fontFamily: "Poppins_400Regular",
-    fontSize: 11,
-    color: C.text,
-    marginBottom: 8,
-  },
-  backBtnInline: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  backBtnInlineText: {
-    fontFamily: "Poppins_500Medium",
-    fontSize: 11,
-    color: C.brand,
-  },
+  submitBtnText: { fontFamily: "Poppins_600SemiBold", color: "#fff" },
 
   modalBackdrop: {
     flex: 1,
@@ -1039,33 +761,23 @@ const styles = StyleSheet.create({
   modalCard: {
     width: "100%",
     borderRadius: 16,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#fff",
     padding: 14,
   },
-  modalTitle: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 12,
-    color: C.text,
-  },
+  modalTitle: { fontFamily: "Poppins_600SemiBold", color: C.text },
   modalSub: {
     fontFamily: "Poppins_400Regular",
-    fontSize: 11,
     color: C.sub,
     marginTop: 4,
     marginBottom: 8,
   },
   modalLabel: {
     fontFamily: "Poppins_500Medium",
-    fontSize: 11,
     color: C.text,
     marginTop: 8,
     marginBottom: 4,
   },
-  categoryPillsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-  },
+  categoryPillsRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   categoryPill: {
     borderRadius: 999,
     borderWidth: 1,
@@ -1073,18 +785,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
-  categoryPillActive: {
-    backgroundColor: C.brand,
-    borderColor: C.brand,
-  },
+  categoryPillActive: { backgroundColor: C.brand, borderColor: C.brand },
   categoryPillText: {
     fontFamily: "Poppins_400Regular",
-    fontSize: 10,
     color: C.text,
+    fontSize: 12,
   },
-  categoryPillTextActive: {
-    color: "#FFFFFF",
-  },
+  categoryPillTextActive: { color: "#fff" },
   modalTextArea: {
     minHeight: 90,
     borderRadius: 10,
@@ -1093,7 +800,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     fontFamily: "Poppins_400Regular",
-    fontSize: 11,
     color: C.text,
     textAlignVertical: "top",
     backgroundColor: "#F9FAFB",
@@ -1104,27 +810,13 @@ const styles = StyleSheet.create({
     marginTop: 12,
     gap: 8,
   },
-  modalBtn: {
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
+  modalBtn: { borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
   modalBtnSecondary: {
     borderWidth: 1,
     borderColor: C.border,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#fff",
   },
-  modalBtnSecondaryText: {
-    fontFamily: "Poppins_500Medium",
-    fontSize: 11,
-    color: C.text,
-  },
-  modalBtnPrimary: {
-    backgroundColor: C.brand,
-  },
-  modalBtnPrimaryText: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 11,
-    color: "#FFFFFF",
-  },
+  modalBtnSecondaryText: { fontFamily: "Poppins_500Medium", color: C.text },
+  modalBtnPrimary: { backgroundColor: C.brand },
+  modalBtnPrimaryText: { fontFamily: "Poppins_600SemiBold", color: "#fff" },
 });
